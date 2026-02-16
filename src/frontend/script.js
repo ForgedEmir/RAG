@@ -111,11 +111,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     userInput.focus();
 
-    userInput.addEventListener('focus', () => {
-        userInput.style.background = 'rgba(244,228,188,0.1)';
-    });
+    // Suppression des gestionnaires d'événements qui modifient le style de fond
+    // userInput.addEventListener('focus', () => {
+    //     userInput.style.background = 'rgba(244,228,188,0.1)';
+    // });
 
-    userInput.addEventListener('blur', () => {
-        userInput.style.background = 'transparent';
-    });
+    // userInput.addEventListener('blur', () => {
+    //     userInput.style.background = 'transparent';
+    // });
 });
