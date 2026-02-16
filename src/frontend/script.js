@@ -111,8 +111,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     userInput.focus();
-
-    // Suppression des gestionnaires d'événements qui modifient le style de fond
+    
     // userInput.addEventListener('focus', () => {
     //     userInput.style.background = 'rgba(244,228,188,0.1)';
     // });
