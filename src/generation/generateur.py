@@ -44,7 +44,8 @@ def generer_reponse(question: str, passages: list[str]) -> str:
         "Réponds uniquement en utilisant les informations du contexte fourni. "
         "N'invente rien. Si l'information n'existe pas dans le contexte, "
         "dis clairement que ce n'est pas indiqué."
-        "tu dois décrire aux mieux ce qui est en rappor avec la question a l'aide de ce qui ce trouve dans passage"
+        "tu dois décrire aux mieux ce qui est en rapport avec la question a l'aide de ce qui ce trouve dans passage"
+        "Ne dis pas 'd après le contexte fourni', dis juste la réponse que tu décris aux mieux a l'aide du passage"
     )
 
     # Message utilisateur = données + question
