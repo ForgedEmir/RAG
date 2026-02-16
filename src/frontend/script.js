@@ -50,10 +50,9 @@ function hideLoading() {
     loadingIndicator.classList.remove('visible');
 }
 
-// Main function to consult the Oracle
 async function consultOracle() {
     const question = userInput.value.trim();
-    
+
     if (!question) {
         alert('Veuillez écrire votre question sur le parchemin mystique...');
         return;
@@ -62,14 +61,17 @@ async function consultOracle() {
     addUserQuestion(question);
     userInput.value = '';
     showLoading();
-    
+
     try {
-        const response = await fetch('http://localhost:8000/chat', {
+        const response = await fetch('http://localhost:5000/api/ask', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: question })
+            body: JSON.stringify({
+                question: question,
+                passages: ["Le roi Aldric règne depuis 40 ans sur les Terres du Nord."] 
+            })
         });
 
         if (!response.ok) {
@@ -78,20 +80,19 @@ async function consultOracle() {
 
         const data = await response.json();
         hideLoading();
-        
-        // Display response with mystical delay
+
         setTimeout(() => {
-            addOracleResponse(data.response);
+            addOracleResponse(data.reponse);
         }, 500);
-        
+
     } catch (error) {
         console.error('Erreur:', error);
         hideLoading();
-        
+
         setTimeout(() => {
             addOracleResponse(
                 'Les brumes mystiques obscurcissent ma vision... L\'Oracle semble être dans un sommeil profond. ' +
-                'Vérifiez que le serveur des mystères soit éveillé (http://localhost:8000) et tentez à nouveau votre invocation.'
+                'Vérifiez que le serveur des mystères soit éveillé et tentez à nouveau votre invocation.'
             );
         }, 500);
     }
