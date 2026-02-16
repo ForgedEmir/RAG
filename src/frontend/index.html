@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L'Oracle des Archives - Grimoire Mystique</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Kalam:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="grimoire-container">
+        <div class="grimoire-title">L'Oracle</div>
+        
+        <div class="book">
+            <div class="pages-container">
+                <!-- Page de gauche - Zone d'écriture -->
+                <div class="page page-left">
+                    <div class="left-content">
+                        <div class="writing-area">
+                            <div class="page-title-left">Votre Quête de Savoir</div>
+                            <textarea 
+                                id="userInput" 
+                                class="manuscript-input" 
+                                placeholder="Cher Oracle des mystères anciens, je cherche à comprendre..."
+                                rows="8"
+                            ></textarea>
+                            <div class="writing-tools">
+                                <button id="revealButton" class="reveal-button">
+                                    Révéler
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Page de droite - Réponses de l'Oracle -->
+                <div class="page page-right">
+                    <div class="right-content">
+                        <div class="page-title-right">Les récits de l'Oracle</div>
+                        <div class="oracle-responses" id="oracleResponses">
+                            <div class="oracle-message welcome-message" id="welcomeMessage">
+                                <div class="oracle-response">
+                                    Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps. 
+                                    <br><br>
+                                    Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez. 
+                                    Les brumes se dissiperont, et la sagesse ancienne vous sera dévoilée...
+                                </div>
+                            </div>
+                        </div>
+                        <div id="loadingIndicator" class="loading-mystical">
+                            Les astres s'alignent pour révéler la vérité... 
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

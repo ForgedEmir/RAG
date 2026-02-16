@@ -1,0 +1,454 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'EB Garamond', serif;
+    background: 
+        radial-gradient(circle at 20% 20%, rgba(139,69,19,0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(101,67,33,0.3) 0%, transparent 50%),
+        linear-gradient(135deg, #2c1810 0%, #1a0f08 50%, #0d0604 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-x: hidden;
+}
+
+.grimoire-container {
+    perspective: 2000px;
+    width: 90vw;
+    max-width: 1200px;
+    height: 80vh;
+    min-height: 600px;
+    position: relative;
+}
+
+.book {
+    width: 105%;
+    height: 105%;
+    position: relative;
+    transform-style: preserve-3d;
+    background: linear-gradient(135deg, #8B4513 0%, #654321 50%, #3E2723 100%);
+    border-radius: 15px;
+    box-shadow: 
+        0 20px 60px rgba(0,0,0,0.6),
+        inset 0 0 20px rgba(139,69,19,0.3);
+    border: 3px solid #654321;
+    top: 10px;
+}
+
+.book::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 90%;
+    background: linear-gradient(to bottom, 
+        #654321 0%, 
+        #3E2723 20%, 
+        #2C1810 40%, 
+        #1A0F08 60%, 
+        #2C1810 80%, 
+        #654321 100%);
+    border-radius: 2px;
+    z-index: 10;
+    box-shadow: 
+        -2px 0 4px rgba(0,0,0,0.5),
+        2px 0 4px rgba(0,0,0,0.5);
+}
+
+.pages-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    top: 5px;
+}
+
+.page {
+    width: 50%;
+    height: 100%;
+    padding: 40px 30px;
+    position: relative;
+    overflow: hidden;
+}
+
+.page-left {
+    background: 
+        radial-gradient(circle at 80% 20%, rgba(245,222,179,0.1) 0%, transparent 30%),
+        radial-gradient(circle at 20% 80%, rgba(222,184,135,0.1) 0%, transparent 30%),
+        linear-gradient(135deg, #f4e4bc 0%, #e8d5a3 30%, #dcc895 70%, #f0e6c7 100%);
+    border-right: 2px solid rgba(139,69,19,0.3);
+}
+
+.page-right {
+    background: 
+        radial-gradient(circle at 20% 20%, rgba(245,222,179,0.1) 0%, transparent 30%),
+        radial-gradient(circle at 80% 80%, rgba(222,184,135,0.1) 0%, transparent 30%),
+        linear-gradient(45deg, #f4e4bc 0%, #e8d5a3 30%, #dcc895 70%, #f0e6c7 100%);
+    border-left: 2px solid rgba(139,69,19,0.3);
+}
+
+.page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        radial-gradient(circle at 15% 25%, rgba(139,69,19,0.1) 2px, transparent 3px),
+        radial-gradient(circle at 85% 75%, rgba(101,67,33,0.08) 1px, transparent 2px),
+        radial-gradient(circle at 45% 60%, rgba(139,69,19,0.05) 3px, transparent 4px),
+        radial-gradient(circle at 70% 20%, rgba(160,82,45,0.06) 2px, transparent 3px);
+    pointer-events: none;
+}
+
+/* Titre du grimoire */
+.grimoire-title {
+    position: absolute;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cinzel', serif;
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: #f4e4bc;
+    text-shadow: 
+        0 0 25px rgba(244,228,188,0.9),
+        3px 3px 6px rgba(139,69,19,0.8);
+    letter-spacing: 4px;
+    text-align: center;
+    z-index: 20;
+}
+
+.grimoire-subtitle {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'EB Garamond', serif;
+    font-size: 1.3rem;
+    color: #dcc895;
+    font-style: italic;
+    text-align: center;
+    z-index: 20;
+    text-shadow: 1px 1px 3px rgba(139,69,19,0.6);
+}
+
+.left-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.writing-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.page-title-left {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    color: #654321;
+    text-align: center;
+    margin-bottom: 40px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    border-bottom: 2px solid rgba(139,69,19,0.3);
+    padding-bottom: 10px;
+}
+
+.manuscript-input {
+    width: 100%;
+    min-height: 200px;
+    background: transparent;
+    border: none;
+    font-family: 'Kalam', cursive;
+    font-size: 1.3rem;
+    color: #2c1810;
+    line-height: 2.2;
+    padding: 15px 20px 20px 20px;
+    outline: none;
+    resize: vertical;
+    background-image: 
+        repeating-linear-gradient(
+            transparent 0px,
+            transparent 43px,
+            rgba(139,69,19,0.1) 44px,
+            rgba(139,69,19,0.1) 45px
+        );
+    background-size: 100% 45px;
+}
+
+.manuscript-input::placeholder {
+    color: rgba(44,24,16,0.5);
+    font-style: italic;
+}
+
+.manuscript-input:focus {
+    background-image: 
+        repeating-linear-gradient(
+            transparent 0px,
+            transparent 43px,
+            rgba(139,69,19,0.2) 44px,
+            rgba(139,69,19,0.2) 45px
+        );
+}
+
+.writing-tools {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.reveal-button {
+    font-family: 'Cinzel', serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #8B4513 0%, #654321 50%, #3E2723 100%);
+    color: #f4e4bc;
+    border: 2px solid #654321;
+    padding: 12px 30px;
+    border-radius: 25px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    box-shadow: 
+        0 8px 20px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(244,228,188,0.2);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.reveal-button::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(45deg, transparent 30%, rgba(244,228,188,0.1) 50%, transparent 70%);
+    transform: rotate(45deg);
+    transition: transform 0.6s;
+    opacity: 0;
+}
+
+.reveal-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 12px 25px rgba(0,0,0,0.4),
+        inset 0 1px 0 rgba(244,228,188,0.3);
+}
+
+.reveal-button:hover::before {
+    opacity: 1;
+    transform: translateX(200%) rotate(45deg);
+}
+
+.reveal-button:active {
+    transform: translateY(0px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+.right-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.page-title-right {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    color: #654321;
+    text-align: center;
+    margin-bottom: 30px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    border-bottom: 2px solid rgba(139,69,19,0.3);
+    padding-bottom: 10px;
+}
+
+.oracle-responses {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(139,69,19,0.3) transparent;
+}
+
+.oracle-responses::-webkit-scrollbar {
+    width: 6px;
+}
+
+.oracle-responses::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.oracle-responses::-webkit-scrollbar-thumb {
+    background-color: rgba(139,69,19,0.3);
+    border-radius: 3px;
+}
+
+.oracle-message {
+    margin-bottom: 30px;
+    opacity: 0;
+    transform: translateY(20px);
+    animation: mysticalAppear 2s ease forwards;
+}
+
+.user-question {
+    font-family: 'Kalam', cursive;
+    font-size: 1.1rem;
+    color: rgba(44,24,16,0.8);
+    font-style: italic;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: 
+        linear-gradient(135deg, rgba(139,69,19,0.08) 0%, rgba(160,82,45,0.05) 100%);
+    border: none;
+    border-radius: 8px;
+    position: relative;
+    line-height: 1.6;
+    text-align: left;
+    transform: rotate(-0.5deg);
+    box-shadow: 0 2px 8px rgba(139,69,19,0.1);
+}
+
+.user-question::before {
+    content: '✒️';
+    position: absolute;
+    left: -8px;
+    top: -5px;
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+.oracle-response {
+    font-family: 'EB Garamond', serif;
+    font-size: 1.2rem;
+    line-height: 1.8;
+    color: #2c1810;
+    text-align: justify;
+    position: relative;
+}
+
+.oracle-response::first-letter {
+    font-family: 'Cinzel', serif;
+    float: left;
+    font-size: 4rem;
+    line-height: 3rem;
+    padding-right: 8px;
+    margin-top: 4px;
+    color: #8B4513;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.loading-mystical {
+    text-align: center;
+    font-family: 'Cinzel', serif;
+    font-size: 1.1rem;
+    color: #8B4513;
+    margin: 20px 0;
+    opacity: 0;
+}
+
+.loading-mystical.visible {
+    opacity: 1;
+    animation: mysticalPulse 2s ease-in-out infinite;
+}
+
+.welcome-message {
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.welcome-message.fade-out {
+    opacity: 0;
+    transform: translateY(-20px);
+    pointer-events: none;
+}
+
+@keyframes mysticalAppear {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.9);
+        filter: blur(10px);
+    }
+    50% {
+        opacity: 0.7;
+        transform: translateY(10px) scale(1.02);
+        filter: blur(2px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0px);
+    }
+}
+
+@keyframes mysticalPulse {
+    0%, 100% {
+        opacity: 0.7;
+        transform: scale(1);
+        text-shadow: 0 0 5px rgba(139,69,19,0.5);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+        text-shadow: 0 0 20px rgba(139,69,19,0.8);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% center;
+    }
+    100% {
+        background-position: 200% center;
+    }
+}
+
+input[type="text"]:not(.manuscript-input), 
+textarea:not(.manuscript-input) {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .grimoire-container {
+        width: 95vw;
+        height: 90vh;
+    }
+    
+    .grimoire-title {
+        font-size: 2rem;
+        top: -40px;
+    }
+    
+    .page {
+        padding: 20px 15px;
+    }
+    
+    .manuscript-input {
+        font-size: 1.1rem;
+        min-height: 150px;
+    }
+    
+    .page-title-left,
+    .page-title-right {
+        font-size: 1.4rem;
+    }
+    
+    .oracle-response {
+        font-size: 1.1rem;
+    }
+}
