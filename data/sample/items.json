@@ -1,0 +1,48 @@
+[
+  {
+    "Item_ID": 20401,
+    "Name": "Sceptre du Commandement",
+    "Type": "Objet_Royauté",
+    "Description": "Or massif veiné d'électrum. À la main du Roi Alaric, il ne s'agit pas seulement d'un symbole de pouvoir, mais d'une pulsation magique qui vibre de haine envers les 'étrangers'.",
+    "Source": "Palais Royal - Coffre Roi",
+    "Tags": ["Lore", "Arme_Royale", "Humeur:Agressive"],
+    "Recipe_Unlock": false,
+    "Rarity": "Légendaire"
+  },
+  {
+    "Item_ID": 10204,
+    "Name": "Épée de Vorpal",
+    "Type": "Arme_De_Légende",
+    "Description": "Un métal noir dur comme l'acier, tombé des cieux des Terres Oubliées. Il murmure de noms oubliés. Sa poignée est en os de dragon oublié.",
+    "Source": "Temple Souterrain de Vorpal - Drop Rare",
+    "Lore_Context": "Appartenue à Vorpal le Perdu, disparu en -750. Elle est considérée maudite ou bénie selon les quêteurs.",
+    "Tags": ["Quest_Item", "Terres_Oubliées", "Lore_Complice"],
+    "Rarity": "Unique"
+  },
+  {
+    "Item_ID": 55501,
+    "Name": "Critère de Lune d'Elara",
+    "Type": "Accessoire_Magie",
+    "Description": "Un cristal incandescent qui change de couleur selon l'humeur de l'usage. Les elfes l'utilisent pour contrôler les marées des tunnels cachés.",
+    "Source": "Clairière d'Argent - Coffre Elara",
+    "Tags": ["Lore", "Elfe", "Magie_Lunaire"],
+    "Rarity": "Épique"
+  },
+  {
+    "Item_ID": 80120,
+    "Name": "Clé des Ombres",
+    "Type": "Clé_Ruine",
+    "Description": "Une plaque de métal noir froid. Lorsqu'on la touche, on ressent une présence observer. Permet d'ouvrir les coffres de la Forteresse de l'Ombre.",
+    "Source": "Confrérie du Vide - Quête \"Les Ombres Savent\"",
+    "Tags": ["Lore", "Shadows_of_Void", "Négatif"],
+    "Rarity": "Rareté_Mortelle"
+  },
+  {
+    "Item_ID": 40200,
+    "Name": "Potion de Mana (Standard)",
+    "Type": "Consommable",
+    "Description": "Une liqueur bleue rafraîchissante. Échelle de puissance +10.",
+    "Stat_Int": "+10",
+    "Rarity": "Commune"
+  }
+]
