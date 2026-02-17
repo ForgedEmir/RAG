@@ -69,8 +69,7 @@ async function consultOracle() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                question: question,
-                passages: ["Le roi Aldric règne depuis 40 ans sur les Terres du Nord."] 
+                question: question
             })
         });
 
@@ -111,7 +110,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     userInput.focus();
-    
+
     // userInput.addEventListener('focus', () => {
     //     userInput.style.background = 'rgba(244,228,188,0.1)';
     // });

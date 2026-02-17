@@ -1,12 +1,24 @@
-from src.generation.generateur import generer_reponse
-from src.search.recherche import rechercher_passages
+"""
+Point d'entrée principal de l'application Oracle des Archives
+Lance le serveur Flask avec toutes les routes configurées
+"""
+import sys
+import os
 
-question = "Qui est le souverain incontesté du Royaume Humain d'Aethelgard depuis le lancement du jeu il y a 10 ans. ?"
+# Chzmins
+project_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, project_root)
 
-passages, _question_retournee = rechercher_passages(question)
+from flask import Flask
+from flask_cors import CORS
+from src.api.routes import register_routes
 
-if not passages:
-    print("Aucun passage pertinent trouve.")
-else:
-    reponse = generer_reponse(question, passages)
-    print(reponse)
+# Créer l'application Flask
+app = Flask(__name__)
+CORS(app)  
+
+# Enregistrer les routes
+register_routes(app)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Charger les variables d'environnement au niveau du module
+load_dotenv()
 
 def generer_reponse(question: str, passages: list[str]) -> str:
     """
@@ -18,14 +20,10 @@ def generer_reponse(question: str, passages: list[str]) -> str:
     """
 
     # --------------------------------------------------
-    # 1) Charger les variables d'environnement (.env)
-    # --------------------------------------------------
-    load_dotenv()
-    # --------------------------------------------------
-    # 2) Créer le client OpenAI (compatible DeepSeek)
+    # 1) Créer le client OpenAI (compatible DeepSeek)
     # --------------------------------------------------
     client = OpenAI(
-        api_key= "sk-6dc5c23356a24645bb860d2811d8b768",
+        api_key="sk-6dc5c23356a24645bb860d2811d8b768",
         base_url="https://api.deepseek.com"
     )
 
