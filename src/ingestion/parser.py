@@ -7,5 +7,5 @@ def lire_fichiers_md(dossier: str) -> List[Dict[str, str]]:
         if nom.endswith(".md"):
             with open(os.path.join(dossier, nom), "r", encoding="utf-8") as f:
                 documents.append({"fichier": nom, "contenu": f.read()})
-    print(f"{len(documents)} fichiers lus.")
+    print(f"📄 {len(documents)} fichiers lus.")
     return documents
