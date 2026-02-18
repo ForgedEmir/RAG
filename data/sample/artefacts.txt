@@ -1,0 +1,62 @@
+Les Artefacts Légendaires d'Aethelgard Online
+
+L'Épée de Vorpal :
+L'arme la plus légendaire d'Aethelgard, autrefois portée par Vorpal le Perdu. 
+Cette épée à deux mains est forgée dans un métal inconnu qui semble absorber la lumière. 
+Elle possède la capacité unique de trancher à travers n'importe quelle matière, 
+mais son pouvoir corrompt l'esprit de son porteur s'il n'est pas assez fort mentalement. 
+L'épée a été perdue lorsque Vorpal a disparu dans les Terres Oubliées. 
+Pour la récupérer, les joueurs doivent compléter la quête légendaire "La Quête de Vorpal", 
+qui nécessite de rassembler 7 fragments de l'âme de Vorpal dispersés dans tout Aethelgard. 
+Chaque fragment est gardé par un boss puissant dans des donjons de niveau 50+.
+
+Le Sceptre du Roi Alaric :
+Symbole du pouvoir royal, ce sceptre est passé de main en main depuis la fondation du Royaume. 
+Il est incrusté de pierres précieuses qui brillent d'une lueur dorée. 
+Le sceptre amplifie les capacités de commandement de son porteur, 
+lui permettant de rallier les troupes plus efficacement en bataille. 
+Il est dit que le sceptre contient un fragment de l'âme du premier roi d'Aethelgard. 
+Seul le souverain légitime peut le manier sans subir de dommages. 
+Les joueurs peuvent l'obtenir en accomplissant la quête "L'Héritier du Trône" 
+après avoir atteint la réputation Exaltée avec le Royaume.
+
+Le Cristal de Lune :
+Un artefact sacré des Elfes de la Lune, créé à partir de la lumière de la pleine lune. 
+Il permet de canaliser la magie lunaire avec une précision accrue. 
+Lady Elara en possède un, et il est dit qu'il est la source de son pouvoir. 
+Les joueurs Elfes peuvent obtenir une version moins puissante en accomplissant 
+la quête "Bénédiction Lunaire" après avoir atteint la réputation Honored avec le Cercle de la Lune.
+
+L'Armure du Gardien du Vide :
+L'ensemble d'armure porté par le Gardien du Vide, faite d'ombres solidifiées. 
+Elle offre une protection contre les dégâts physiques et magiques, 
+mais corrompt lentement l'esprit de celui qui la porte. 
+L'armure est fragmentée en plusieurs parties dispersées dans les Terres Oubliées. 
+Rassembler toutes les pièces permet de créer une réplique jouable, 
+mais seulement les joueurs ayant atteint le niveau 70 et la réputation Exaltée 
+avec la Confrérie du Vide peuvent tenter de l'obtenir.
+
+Le Livre des Ombres :
+Un grimoire ancien contenant des sorts interdits et des rituels dangereux. 
+Il est le livre sacré de la Confrérie du Vide. 
+On dit qu'il contient la clé pour comprendre la magie instable qui affecte Aethelgard. 
+Le livre est gardé dans la Forteresse de l'Ombre et ne peut être consulté 
+que par les membres les plus fidèles de la Confrérie. 
+Les joueurs peuvent obtenir des pages déchirées en accomplissant des quêtes secrètes, 
+mais le livre complet est inaccessible aux non-initiés.
+
+Le Cœur d'Argent :
+Source magique située au cœur de la Forêt Éternelle, 
+alimentant toute la magie lunaire des Elfes de la Lune. 
+C'est un cristal géant qui pulse d'une lumière argentée. 
+Il est protégé par des gardiens spirituels et ne peut être approché que par 
+les Elfes de la Lune de haut rang ou ceux qui ont prouvé leur valeur. 
+Détruire le Cœur d'Argent affaiblirait considérablement la magie des Elfes, 
+mais cela pourrait aussi détruire la Forêt Éternelle.
+
+Le Journal de Vorpal :
+Le journal personnel de Vorpal le Perdu, trouvé dans les ruines de son campement 
+dans les Terres Oubliées. Il contient des indices sur l'emplacement de l'Épée de Vorpal 
+et des révélations sur les dangers des Terres Oubliées. 
+Le journal est un objet de quête rare qui se drop dans les donjons de niveau 50+. 
+Lire le journal permet aux joueurs de débloquer des quêtes secrètes liées à Vorpal.
