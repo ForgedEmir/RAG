@@ -6,13 +6,17 @@ import os
 import hashlib
 import logging
 import chromadb
+from chromadb.utils import embedding_functions
 from typing import Any, List
 
 # Créer un logger pour ce module
 logger = logging.getLogger(__name__)
 
-# Détection de l'environnement Vercel (serverless, filesystem read-only)
-IS_VERCEL = os.environ.get("VERCEL") == "1"
+# Modèle d'embedding multilingue (supporte le français, anglais, etc.)
+# Le modèle par défaut de ChromaDB (all-MiniLM-L6-v2) ne comprend que l'anglais
+EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="paraphrase-multilingual-MiniLM-L12-v2"
+)
 
 
 def _get_collection(force_reindex: bool = False) -> Any:
@@ -20,14 +24,11 @@ def _get_collection(force_reindex: bool = False) -> Any:
     Récupère (ou crée) la collection 'lore' dans ChromaDB.
     Si force_reindex=True, supprime l'ancienne collection pour repartir de zéro.
     """
-    if IS_VERCEL:
-        # Sur Vercel : base en mémoire (pas d'écriture sur le disque)
-        client = chromadb.EphemeralClient()
-    else:
-        # En local : base persistante sur le disque
-        base_dir = os.path.dirname(__file__)
-        db_path = os.path.join(base_dir, "chroma_db")
-        client = chromadb.PersistentClient(path=db_path)
+    base_dir = os.path.dirname(__file__)
+    db_path = os.path.join(base_dir, "chroma_db")
+
+    # Se connecter à la base de données locale
+    client = chromadb.PersistentClient(path=db_path)
 
     # Si on force la réindexation, on supprime l'ancienne collection
     if force_reindex:
@@ -37,8 +38,8 @@ def _get_collection(force_reindex: bool = False) -> Any:
         except Exception:
             pass
 
-    # Récupérer ou créer la collection "lore"
-    return client.get_or_create_collection("lore")
+    # Récupérer ou créer la collection "lore" avec le modèle multilingue
+    return client.get_or_create_collection("lore", embedding_function=EMBEDDING_FUNCTION)
 
 
 def store_in_chromadb(chunks: List[dict], force_reindex: bool = False) -> Any:

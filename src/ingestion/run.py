@@ -9,9 +9,6 @@ import json
 import logging
 from typing import List, Set
 
-# Détection de l'environnement Vercel (serverless, filesystem read-only)
-IS_VERCEL = os.environ.get("VERCEL") == "1"
-
 from src.ingestion.chunker import split_into_chunks
 from src.ingestion.parser import extract_text_from_file, clean_text
 from src.ingestion.loader import (
@@ -40,8 +37,6 @@ SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
 
 def load_memory() -> dict:
     """Charge la mémoire des fichiers déjà traités (depuis le fichier JSON)."""
-    if IS_VERCEL:
-        return {}  # Pas de mémoire persistante sur Vercel
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -50,8 +45,6 @@ def load_memory() -> dict:
 
 def save_memory(fichiers: dict) -> None:
     """Sauvegarde la liste des fichiers traités pour la prochaine exécution."""
-    if IS_VERCEL:
-        return  # Pas d'écriture sur Vercel (filesystem read-only)
     os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
     with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(fichiers, f, indent=2)
