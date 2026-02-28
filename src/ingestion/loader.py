@@ -1,122 +1,85 @@
-from typing import Any, Dict, List
-import chromadb
+"""
+Module loader : gère les interactions avec la base de données ChromaDB.
+Permet d'ajouter, de stocker et de supprimer des textes dans la base.
+"""
 import os
 import hashlib
+import logging
+import chromadb
+from typing import Any, List
+
+# Créer un logger pour ce module
+logger = logging.getLogger(__name__)
 
 
-def stocker_dans_chromadb(chunks_avec_meta: List[Dict[str, Any]], force_reindex: bool = False) -> Any:
+def _get_collection(force_reindex: bool = False) -> Any:
     """
-    Stocke les chunks dans ChromaDB.
-    
-    Args:
-        chunks_avec_meta: Liste des chunks avec leurs métadonnées
-        force_reindex: Si True, supprime et recrée la collection
-    
-    Returns:
-        La collection ChromaDB
+    Récupère (ou crée) la collection 'lore' dans ChromaDB.
+    Si force_reindex=True, supprime l'ancienne collection pour repartir de zéro.
     """
-    # Chemin absolu de la base de données
     base_dir = os.path.dirname(__file__)
     db_path = os.path.join(base_dir, "chroma_db")
-    
+
+    # Se connecter à la base de données locale
     client = chromadb.PersistentClient(path=db_path)
-    
-    # Supprimer la collection existante si force_reindex est True
+
+    # Si on force la réindexation, on supprime l'ancienne collection
     if force_reindex:
         try:
             client.delete_collection("lore")
-            print("🗑️  Collection existante supprimée")
-        except:
+            logger.info("Ancienne collection supprimée.")
+        except Exception:
             pass
-    
-    # Créer ou récupérer la collection
-    try:
-        collection = client.create_collection("lore")
-    except:
-        # La collection existe déjà
-        collection = client.get_collection("lore")
 
-    for i, chunk in enumerate(chunks_avec_meta):
-        # Générer un ID unique basé sur le contenu
-        chunk_id = _generer_id_unique(chunk["texte"], chunk["fichier"], i)
-        collection.add(
-            ids=[chunk_id],
-            documents=[chunk["texte"]],
-            metadatas=[{"fichier": chunk["fichier"]}]
-        )
+    # Récupérer ou créer la collection "lore"
+    return client.get_or_create_collection("lore")
 
-    print(f"💾 {len(chunks_avec_meta)} chunks stockés dans ChromaDB.")
+
+def store_in_chromadb(chunks: List[dict], force_reindex: bool = False) -> Any:
+    """
+    Crée la collection et y stocke tous les morceaux de texte.
+    Utilisé lors d'une réindexation complète.
+    """
+    collection = _get_collection(force_reindex)
+    add_to_chromadb(collection, chunks)
     return collection
 
 
-def ajouter_a_chromadb(collection: Any, chunks_avec_meta: List[Dict[str, Any]]) -> None:
+def add_to_chromadb(collection: Any, chunks: List[dict]) -> None:
     """
-    Ajoute de nouveaux chunks à une collection ChromaDB existante.
-    
-    Args:
-        collection: Collection ChromaDB existante
-        chunks_avec_meta: Liste des nouveaux chunks avec leurs métadonnées
+    Ajoute des morceaux de texte dans la base de données ChromaDB.
+    Chaque morceau reçoit un identifiant unique basé sur son contenu.
     """
-    # Obtenir le nombre actuel de chunks pour générer des IDs uniques
-    count_actuel = collection.count()
-    
-    for i, chunk in enumerate(chunks_avec_meta):
-        # Générer un ID unique basé sur le contenu
-        chunk_id = _generer_id_unique(chunk["texte"], chunk["fichier"], count_actuel + i)
-        
-        try:
-            collection.add(
-                ids=[chunk_id],
-                documents=[chunk["texte"]],
-                metadatas=[{"fichier": chunk["fichier"]}]
-            )
-        except Exception as e:
-            # Si l'ID existe déjà, on continue
-            print(f"⚠️  Chunk déjà existant, ignoré: {e}")
-            continue
-    
-    print(f"💾 {len(chunks_avec_meta)} nouveaux chunks ajoutés à ChromaDB.")
-
-
-def supprimer_fichiers_de_chromadb(collection: Any, fichiers: set) -> None:
-    """
-    Supprime tous les chunks associés aux fichiers spécifiés.
-    
-    Args:
-        collection: Collection ChromaDB
-        fichiers: Ensemble des noms de fichiers à supprimer
-    """
-    # Récupérer tous les documents
-    all_data = collection.get()
-    
-    if not all_data or 'ids' not in all_data or 'metadatas' not in all_data:
+    if not chunks:
         return
-    
-    # Identifier les IDs à supprimer
-    ids_a_supprimer = []
-    for i, metadata in enumerate(all_data['metadatas']):
-        if metadata and metadata.get('fichier') in fichiers:
-            ids_a_supprimer.append(all_data['ids'][i])
-    
-    # Supprimer les chunks
-    if ids_a_supprimer:
-        collection.delete(ids=ids_a_supprimer)
-        print(f"🗑️  {len(ids_a_supprimer)} chunks supprimés de ChromaDB.")
+
+    ids = []
+    textes = []
+    metadatas = []
+
+    for i, chunk in enumerate(chunks):
+        # Créer un identifiant unique à partir du contenu du texte
+        text_hash = hashlib.md5(chunk["texte"].encode('utf-8')).hexdigest()[:16]
+        unique_id = f"{chunk['fichier']}_{i}_{text_hash}"
+
+        ids.append(unique_id)
+        textes.append(chunk["texte"])
+        metadatas.append({"fichier": chunk["fichier"]})
+
+    # Insérer tout d'un coup dans la base
+    collection.add(ids=ids, documents=textes, metadatas=metadatas)
+    logger.info(f"{len(chunks)} morceaux ajoutés à la base de données.")
 
 
-def _generer_id_unique(texte: str, fichier: str, index: int) -> str:
+def remove_files_from_chromadb(collection: Any, fichiers: set) -> None:
     """
-    Génère un ID unique pour un chunk basé sur son contenu.
-    
-    Args:
-        texte: Contenu du chunk
-        fichier: Nom du fichier source
-        index: Index du chunk
-    
-    Returns:
-        Un ID unique sous forme de hash
+    Supprime de la base tous les morceaux liés aux fichiers donnés.
+    Utile quand un fichier a été modifié ou supprimé.
     """
-    # Créer un hash du contenu pour garantir l'unicité
-    contenu = f"{fichier}_{index}_{texte[:50]}"
-    hash_obj = hashlib.md5(contenu.encode('utf-8'))
-    return f"chunk_{hash_obj.hexdigest()[:16]}"
+    if not fichiers:
+        return
+
+    for nom_fichier in fichiers:
+        collection.delete(where={"fichier": nom_fichier})
+
+    logger.info(f"{len(fichiers)} fichier(s) nettoyé(s) de la base.")

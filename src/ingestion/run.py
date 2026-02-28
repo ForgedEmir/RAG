@@ -1,198 +1,176 @@
+"""
+Module run (orchestrateur) : gère tout le processus d'ingestion des données.
+- Lit les fichiers du dossier data/
+- Détecte les fichiers nouveaux, modifiés ou supprimés
+- Met à jour la base de données ChromaDB automatiquement
+"""
 import os
-import chromadb
 import json
-from typing import Dict, List
-from src.ingestion.parser import lire_fichiers_md
-from src.ingestion.chunker import decouper_en_chunks
-from src.ingestion.loader import stocker_dans_chromadb
+import logging
+from typing import List, Set
+
+from src.ingestion.chunker import split_into_chunks
+from src.ingestion.parser import extract_text_from_file, clean_text
+from src.ingestion.loader import (
+    store_in_chromadb,
+    add_to_chromadb,
+    remove_files_from_chromadb,
+    _get_collection
+)
+
+# Créer un logger pour ce module
+logger = logging.getLogger(__name__)
+
+# Chemin vers le dossier contenant les fichiers de données
+DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
+
+# Fichier JSON qui "se souvient" des fichiers déjà traités
+MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metadata.json")
+
+# Types de fichiers acceptés (Marcus demande MD, TXT, CSV, JSON et Excel)
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
 
 
-def indexer_donnees(force_reindex: bool = False, auto_detect_changes: bool = True) -> bool:
+# ============================================================
+#  FONCTIONS UTILITAIRES
+# ============================================================
+
+def load_memory() -> dict:
+    """Charge la mémoire des fichiers déjà traités (depuis le fichier JSON)."""
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+
+def save_memory(fichiers: dict) -> None:
+    """Sauvegarde la liste des fichiers traités pour la prochaine exécution."""
+    os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
+    with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(fichiers, f, indent=2)
+
+
+def list_current_files() -> dict:
     """
-    Indexe les données dans ChromaDB si elles ne sont pas déjà indexées.
-    
-    Args:
-        force_reindex: Si True, force la réindexation complète de tous les fichiers
-        auto_detect_changes: Si True, détecte les nouveaux fichiers, modifications et suppressions
-    
-    Returns:
-        True si l'indexation a été effectuée, False si elle était déjà faite
+    Scanne le dossier data/ et retourne un dictionnaire :
+    { "nom_fichier.md": date_de_modification, ... }
     """
-    # Chemin de la base de données
-    base_dir = os.path.dirname(__file__)
-    db_path = os.path.join(base_dir, "chroma_db")
-    data_path = os.path.normpath(os.path.join(base_dir, "..", "..", "data", "sample"))
-    metadata_path = os.path.join(db_path, "files_metadata.json")
-    
-    # Lister les fichiers .md actuels avec leurs dates de modification
-    fichiers_actuels = {}
-    for f in os.listdir(data_path):
-        if f.endswith(".md"):
-            chemin = os.path.join(data_path, f)
-            mtime = os.path.getmtime(chemin)
-            fichiers_actuels[f] = mtime
-    
-    # Vérifier si l'indexation existe déjà
-    if not force_reindex and os.path.exists(db_path):
+    fichiers = {}
+    if os.path.exists(DATA_FOLDER):
+        for nom in os.listdir(DATA_FOLDER):
+            if nom.lower().endswith(SUPPORTED_EXTENSIONS):
+                chemin = os.path.join(DATA_FOLDER, nom)
+                fichiers[nom] = os.path.getmtime(chemin)
+    return fichiers
+
+
+def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
+    """
+    Pour chaque fichier donné :
+    1. Extrait le texte (peu importe le format)
+    2. Nettoie les balises et variables
+    3. Découpe en petits morceaux
+    Retourne une liste de dictionnaires {"texte": ..., "fichier": ...}
+    """
+    morceaux = []
+
+    for nom in noms_fichiers:
+        chemin = os.path.join(DATA_FOLDER, nom)
+        if not os.path.exists(chemin):
+            continue
+
         try:
-            client = chromadb.PersistentClient(path=db_path)
-            collection = client.get_collection(name="lore")
-            count = collection.count()
-            
-            if count > 0:
-                # Vérifier les changements
-                if auto_detect_changes:
-                    # Récupérer les fichiers déjà indexés
-                    all_data = collection.get()
-                    fichiers_indexes = set()
-                    if all_data and 'metadatas' in all_data:
-                        for metadata in all_data['metadatas']:
-                            if metadata and 'fichier' in metadata:
-                                fichiers_indexes.add(metadata['fichier'])
-                    
-                    # Charger les métadonnées (dates de modification)
-                    fichiers_metadata = {}
-                    if os.path.exists(metadata_path):
-                        with open(metadata_path, 'r', encoding='utf-8') as f:
-                            fichiers_metadata = json.load(f)
-                    
-                    # Identifier les changements
-                    fichiers_actuels_set = set(fichiers_actuels.keys())
-                    nouveaux_fichiers = fichiers_actuels_set - fichiers_indexes
-                    fichiers_supprimes = fichiers_indexes - fichiers_actuels_set
-                    fichiers_modifies = set()
-                    
-                    # Détecter les modifications (changement de date)
-                    for fichier in fichiers_actuels_set & fichiers_indexes:
-                        mtime_actuel = fichiers_actuels[fichier]
-                        mtime_indexe = fichiers_metadata.get(fichier, 0)
-                        if mtime_actuel > mtime_indexe:
-                            fichiers_modifies.add(fichier)
-                    
-                    # Traiter les changements
-                    changements_effectues = False
-                    
-                    if fichiers_supprimes:
-                        print(f"{len(fichiers_supprimes)} fichier(s) supprimé(s): {', '.join(fichiers_supprimes)}")
-                        _supprimer_fichiers_de_db(collection, fichiers_supprimes)
-                        changements_effectues = True
-                    
-                    if fichiers_modifies:
-                        print(f"{len(fichiers_modifies)} fichier(s) modifié(s): {', '.join(fichiers_modifies)}")
-                        print("Réindexation des fichiers modifiés...")
-                        _supprimer_fichiers_de_db(collection, fichiers_modifies)
-                        _indexer_fichiers_incrementale(data_path, fichiers_modifies, collection)
-                        changements_effectues = True
-                    
-                    if nouveaux_fichiers:
-                        print(f"{len(nouveaux_fichiers)} nouveau(x) fichier(s) détecté(s): {', '.join(nouveaux_fichiers)}")
-                        print("Indexation incrémentale en cours...")
-                        _indexer_fichiers_incrementale(data_path, nouveaux_fichiers, collection)
-                        changements_effectues = True
-                    
-                    if changements_effectues:
-                        # Mettre à jour les métadonnées
-                        _sauvegarder_metadata(metadata_path, fichiers_actuels)
-                        return True
-                    else:
-                        print(f"Base de données à jour ({count} chunks, {len(fichiers_indexes)} fichiers)")
-                        return False
-                else:
-                    print(f"Base de données déjà indexée ({count} chunks trouvés)")
-                    return False
+            # Étape 1 : lire le fichier (TXT, MD, CSV, JSON ou Excel)
+            texte_brut = extract_text_from_file(chemin)
+            if not texte_brut:
+                continue
+
+            # Étape 2 : nettoyer les balises HTML et variables
+            texte_propre = clean_text(texte_brut)
+            if not texte_propre:
+                continue
+
+            # Étape 3 : découper en morceaux pour la base de données
+            petits_morceaux = split_into_chunks(texte_propre)
+
+            for morceau in petits_morceaux:
+                morceaux.append({"texte": morceau, "fichier": nom})
+
         except Exception as e:
-            # Collection n'existe pas, on continue l'indexation
-            print(f"Erreur lors de la vérification: {e}")
-            pass
-    
-    print("Indexation complète en cours...")
-    
-    # Lire tous les fichiers
-    documents: List[Dict[str, str]] = lire_fichiers_md(data_path)
-    
-    if not documents:
-        print("Aucun fichier .md trouvé dans", data_path)
+            # Si un fichier pose problème, on le loggue et on continue
+            logger.error(f"Erreur au traitement de {nom} : {e}")
+            continue
+
+    return morceaux
+
+
+# ============================================================
+#  FONCTION PRINCIPALE
+# ============================================================
+
+def index_data(force_reindex: bool = False) -> bool:
+    """
+    Fonction principale d'indexation.
+    - Si force_reindex=True : tout recréer de zéro
+    - Sinon : ne traiter que les fichiers nouveaux ou modifiés
+    """
+    logger.info("Lancement de l'indexation...")
+
+    fichiers_actuels = list_current_files()
+
+    # --- CAS 1 : Réindexation forcée (tout refaire) ---
+    if force_reindex:
+        logger.info("Réindexation complète en cours...")
+        morceaux = prepare_files_for_ai(set(fichiers_actuels.keys()))
+        if morceaux:
+            store_in_chromadb(morceaux, force_reindex=True)
+            save_memory(fichiers_actuels)
+            logger.info("Indexation complète terminée.")
+            return True
+        else:
+            logger.warning("Aucun fichier valide trouvé.")
+            return False
+
+    # --- CAS 2 : Mise à jour intelligente (seulement ce qui a changé) ---
+    memoire = load_memory()
+
+    fichiers_actuels_set = set(fichiers_actuels.keys())
+    fichiers_memoire_set = set(memoire.keys())
+
+    # Trouver les différences avec des opérations sur les ensembles (sets)
+    fichiers_supprimes = fichiers_memoire_set - fichiers_actuels_set
+    fichiers_nouveaux = fichiers_actuels_set - fichiers_memoire_set
+    fichiers_modifies = {
+        nom for nom in (fichiers_actuels_set & fichiers_memoire_set)
+        if fichiers_actuels[nom] > memoire[nom]
+    }
+
+    changements = False
+    collection = _get_collection(force_reindex=False)
+
+    # Étape A : supprimer les anciens contenus de la base
+    a_supprimer = fichiers_supprimes | fichiers_modifies
+    if a_supprimer:
+        logger.info(f"Nettoyage de {len(a_supprimer)} fichier(s)...")
+        remove_files_from_chromadb(collection, a_supprimer)
+        changements = True
+
+    # Étape B : ajouter les nouveaux contenus
+    a_ajouter = fichiers_nouveaux | fichiers_modifies
+    if a_ajouter:
+        logger.info(f"Indexation de {len(a_ajouter)} fichier(s)...")
+        morceaux = prepare_files_for_ai(a_ajouter)
+        add_to_chromadb(collection, morceaux)
+        changements = True
+
+    if changements:
+        save_memory(fichiers_actuels)
+        logger.info("Base de données mise à jour.")
+        return True
+    else:
+        logger.info("La base de données est déjà à jour.")
         return False
-    
-    # Découper en chunks
-    tous_les_chunks: List[Dict[str, str]] = []
-    for doc in documents:
-        chunks = decouper_en_chunks(doc["contenu"])
-        for chunk in chunks:
-            tous_les_chunks.append({"texte": chunk, "fichier": doc["fichier"]})
-    
-    # Stocker dans ChromaDB
-    stocker_dans_chromadb(tous_les_chunks, force_reindex=force_reindex)
-    
-    # Sauvegarder les métadonnées
-    _sauvegarder_metadata(metadata_path, fichiers_actuels)
-    
-    print("✅ Indexation terminée avec succès !")
-    return True
-
-
-def _supprimer_fichiers_de_db(collection, fichiers: set) -> None:
-    """
-    Supprime tous les chunks associés aux fichiers spécifiés de la collection.
-    
-    Args:
-        collection: Collection ChromaDB
-        fichiers: Ensemble des noms de fichiers à supprimer
-    """
-    from src.ingestion.loader import supprimer_fichiers_de_chromadb
-    supprimer_fichiers_de_chromadb(collection, fichiers)
-
-
-def _sauvegarder_metadata(metadata_path: str, fichiers_metadata: Dict[str, float]) -> None:
-    """
-    Sauvegarde les métadonnées des fichiers (dates de modification).
-    
-    Args:
-        metadata_path: Chemin vers le fichier de métadonnées JSON
-        fichiers_metadata: Dictionnaire {nom_fichier: timestamp_modification}
-    """
-    os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
-    with open(metadata_path, 'w', encoding='utf-8') as f:
-        json.dump(fichiers_metadata, f, indent=2)
-
-
-def _indexer_fichiers_incrementale(data_path: str, fichiers: set, collection) -> bool:
-    """
-    Indexe uniquement les fichiers spécifiés de manière incrémentale.
-    
-    Args:
-        data_path: Chemin du dossier contenant les fichiers
-        fichiers: Ensemble des noms de fichiers à indexer
-        collection: Collection ChromaDB existante
-    
-    Returns:
-        True si l'indexation a réussi
-    """
-    from src.ingestion.loader import ajouter_a_chromadb
-    
-    # Lire uniquement les nouveaux fichiers
-    documents: List[Dict[str, str]] = []
-    for nom_fichier in fichiers:
-        chemin_complet = os.path.join(data_path, nom_fichier)
-        if os.path.exists(chemin_complet):
-            with open(chemin_complet, "r", encoding="utf-8") as f:
-                documents.append({"fichier": nom_fichier, "contenu": f.read()})
-    
-    print(f"📄 {len(documents)} nouveau(x) fichier(s) lu(s).")
-    
-    # Découper en chunks
-    nouveaux_chunks: List[Dict[str, str]] = []
-    for doc in documents:
-        chunks = decouper_en_chunks(doc["contenu"])
-        for chunk in chunks:
-            nouveaux_chunks.append({"texte": chunk, "fichier": doc["fichier"]})
-    
-    # Ajouter à la collection existante
-    ajouter_a_chromadb(collection, nouveaux_chunks)
-    print("✅ Indexation incrémentale terminée avec succès !")
-    return True
 
 
 if __name__ == "__main__":
-    # Script exécuté directement
-    indexer_donnees(force_reindex=True)
+    index_data(force_reindex=False)

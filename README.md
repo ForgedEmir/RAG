@@ -1,45 +1,79 @@
-# Projet Oracle — Assistant Intelligent pour le Lore de votre Jeu
+# Projet Oracle — Assistant Intelligent pour le Lore
 
-## Le problème
-
-Votre jeu possède un univers riche et complexe avec des personnages, des factions, des lieux, des événements historiques et une chronologie détaillée. Les nouveaux joueurs se sentent perdus face à cette quantité d'informations et ont du mal à s'immerger dans l'histoire.
-
-## Notre solution
-
-Nous développons un assistant conversationnel intégré à votre univers. Concrètement, un joueur peut poser une question en langage naturel — par exemple *"Qui est le roi des Terres du Nord ?"* ou *"Que s'est-il passé pendant la Guerre des Ombres ?"* — et recevoir une réponse claire, fidèle au lore officiel.
-
-L'assistant ne génère pas de contenu inventé : il se base uniquement sur les documents de lore que vous nous fournissez.
-
-## Ce que l'assistant permet de faire
-
-Les joueurs pourront poser des questions sur les personnages, les lieux, les factions et les événements du jeu. Ils obtiendront des réponses claires et adaptées à leur niveau, avec des références aux documents sources. L'objectif est de leur permettre de retrouver rapidement une information sans devoir chercher dans toute la documentation.
-
-À terme, l'assistant proposera aussi un historique de conversation et le support de différents formats de lore, que nous définirons ensemble.
-
-## Les étapes du projet
-
-Aujourd'hui, nous travaillons sur un premier prototype fonctionnel basé sur un format de document que nous avons choisi pour avancer rapidement.
-
-Lors de notre prochaine rencontre, nous définirons ensemble le format exact de vos documents de lore et vos priorités. Ensuite, nous adapterons le système à vos besoins réels et nous vous présenterons une version démontrable. 
-
-La dernière étape sera la livraison d'une version finalisée, testée et prête à être utilisée par vos joueurs.
-
-Voici un aperçu simplifié du fonctionnement :   
-
-![Schéma du processus](docs/BPMN/bpmn-interaction-user-ia.png)
-
-## Ce dont nous avons besoin de votre part
-
-Pour avancer efficacement, nous aurons besoin des documents de lore de votre jeu (le format sera défini ensemble lors de notre réunion). Il serait aussi utile de connaître vos priorités, notamment les questions que les joueurs posent le plus souvent. Enfin, vos retours à chaque étape nous permettront d'ajuster la solution au mieux.
-
-## L'équipe
-
-Le projet est porté par les Lorekeepers, une équipe de quatre développeurs. Emir coordonne le projet et gère l'ingestion des données. Ediz s'occupe de la recherche dans la base de données. Nicolas développe le module de génération de réponses. Tom conçoit l'interface utilisateur et la documentation.
-
-## Suivi du projet
-
-L'avancement est visible en temps réel sur notre dépôt GitLab. Chaque fonctionnalité est suivie et documentée. Pour toute question ou demande, n'hésitez pas à nous contacter lors de nos réunions planifiées ou via une issue sur le dépôt.
+Le **Projet Oracle** est un assistant conversationnel intelligent (RAG) conçu pour interagir avec l'univers et le lore de votre jeu. Les joueurs peuvent poser des questions en langage naturel et obtenir des réponses fiables, basées *exclusivement* sur vos documents officiels.
 
 ---
 
-*Projet Oracle — Développé pour rendre votre univers accessible à tous les joueurs.*
+## 🚀 Prérequis
+
+Pour faire fonctionner le projet sur votre machine, vous aurez besoin de :
+- **Python 3.11** (Recommandé pour la stabilité avec les modèles d'IA)
+- **Git** (Pour cloner le dépôt)
+
+---
+
+## 🛠️ Installation
+
+**1. Cloner le projet**
+```bash
+git clone https://votre-repo-gitlab.com/lorekeepers/projet-oracle.git
+cd projet-oracle
+```
+
+**2. Créer un environnement virtuel**
+Il est fortement recommandé de créer un environnement virtuel pour isoler les dépendances.
+```bash
+# Sous Windows
+python -m venv venv
+venv\Scripts\activate
+
+# Sous MacOS / Linux
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**3. Installer les dépendances**
+Le fichier `requirements.txt` contient toutes les bibliothèques nécessaires (Flask, ChromaDB, OpenAI, etc.).
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 🔐 Configuration
+
+L'assistant utilise l'intelligence artificielle d'OpenAI pour générer les réponses. Vous devez fournir votre propre clé API.
+
+1. Faites une copie du fichier `.env.example` et renommez-la en `.env` :
+   ```bash
+   # Sous Windows
+   copy .env.example .env
+
+   # Sous MacOS / Linux
+   cp .env.example .env
+   ```
+2. Ouvrez ce nouveau fichier `.env` et remplacez `"votre_cle_api_ici"` par votre véritable clé OpenAI. 
+*(Note : Ce fichier est ignoré par Git et restera strictement confidentiel sur votre machine).*
+
+---
+
+## 🏃‍♂️ Lancement du projet
+
+Le projet est conçu pour être lancé via un seul point d'entrée qui s'occupe de tout : l'ingestion de vos documents de lore et le lancement du serveur web.
+
+1. Placez vos documents Markdown (`.md`) dans le dossier `data/sample/`.
+2. Lancez l'application :
+```bash
+python main.py
+```
+3. L'intelligence artificielle va lire vos documents, les découper intelligemment et les stocker dans la base de données. 
+4. Une fois l'indexation terminée, le serveur sera accessible à l'adresse : `http://127.0.0.1:5000`
+
+---
+
+## 👥 L'équipe Lorekeepers
+
+- **Emir** : Ingestion des données
+- **Ediz** : Recherche vectorielle (Base de données)
+- **Nicolas** : Génération de réponses (IA)
+- **Tom** : Interface Utilisateur & Documentation
