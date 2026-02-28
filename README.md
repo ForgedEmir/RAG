@@ -42,7 +42,9 @@ pip install -r requirements.txt
 
 ## 🔐 Configuration
 
-L'assistant utilise l'intelligence artificielle d'OpenAI pour générer les réponses. Vous devez fournir votre propre clé API.
+L'assistant utilise l'intelligence artificielle de **DeepSeek** pour générer les réponses, et **FastEmbed** pour comprendre le texte localement (en français) sans surcharger votre machine.
+
+Vous devez fournir votre propre clé API DeepSeek.
 
 1. Faites une copie du fichier `.env.example` et renommez-la en `.env` :
    ```bash
@@ -52,7 +54,7 @@ L'assistant utilise l'intelligence artificielle d'OpenAI pour générer les rép
    # Sous MacOS / Linux
    cp .env.example .env
    ```
-2. Ouvrez ce nouveau fichier `.env` et remplacez `"votre_cle_api_ici"` par votre véritable clé OpenAI. 
+2. Ouvrez ce nouveau fichier `.env` et remplacez `"votre_cle_api_ici"` par votre véritable clé API **DeepSeek** (et non OpenAI). 
 *(Note : Ce fichier est ignoré par Git et restera strictement confidentiel sur votre machine).*
 
 ---
