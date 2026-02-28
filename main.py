@@ -30,9 +30,14 @@ CORS(app)  # Permet au frontend d'appeler l'API sans erreur de sécurité naviga
 # On branche toutes les routes (pages web + API) à notre application
 register_routes(app)
 
+# Sur Vercel, on indexe les données au chargement du module (mode éphémère)
+if os.environ.get("VERCEL") == "1":
+    index_data(force_reindex=True)
+
 if __name__ == "__main__":
-    # Au démarrage, on vérifie si de nouveaux fichiers doivent être ajoutés à la base
+    # Au démarrage local, on vérifie si de nouveaux fichiers doivent être ajoutés
     index_data(force_reindex=False)
 
     # Lancer le serveur sur le port 5000 (accessible depuis le navigateur)
     app.run(host="0.0.0.0", port=5000, debug=True)
+

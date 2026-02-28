@@ -2,19 +2,13 @@
 Module de recherche : interroge la base de données vectorielle ChromaDB
 pour trouver les passages de texte les plus proches de la question posée.
 """
-import os
 import logging
-import chromadb
 from typing import List, Tuple
+
+from src.ingestion.loader import _get_collection
 
 # Créer un logger pour ce module
 logger = logging.getLogger(__name__)
-
-# --- Client ChromaDB créé une seule fois (singleton) ---
-# Évite de reconnecter la base à chaque question posée
-_base_dir = os.path.dirname(__file__)
-_db_path = os.path.normpath(os.path.join(_base_dir, "..", "ingestion", "chroma_db"))
-_client_db = chromadb.PersistentClient(path=_db_path)
 
 
 def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
@@ -27,7 +21,7 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
     Returns:
         Un tuple (liste de passages trouvés, liste des fichiers sources)
     """
-    collection = _client_db.get_or_create_collection(name="lore")
+    collection = _get_collection()
 
     # Lancer la recherche par similarité (ChromaDB compare les vecteurs automatiquement)
     results = collection.query(
