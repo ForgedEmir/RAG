@@ -1,6 +1,7 @@
 """
-Module parser : lit les fichiers de données (TXT, MD, CSV, JSON, Excel)
-et en extrait le texte brut. Nettoie aussi les balises HTML et les variables de jeu.
+L'extracteur universel.
+Son but est de lire tous les types de fichiers (Markdown, CSV, Excel, JSON...) 
+et de les transformer en texte brut et propre, prêt à être indexé.
 """
 import os
 import re
@@ -9,49 +10,45 @@ import json
 import logging
 from typing import Optional
 
-# Créer un logger pour ce module
 logger = logging.getLogger(__name__)
 
 
 def clean_text(raw_text: str) -> str:
     """
-    Nettoie un texte brut :
-    - Supprime les balises HTML/XML comme <color=red> ou </b>
-    - Remplace les variables comme %PLAYER_NAME% par "le joueur"
-    - Supprime les espaces en trop
+    La moulinette de nettoyage.
+    Prend du texte brut plein de balises de code et le rend propre et lisible pour l'IA.
     """
     if not raw_text:
         return ""
 
-    # Supprimer les balises HTML/XML avec une expression régulière (regex)
+    # On utilise une expression régulière (Regex) pour effacer tout ce qui ressemble à une balise <...>.
     text = re.sub(r'<[^>]+>', '', raw_text)
 
-    # Remplacer les variables connues par des termes lisibles
+    # Il y a aussi des variables de code du jeu. On les remplace par du texte en bon français.
     text = text.replace('%PLAYER_NAME%', 'le joueur')
 
-    # Supprimer les autres variables inconnues (ex: %QUEST_NAME%, %NPC_NAME%)
+    # Et si on croise d'autres variables magiques genre %NP_NAME% ou %QUEST_24%, on les supprime carrément.
     text = re.sub(r'%[A-Z_]+%', '', text)
 
-    # Nettoyer les espaces en double et retourner le résultat
+    # Enfin, on vire les doubles ou triples espaces créés par nos nettoyages précédents.
     return " ".join(text.split())
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
     """
-    Lit un fichier et en extrait le texte selon son format.
-    Supporte : .txt, .md, .csv, .json, .xlsx
-    Retourne None si le fichier est illisible (ne plante jamais).
+    Le couteau suisse de la lecture de fichiers.
+    Il regarde l'extension du fichier et utilise la bonne méthode pour l'ouvrir.
+    S'il n'y arrive pas, il retourne 'None' au lieu de faire crasher toute l'application.
     """
     if not os.path.exists(filepath):
-        logger.error(f"Le fichier {filepath} n'existe pas.")
+        logger.error(f"Oups, le fichier {filepath} semble avoir disparu.")
         return None
 
-    # Récupérer l'extension du fichier (.txt, .md, .csv, .json, .xlsx)
     _, extension = os.path.splitext(filepath)
     extension = extension.lower()
 
     try:
-        # --- Fichiers texte simples (TXT et Markdown) ---
+        # --- Fichiers texte normaux ---
         if extension in ['.txt', '.md']:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -62,43 +59,46 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
                 data = json.load(f)
                 return _extraire_texte_json(data)
 
-        # --- Fichiers CSV ---
+        # --- Fichiers d'espacement (CSV) ---
         elif extension == '.csv':
             lignes = []
             with open(filepath, 'r', encoding='utf-8') as f:
-                # Détecter automatiquement le séparateur (virgule, point-virgule, tabulation...)
+                # Le csv.Sniffer est intelligent : il devine tout seul si le fichier
+                # utilise des virgules, des points-virgules ou des tabulations.
                 contenu = f.read()
                 dialect = csv.Sniffer().sniff(contenu)
                 f.seek(0)
                 reader = csv.reader(f, dialect)
                 for row in reader:
-                    # On assemble chaque ligne du CSV en une phrase
+                    # On transforme chaque ligne du tableau en une phrase simple
                     ligne = " ".join([cell for cell in row if cell.strip()])
                     if ligne:
                         lignes.append(ligne)
             return "\n".join(lignes)
 
-        # --- Fichiers Excel ---
+        # --- Fichiers lourd (Excel) ---
         elif extension == '.xlsx':
             return _extraire_texte_excel(filepath)
 
         else:
-            logger.warning(f"Format non supporté : {extension}")
+            logger.warning(f"Format non supporté : {extension}. Ce fichier sera ignoré.")
             return None
 
     except Exception as e:
-        # Si le fichier est corrompu, on loggue l'erreur mais on ne plante pas
-        logger.error(f"Erreur lors de la lecture de {filepath} : {e}")
+        # La philosophie ici : on log l'erreur pour pouvoir la réparer plus tard,
+        # mais on laisse l'application tourner tranquillement.
+        logger.error(f"Un problème est survenu en lisant {filepath} : {e}")
         return None
 
 
 def _extraire_texte_excel(filepath: str) -> str:
     """
-    Lit un fichier Excel (.xlsx) et en extrait le texte.
-    Chaque ligne du tableur est convertie en texte : "Colonne1: Valeur1 | Colonne2: Valeur2"
+    Petite bidouille pour lire les fichiers Excel fournis par le professeur.
+    On prend chaque ligne et on recrée un texte de type : "Colonne: Valeur | Autre: Valeur".
     """
     import openpyxl
 
+    # On l'ouvre en mode "read_only" pour économiser de la mémoire RAM
     classeur = openpyxl.load_workbook(filepath, read_only=True)
     lignes = []
 
@@ -109,10 +109,10 @@ def _extraire_texte_excel(filepath: str) -> str:
         if not rows:
             continue
 
-        # La première ligne contient les noms de colonnes (en-têtes)
+        # La toute première ligne contient généralement le titre des colonnes
         en_tetes = [str(cell.value or "") for cell in rows[0]]
 
-        # Chaque ligne suivante est convertie en texte lisible
+        # Ensuite, on boucle sur les vraies données
         for row in rows[1:]:
             parties = []
             for i, cell in enumerate(row):
@@ -128,12 +128,13 @@ def _extraire_texte_excel(filepath: str) -> str:
 
 def _extraire_texte_json(data, niveau: int = 0) -> str:
     """
-    Parcourt un JSON de manière récursive pour en extraire le texte
-    sous forme lisible : "Clé: Valeur" sur chaque ligne.
+    Prend un fichier JSON (avec potentiellement des listes et des dictionnaires imbriqués)
+    et le déballe récursivement pour en faire du texte lisible platement.
     """
     lignes = []
-    espace = "  " * niveau  # Indentation pour la lisibilité
+    espace = "  " * niveau
 
+    # Si c'est un dictionnaire (ex: un objet comme un item ou un monstre)
     if isinstance(data, dict):
         for cle, valeur in data.items():
             if isinstance(valeur, (dict, list)):
@@ -142,11 +143,13 @@ def _extraire_texte_json(data, niveau: int = 0) -> str:
             else:
                 lignes.append(f"{espace}{cle}: {valeur}")
 
+    # Si c'est un tableau de choses
     elif isinstance(data, list):
         for element in data:
             lignes.append(_extraire_texte_json(element, niveau))
             lignes.append(f"{espace}---")
 
+    # Si c'est juste une valeur finale (chiffre, mot)
     else:
         lignes.append(f"{espace}{data}")
 

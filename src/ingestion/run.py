@@ -1,8 +1,8 @@
 """
-Module run (orchestrateur) : gère tout le processus d'ingestion des données.
-- Lit les fichiers du dossier data/
-- Détecte les fichiers nouveaux, modifiés ou supprimés
-- Met à jour la base de données ChromaDB automatiquement
+Le maestro du projet.
+C'est le script qui orchestre toute la chaîne de traitement (l'ingestion de données).
+Il repère quelles archives sont nouvelles ou modifiées, les fait lire par le `parser`, 
+les fait découper par le `chunker`, puis les fait stocker par le `loader`.
 """
 import os
 import json
@@ -18,25 +18,25 @@ from src.ingestion.loader import (
     _get_collection
 )
 
-# Créer un logger pour ce module
 logger = logging.getLogger(__name__)
 
-# Chemin vers le dossier contenant les fichiers de données
+# On part du principe que nos archives de lore sont dans le dossier data/sample/
 DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
 
-# Fichier JSON qui "se souvient" des fichiers déjà traités
+# Pour éviter de relire tous les fichiers à chaque fois qu'on lance l'app,
+# on se crée un petit carnet de notes (JSON) avec la date de dernière modif de chaque fichier.
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metadata.json")
 
-# Types de fichiers acceptés (Marcus demande MD, TXT, CSV, JSON et Excel)
+# Les formats demandés par le cahier des charges de Marcus/Emir
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
 
 
 # ============================================================
-#  FONCTIONS UTILITAIRES
+#  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
 # ============================================================
 
 def load_memory() -> dict:
-    """Charge la mémoire des fichiers déjà traités (depuis le fichier JSON)."""
+    """Lit notre petit carnet de notes pour savoir ce qu'on a déjà traité."""
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -44,7 +44,7 @@ def load_memory() -> dict:
 
 
 def save_memory(fichiers: dict) -> None:
-    """Sauvegarde la liste des fichiers traités pour la prochaine exécution."""
+    """Met à jour notre carnet de notes avec les dernières dates de modif."""
     os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
     with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(fichiers, f, indent=2)
@@ -52,8 +52,8 @@ def save_memory(fichiers: dict) -> None:
 
 def list_current_files() -> dict:
     """
-    Scanne le dossier data/ et retourne un dictionnaire :
-    { "nom_fichier.md": date_de_modification, ... }
+    Jette un oeil dans le dossier data/ et note la date de chaque fichier.
+    Format de retour : { "persos.md": 1705322941.5, ... }
     """
     fichiers = {}
     if os.path.exists(DATA_FOLDER):
@@ -66,11 +66,8 @@ def list_current_files() -> dict:
 
 def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     """
-    Pour chaque fichier donné :
-    1. Extrait le texte (peu importe le format)
-    2. Nettoie les balises et variables
-    3. Découpe en petits morceaux
-    Retourne une liste de dictionnaires {"texte": ..., "fichier": ...}
+    Le pipeline de bout en bout pour une liste de fichiers donnés.
+    On lit -> on nettoie -> on découpe.
     """
     morceaux = []
 
@@ -80,66 +77,67 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
             continue
 
         try:
-            # Étape 1 : lire le fichier (TXT, MD, CSV, JSON ou Excel)
+            # 1. On donne le fichier au parser pour qu'il le traduise en texte brut
             texte_brut = extract_text_from_file(chemin)
             if not texte_brut:
                 continue
 
-            # Étape 2 : nettoyer les balises HTML et variables
+            # 2. On enlève toute la tuyauterie HTML/Jeu
             texte_propre = clean_text(texte_brut)
             if not texte_propre:
                 continue
 
-            # Étape 3 : découper en morceaux pour la base de données
+            # 3. On demande au chunker d'en faire des paragraphes taillés pour ChromaDB
             petits_morceaux = split_into_chunks(texte_propre)
 
             for morceau in petits_morceaux:
                 morceaux.append({"texte": morceau, "fichier": nom})
 
         except Exception as e:
-            # Si un fichier pose problème, on le loggue et on continue
-            logger.error(f"Erreur au traitement de {nom} : {e}")
+            logger.error(f"Erreur imprévue pendant le traitement de {nom} : {e}")
             continue
 
     return morceaux
 
 
 # ============================================================
-#  FONCTION PRINCIPALE
+#  FONCTION PRINCIPALE D'ORCHESTRATION
 # ============================================================
 
 def index_data(force_reindex: bool = False) -> bool:
     """
-    Fonction principale d'indexation.
-    - Si force_reindex=True : tout recréer de zéro
-    - Sinon : ne traiter que les fichiers nouveaux ou modifiés
+    C'est la méthode qu'on appelle depuis main.py au démarrage.
+    Elle est suffisamment intelligente pour ne travailler que sur ce qui a changé.
     """
-    logger.info("Lancement de l'indexation...")
+    logger.info("Vérification des archives de lore en cours...")
 
     fichiers_actuels = list_current_files()
 
-    # --- CAS 1 : Réindexation forcée (tout refaire) ---
+    # --- CAS 1 : On nous demande explicitement de tout reconstruire ---
     if force_reindex:
-        logger.info("Réindexation complète en cours...")
+        logger.info("Destruction de la mémoire et réindexation totale...")
         morceaux = prepare_files_for_ai(set(fichiers_actuels.keys()))
         if morceaux:
             store_in_chromadb(morceaux, force_reindex=True)
             save_memory(fichiers_actuels)
-            logger.info("Indexation complète terminée.")
+            logger.info("Fin de la reconstruction de la base !")
             return True
         else:
-            logger.warning("Aucun fichier valide trouvé.")
+            logger.warning("Rien de valide n'a été trouvé pour peupler la base.")
             return False
 
-    # --- CAS 2 : Mise à jour intelligente (seulement ce qui a changé) ---
+    # --- CAS 2 : On fait une petite mise à jour intelligente ---
     memoire = load_memory()
 
+    # Les 'sets' de Python sont parfaits pour trouver rapidement
+    # ce qui a été ajouté, retiré, ou modifié.
     fichiers_actuels_set = set(fichiers_actuels.keys())
     fichiers_memoire_set = set(memoire.keys())
 
-    # Trouver les différences avec des opérations sur les ensembles (sets)
     fichiers_supprimes = fichiers_memoire_set - fichiers_actuels_set
     fichiers_nouveaux = fichiers_actuels_set - fichiers_memoire_set
+    
+    # Un fichier est considéré comme "modifié" si sa date réelle est plus récente que dans notre carnet
     fichiers_modifies = {
         nom for nom in (fichiers_actuels_set & fichiers_memoire_set)
         if fichiers_actuels[nom] > memoire[nom]
@@ -148,29 +146,31 @@ def index_data(force_reindex: bool = False) -> bool:
     changements = False
     collection = _get_collection(force_reindex=False)
 
-    # Étape A : supprimer les anciens contenus de la base
+    # Étape A: Si un fichier a disparu ou été modifié, on commence par retirer sa vieille version de ChromeDB
     a_supprimer = fichiers_supprimes | fichiers_modifies
     if a_supprimer:
-        logger.info(f"Nettoyage de {len(a_supprimer)} fichier(s)...")
+        logger.info(f"On nettoie les anciennes traces de {len(a_supprimer)} fichier(s)...")
         remove_files_from_chromadb(collection, a_supprimer)
         changements = True
 
-    # Étape B : ajouter les nouveaux contenus
+    # Étape B: On donne au loader les tout nouveaux fichiers, ainsi que les nouvelles versions fraîchement corrigées
     a_ajouter = fichiers_nouveaux | fichiers_modifies
     if a_ajouter:
-        logger.info(f"Indexation de {len(a_ajouter)} fichier(s)...")
+        logger.info(f"Traitement de {len(a_ajouter)} nouveau(x) fichier(s)...")
         morceaux = prepare_files_for_ai(a_ajouter)
         add_to_chromadb(collection, morceaux)
         changements = True
 
+    # Bilan
     if changements:
         save_memory(fichiers_actuels)
-        logger.info("Base de données mise à jour.")
+        logger.info("Mise à jour incrémentale terminée avec succès.")
         return True
     else:
-        logger.info("La base de données est déjà à jour.")
+        logger.info("Rien n'a bougé. Les archives sont toujours à jour.")
         return False
 
 
 if __name__ == "__main__":
+    # Test local rapide si jamais on exécute juste ce fichier
     index_data(force_reindex=False)

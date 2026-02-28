@@ -1,6 +1,7 @@
 """
-Module de génération : envoie la question + les passages trouvés
-à l'IA DeepSeek pour obtenir une réponse naturelle.
+Ce module donne une "voix" à notre système.
+Il envoie les textes qu'on a trouvés + la question à DeepSeek (notre IA), 
+et lui demande de rédiger une réponse de façon naturelle au lieu de simplement copier-coller.
 """
 import os
 import logging
@@ -8,14 +9,14 @@ from typing import List
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Créer un logger pour ce module
 logger = logging.getLogger(__name__)
 
-# Charger la clé API depuis le fichier .env
+# On s'assure que les variables d'environnement (.env) sont bien lues
 load_dotenv()
 
-# --- Client OpenAI créé une seule fois (singleton) ---
-# Évite de recréer la connexion à chaque question posée
+# On initialise le client OpenAI (ici configuré pour l'API de DeepSeek).
+# On le fait une seule fois au chargement du fichier (singleton) plutôt que 
+# de se reconnecter à chaque fois qu'un utilisateur pose une question.
 _api_key = os.getenv("OPENAI_API_KEY")
 _client = OpenAI(
     api_key=_api_key,
@@ -25,26 +26,18 @@ _client = OpenAI(
 
 def generer_reponse(question: str, passages: List[str], sources: List[str] = None) -> str:
     """
-    Génère une réponse en se basant UNIQUEMENT sur les passages fournis.
-
-    Args:
-        question : la question de l'utilisateur
-        passages : liste de textes pertinents trouvés dans la base
-        sources  : liste des noms de fichiers d'où proviennent les passages
-
-    Returns:
-        La réponse générée par l'IA DeepSeek
+    Le prompt "RAG" classique.
+    On donne des instructions strictes à l'IA pour qu'elle ne se base QUE
+    sur les morceaux de texte qu'on lui fournit, afin d'éviter les "hallucinations".
     """
     if not _client:
-        raise ValueError("Clé OPENAI_API_KEY introuvable. Vérifiez votre fichier .env")
+        raise ValueError("Clé OPENAI_API_KEY manquante. Vérifie ton fichier .env pour pouvoir utiliser l'IA.")
 
-    # Fusionner tous les passages en un seul bloc de texte
+    # On colle tous les résultats trouvés par ChromaDB en un seul gros bloc de texte
     contexte = "\n\n".join(passages)
-
-    # Préparer la liste des sources pour que l'IA puisse les citer
     liste_sources = ", ".join(sources) if sources else "sources inconnues"
 
-    # Envoyer la question à l'IA avec les instructions et le contexte
+    # L'appel à l'API LLM pour la complétion de chat
     response = _client.chat.completions.create(
         model="deepseek-chat",
         messages=[
@@ -52,11 +45,11 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
                 "role": "system",
                 "content": (
                     "Tu es un assistant spécialisé dans le lore du jeu Aethelgard Online. "
-                    "Réponds uniquement avec les informations du contexte ci-dessous. "
-                    "N'invente rien. Si tu ne trouves pas l'info, dis-le simplement. "
-                    "Cite le fichier source entre parenthèses quand tu donnes une information "
-                    f"(sources disponibles : {liste_sources}).\n\n"
-                    f"Contexte :\n{contexte}"
+                    "Réponds uniquement en te basant sur les informations du contexte fourni. "
+                    "N'invente absolument rien. Si l'information ne s'y trouve pas, dis-le honnêtement. "
+                    "Assure-toi de citer le fichier source entre parenthèses lorsque tu donnes une information "
+                    f"(pour t'aider, les sources de ce contexte sont : {liste_sources}).\n\n"
+                    f"Voici ton contexte de référence :\n{contexte}"
                 )
             },
             {
@@ -64,10 +57,11 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
                 "content": question
             }
         ],
+        # Une température basse (0.2) rend l'IA plus factuelle et moins "créative/inventive"
         temperature=0.2
     )
 
-    logger.info(f"Réponse générée pour la question : '{question}'")
-
-    # Extraire et retourner le texte de la réponse
+    logger.info(f"L'IA a terminé de rédiger sa réponse.")
+    
+    # On renvoie juste le texte généré final
     return response.choices[0].message.content.strip()
