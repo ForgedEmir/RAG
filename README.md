@@ -16,7 +16,7 @@ Pour faire fonctionner le projet sur votre machine, vous aurez besoin de :
 
 **1. Cloner le projet**
 ```bash
-git clone https://votre-repo-gitlab.com/lorekeepers/projet-oracle.git
+git clone https://git.helmo.be/q240047/projet-oracle.git
 cd projet-oracle
 ```
 
