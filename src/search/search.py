@@ -20,7 +20,7 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
     """
     collection = _get_collection()
 
-    # ChromaDB fait la magie mathématique de comparaison ('embeddings') en arrière-plan.
+    # ChromaDB fait la mathématique de comparaison ('embeddings') en arrière-plan.
     # On lui demande de nous ramener strictement les 3 meilleurs "paragraphes".
     results = collection.query(
         query_texts=[question],

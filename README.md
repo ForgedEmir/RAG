@@ -70,3 +70,13 @@ python main.py
 ```
 3. L'intelligence artificielle va lire vos documents, les découper intelligemment et les stocker dans la base de données. 
 4. Une fois l'indexation terminée, le serveur sera accessible à l'adresse : `http://127.0.0.1:5000`
+
+---
+
+## 🌍 Déploiement (Production)
+
+Ce projet est prêt à être hébergé gratuitement sur des plateformes comme **Railway** ou **Render** :
+1. Connectez votre dépôt Git à la plateforme.
+2. La plateforme va détecter automatiquement qu'il s'agit d'un projet Python grâce à `requirements.txt` et `main.py`.
+3. **Important** : N'oubliez pas d'ajouter votre variable d'environnement `OPENAI_API_KEY` dans les paramètres (Variables) de votre hébergeur web pour que l'IA fonctionne !
+4. La plateforme s'occupera d'attribuer le bon port dynamique.

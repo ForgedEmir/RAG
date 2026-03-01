@@ -7,7 +7,7 @@ des Elfes de la Lune conformément au Pacte Ancien. Lady Elara, croyant que les 
 préserver leurs forces pour une menace plus grande (le Vide), a refusé d'intervenir. 
 En conséquence, la Capitale a été presque détruite et des milliers de civils ont péri. 
 Depuis ce jour, le Roi voue une haine farouche aux Elfes et a déclaré la guerre à leur faction. 
-Les joueurs qui participent à cet événement reçoivent le titre "Survivant de la Nuit des Larmes".
+Les joueurs qui participent à cet événement reçoivent le titre "Survivant de la Nuit des Larmes". 
 
 ## La Découverte de l'Épée de Vorpal (2018)
 Lors de l'extension "Lames Légendaires", les joueurs ont découvert que l'Épée de Vorpal, 

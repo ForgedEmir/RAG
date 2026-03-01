@@ -27,8 +27,13 @@ def clean_text(raw_text: str) -> str:
     # Il y a aussi des variables de code du jeu. On les remplace par du texte en bon français.
     text = text.replace('%PLAYER_NAME%', 'le joueur')
 
-    # Et si on croise d'autres variables magiques genre %NP_NAME% ou %QUEST_24%, on les supprime carrément.
-    text = re.sub(r'%[A-Z_]+%', '', text)
+    def replace_unknown_vars(match):
+        # We just return the word without the % signs
+        return match.group(0).replace('%', '')
+
+    # Et si on croise d'autres variables magiques genre %NPC_NAME% ou %QUEST_24%,
+    # on garde le nom de la variable sans les % pour que l'IA ait du contexte.
+    text = re.sub(r'%[A-Z_0-9]+%', replace_unknown_vars, text)
 
     # Enfin, on vire les doubles ou triples espaces créés par nos nettoyages précédents.
     return " ".join(text.split())
@@ -76,7 +81,7 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
                         lignes.append(ligne)
             return "\n".join(lignes)
 
-        # --- Fichiers lourd (Excel) ---
+        # --- Fichiers Excel ---
         elif extension == '.xlsx':
             return _extraire_texte_excel(filepath)
 
@@ -93,7 +98,6 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
 
 def _extraire_texte_excel(filepath: str) -> str:
     """
-    Petite bidouille pour lire les fichiers Excel fournis par le professeur.
     On prend chaque ligne et on recrée un texte de type : "Colonne: Valeur | Autre: Valeur".
     """
     import openpyxl

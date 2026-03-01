@@ -31,9 +31,7 @@ MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metada
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
 
 
-# ============================================================
 #  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
-# ============================================================
 
 def load_memory() -> dict:
     """Lit notre petit carnet de notes pour savoir ce qu'on a déjà traité."""
@@ -100,9 +98,8 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     return morceaux
 
 
-# ============================================================
 #  FONCTION PRINCIPALE D'ORCHESTRATION
-# ============================================================
+
 
 def index_data(force_reindex: bool = False) -> bool:
     """
