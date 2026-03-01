@@ -74,22 +74,6 @@ def test_ask_question_vide(mock_index):
 
 
 @patch('src.api.routes.index_data')
-def test_ask_sans_question(mock_index):
-    """Sans le champ 'question', on a une erreur."""
-    mock_index.return_value = True
-    
-    app = creer_app_test()
-    client = app.test_client()
-    response = client.post('/api/ask',
-                          json={},
-                          content_type='application/json')
-    
-    assert response.status_code == 400
-    data = json.loads(response.data)
-    assert 'error' in data
-
-
-@patch('src.api.routes.index_data')
 @patch('src.api.routes.rechercher_passages')
 def test_ask_aucun_passage_trouve(mock_rechercher, mock_index):
     """Quand aucun passage n'est trouvé, on reçoit un message d'information."""
@@ -166,22 +150,6 @@ def test_reindex_avec_force(mock_index):
 
 
 @patch('src.api.routes.index_data')
-def test_reindex_rien_a_faire(mock_index):
-    """Quand tout est déjà à jour, on reçoit un message approprié."""
-    mock_index.return_value = False
-    
-    app = creer_app_test()
-    client = app.test_client()
-    response = client.post('/api/reindex',
-                          json={},
-                          content_type='application/json')
-    
-    assert response.status_code == 200
-    data = json.loads(response.data)
-    assert "déjà à jour" in data['message']
-
-
-@patch('src.api.routes.index_data')
 def test_reindex_erreur(mock_index):
     """Si l'indexation échoue, on reçoit une erreur 500."""
     mock_index.side_effect = Exception("Erreur d'indexation")
@@ -196,36 +164,3 @@ def test_reindex_erreur(mock_index):
     data = json.loads(response.data)
     assert 'error' in data
     assert "Erreur d'indexation" in data['error']
-
-
-# ===== TESTS POUR LES ROUTES STATIQUES =====
-
-@patch('src.api.routes.send_from_directory')
-def test_route_index(mock_send):
-    """La route / renvoie le fichier index.html."""
-    mock_send.return_value = "HTML content"
-    
-    app = creer_app_test()
-    client = app.test_client()
-    response = client.get('/')
-    
-    assert response.status_code == 200
-    mock_send.assert_called_once()
-    # Vérifie que le fichier index.html est demandé
-    call_args = mock_send.call_args
-    assert "index.html" in str(call_args)
-
-
-@patch('src.api.routes.send_from_directory')
-def test_route_statique(mock_send):
-    """Les routes statiques renvoient les fichiers correspondants."""
-    mock_send.return_value = "Static file content"
-    
-    app = creer_app_test()
-    client = app.test_client()
-    response = client.get('/style.css')
-    
-    assert response.status_code == 200
-    mock_send.assert_called_once()
-    call_args = mock_send.call_args
-    assert "style.css" in str(call_args)

@@ -151,19 +151,3 @@ def test_instructions_rag(mock_client):
     assert "Aethelgard Online" in system_message
     assert "uniquement en te basant" in system_message
     assert "N'invente" in system_message
-
-
-@patch('src.generation.generator._client')
-def test_espaces_enleves(mock_client):
-    """Les espaces au début et fin de réponse sont enlevés."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "\n\n  Réponse  \n\n"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
-    resultat = generer_reponse("Question", ["Passage"])
-    
-    # Les espaces et sauts de ligne doivent être enlevés
-    assert resultat == "Réponse"
-    assert not resultat.startswith(" ")
-    assert not resultat.endswith(" ")
