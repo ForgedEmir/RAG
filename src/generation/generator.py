@@ -47,7 +47,6 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
                     "Tu es un assistant spécialisé dans le lore du jeu Aethelgard Online. "
                     "Réponds uniquement en te basant sur les informations du contexte fourni. "
                     "N'invente absolument rien. Si l'information ne s'y trouve pas, dis-le honnêtement. "
-                    "Assure-toi de citer le fichier source entre parenthèses lorsque tu donnes une information "
                     f"(pour t'aider, les sources de ce contexte sont : {liste_sources}).\n\n"
                     f"Voici ton contexte de référence :\n{contexte}"
                 )
