@@ -16,7 +16,7 @@ Pour faire fonctionner le projet sur votre machine, vous aurez besoin de :
 
 **1. Cloner le projet**
 ```bash
-git clone https://votre-repo-gitlab.com/lorekeepers/projet-oracle.git
+git clone https://git.helmo.be/q240047/projet-oracle.git
 cd projet-oracle
 ```
 
@@ -70,12 +70,3 @@ python main.py
 ```
 3. L'intelligence artificielle va lire vos documents, les découper intelligemment et les stocker dans la base de données. 
 4. Une fois l'indexation terminée, le serveur sera accessible à l'adresse : `http://127.0.0.1:5000`
-
----
-
-## 👥 L'équipe Lorekeepers
-
-- **Emir** : Ingestion des données
-- **Ediz** : Recherche vectorielle (Base de données)
-- **Nicolas** : Génération de réponses (IA)
-- **Tom** : Interface Utilisateur & Documentation
