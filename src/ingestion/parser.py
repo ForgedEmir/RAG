@@ -12,6 +12,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Formats supportés
+SUPPORTED_FORMATS = [".txt", ".md", ".csv", ".json", ".xlsx", ".xml"]
+
 
 def clean_text(raw_text: str) -> str:
     """
@@ -85,8 +88,17 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         elif extension == '.xlsx':
             return _extraire_texte_excel(filepath)
 
+        # --- Fichiers XML (pas encore implémenté) ---
+        elif extension == '.xml':
+            logger.info(f"Le support XML n'est pas encore implémenté pour {os.path.basename(filepath)}. Fichier ignoré.")
+            return None
+
         else:
-            logger.warning(f"Format non supporté : {extension}. Ce fichier sera ignoré.")
+            formats_supportes = ", ".join(SUPPORTED_FORMATS)
+            logger.warning(
+                f"Format non supporté détecté : '{extension}' pour le fichier {os.path.basename(filepath)}. "
+                f"Formats acceptés : {formats_supportes}. Ce fichier sera ignoré."
+            )
             return None
 
     except Exception as e:

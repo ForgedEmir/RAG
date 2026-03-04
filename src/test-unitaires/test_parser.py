@@ -78,17 +78,48 @@ def test_fichier_inexistant():
     assert resultat == None
 
 
-def test_extension_non_supportee():
-    """Une extension inconnue retourne None."""
+def test_extension_non_supportee(caplog):
+    """Une extension inconnue retourne None et émet un warning."""
+    import logging
+    
     # On crée un fichier avec une extension non supportée
     with tempfile.NamedTemporaryFile(mode='w', suffix='.xyz', delete=False, encoding='utf-8') as f:
         f.write("Contenu")
         nom_fichier = f.name
     
-    resultat = extract_text_from_file(nom_fichier)
+    with caplog.at_level(logging.WARNING):
+        resultat = extract_text_from_file(nom_fichier)
     
     # Extension non supportée = None
     assert resultat == None
     
+    # Vérifier qu'un warning a été émis
+    assert any("Format non supporté" in record.message for record in caplog.records)
+    assert any(".xyz" in record.message for record in caplog.records)
+    
+    os.unlink(nom_fichier)
+
+
+def test_lire_fichier_xml():
+    """On peut lire un fichier .xml."""
+    # On crée un fichier XML temporaire
+    contenu_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<personnage>
+    <nom>Gandalf</nom>
+    <classe>Magicien</classe>
+    <description>Un puissant magicien gris</description>
+</personnage>"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+        f.write(contenu_xml)
+        nom_fichier = f.name
+    
+    # On lit le fichier
+    resultat = extract_text_from_file(nom_fichier)
+    
+    # Le support XML n'est pas encore implémenté, donc on attend None
+    assert resultat is None
+    
+    # On supprime le fichier temporaire
     os.unlink(nom_fichier)
 

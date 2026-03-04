@@ -28,7 +28,10 @@ DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metadata.json")
 
 # Les formats demandés par le cahier des charges de Marcus/Emir
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
+
+# Variable globale pour tracker les fichiers ignorés
+ignored_files = []
 
 
 #  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
@@ -52,13 +55,36 @@ def list_current_files() -> dict:
     """
     Jette un oeil dans le dossier data/ et note la date de chaque fichier.
     Format de retour : { "persos.md": 1705322941.5, ... }
+    Logs les fichiers avec des extensions non supportées.
     """
+    global ignored_files
+    ignored_files = []  # Réinitialiser la liste
     fichiers = {}
+    
     if os.path.exists(DATA_FOLDER):
         for nom in os.listdir(DATA_FOLDER):
-            if nom.lower().endswith(SUPPORTED_EXTENSIONS):
-                chemin = os.path.join(DATA_FOLDER, nom)
+            chemin = os.path.join(DATA_FOLDER, nom)
+            
+            # Ignorer les dossiers
+            if os.path.isdir(chemin):
+                continue
+            
+            # Vérifier l'extension
+            _, extension = os.path.splitext(nom)
+            extension_lower = extension.lower()
+            
+            if extension_lower in [ext.lower() for ext in SUPPORTED_EXTENSIONS]:
+                # Fichier supporté
                 fichiers[nom] = os.path.getmtime(chemin)
+            else:
+                # Fichier non supporté
+                formats_supportes = ", ".join(SUPPORTED_EXTENSIONS)
+                logger.warning(
+                    f"Fichier ignoré : '{nom}' (extension '{extension_lower}' non supportée). "
+                    f"Formats acceptés : {formats_supportes}"
+                )
+                ignored_files.append({"nom": nom, "extension": extension_lower})
+    
     return fichiers
 
 
@@ -98,6 +124,37 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     return morceaux
 
 
+def log_ignored_files_summary():
+    """
+    Affiche un récapitulatif des fichiers ignorés à cause d'extensions non supportées.
+    """
+    global ignored_files
+    
+    if ignored_files:
+        logger.warning("="*60)
+        logger.warning(f"RÉCAPITULATIF : {len(ignored_files)} fichier(s) ignoré(s) détecté(s)")
+        logger.warning("="*60)
+        
+        # Grouper par extension pour un affichage plus clair
+        extensions_count = {}
+        for file_info in ignored_files:
+            ext = file_info["extension"] or "(sans extension)"
+            if ext not in extensions_count:
+                extensions_count[ext] = []
+            extensions_count[ext].append(file_info["nom"])
+        
+        for ext, fichiers in extensions_count.items():
+            logger.warning(f"  • {ext} : {len(fichiers)} fichier(s)")
+            for fichier in fichiers:
+                logger.warning(f"      - {fichier}")
+        
+        formats_supportes = ", ".join(SUPPORTED_EXTENSIONS)
+        logger.warning(f"\n Formats supportés : {formats_supportes}")
+        logger.warning("="*60)
+    else:
+        logger.info("Aucun fichier ignoré - tous les fichiers du dossier sont supportés.")
+
+
 #  FONCTION PRINCIPALE D'ORCHESTRATION
 
 
@@ -109,6 +166,9 @@ def index_data(force_reindex: bool = False) -> bool:
     logger.info("Vérification des archives de lore en cours...")
 
     fichiers_actuels = list_current_files()
+    
+    # Afficher le récapitulatif des fichiers ignorés
+    log_ignored_files_summary()
 
     # --- CAS 1 : On nous demande explicitement de tout reconstruire ---
     if force_reindex:
