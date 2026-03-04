@@ -7,7 +7,7 @@ les fait découper par le `chunker`, puis les fait stocker par le `loader`.
 import os
 import json
 import logging
-from typing import List, Set
+from typing import List, Set, Dict
 
 from src.ingestion.chunker import split_into_chunks
 from src.ingestion.parser import extract_text_from_file, clean_text
@@ -17,6 +17,7 @@ from src.ingestion.loader import (
     remove_files_from_chromadb,
     _get_collection
 )
+from src.ingestion.validator import validate_file, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,9 @@ MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metada
 # Les formats demandés par le cahier des charges de Marcus/Emir
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
 
-# Variable globale pour tracker les fichiers ignorés
+# Variables globales pour tracker les fichiers ignorés et rejetés
 ignored_files = []
+rejected_files = []
 
 
 #  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
@@ -91,11 +93,44 @@ def list_current_files() -> dict:
 def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     """
     Le pipeline de bout en bout pour une liste de fichiers donnés.
-    On lit -> on nettoie -> on découpe.
+    On valide -> on lit -> on nettoie -> on découpe.
     """
+    global rejected_files
     morceaux = []
+    validation_results = {}
 
+    # Étape 0 : Validation de tous les fichiers
+    logger.info(f"Validation de {len(noms_fichiers)} fichier(s) avant traitement...")
     for nom in noms_fichiers:
+        chemin = os.path.join(DATA_FOLDER, nom)
+        if not os.path.exists(chemin):
+            continue
+        
+        # Valider le fichier
+        validation_result = validate_file(chemin)
+        validation_results[nom] = validation_result
+        
+        if not validation_result.is_valid:
+            rejected_files.append({
+                "nom": nom,
+                "errors": validation_result.errors,
+                "warnings": validation_result.warnings
+            })
+            logger.error(f"Fichier rejeté : {nom}")
+            for error in validation_result.errors:
+                logger.error(f"  ✗ {error}")
+    
+    # Filtrer les fichiers valides
+    valid_files = {nom for nom, result in validation_results.items() if result.is_valid}
+    rejected_count = len(noms_fichiers) - len(valid_files)
+    
+    if rejected_count > 0:
+        logger.warning(f"{rejected_count} fichier(s) rejeté(s) après validation")
+    
+    logger.info(f"{len(valid_files)} fichier(s) valide(s) seront traités")
+
+    # Étape 1-3 : Traitement des fichiers valides
+    for nom in valid_files:
         chemin = os.path.join(DATA_FOLDER, nom)
         if not os.path.exists(chemin):
             continue
@@ -122,6 +157,32 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
             continue
 
     return morceaux
+
+
+def log_rejected_files_summary():
+    """
+    Affiche un récapitulatif des fichiers rejetés à cause de la validation.
+    """
+    global rejected_files
+    
+    if rejected_files:
+        logger.error("="*60)
+        logger.error(f"FICHIERS REJETÉS : {len(rejected_files)} fichier(s) non conforme(s)")
+        logger.error("="*60)
+        
+        for file_info in rejected_files:
+            logger.error(f"\n  ✗ {file_info['nom']}")
+            for error in file_info['errors']:
+                logger.error(f"      → {error}")
+            if file_info['warnings']:
+                for warning in file_info['warnings']:
+                    logger.warning(f"      ⚠ {warning}")
+        
+        logger.error("="*60)
+        logger.error("Veuillez corriger ces fichiers avant de relancer l'ingestion.")
+        logger.error("="*60)
+    else:
+        logger.info("Aucun fichier rejeté - tous les fichiers ont passé la validation.")
 
 
 def log_ignored_files_summary():
@@ -163,6 +224,9 @@ def index_data(force_reindex: bool = False) -> bool:
     C'est la méthode qu'on appelle depuis main.py au démarrage.
     Elle est suffisamment intelligente pour ne travailler que sur ce qui a changé.
     """
+    global rejected_files
+    rejected_files = []  # Réinitialiser la liste des fichiers rejetés
+    
     logger.info("Vérification des archives de lore en cours...")
 
     fichiers_actuels = list_current_files()
@@ -174,6 +238,7 @@ def index_data(force_reindex: bool = False) -> bool:
     if force_reindex:
         logger.info("Destruction de la mémoire et réindexation totale...")
         morceaux = prepare_files_for_ai(set(fichiers_actuels.keys()))
+        log_rejected_files_summary()
         if morceaux:
             store_in_chromadb(morceaux, force_reindex=True)
             save_memory(fichiers_actuels)
@@ -219,6 +284,8 @@ def index_data(force_reindex: bool = False) -> bool:
         changements = True
 
     # Bilan
+    log_rejected_files_summary()
+    
     if changements:
         save_memory(fichiers_actuels)
         logger.info("Mise à jour incrémentale terminée avec succès.")
