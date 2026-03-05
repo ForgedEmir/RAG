@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, send_from_directory
 import os
 from src.search.search import rechercher_passages
 from src.generation.generator import generer_reponse
-from src.ingestion.run import index_data
+from src.ingestion.run import index_data, load_ingestion_report
 
 logger = logging.getLogger(__name__)
 
@@ -81,4 +81,44 @@ def register_routes(app: Flask) -> None:
 
         except Exception as e:
             logger.error(f"Erreur au moment de re-indexer : {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/ingestion/status", methods=["GET"])
+    def ingestion_status():
+        """
+        Endpoint de monitoring qui retourne le rapport de la dernière ingestion.
+        Informations fournies :
+        - Nombre de fichiers traités avec succès
+        - Nombre de fichiers rejetés (validation échouée)
+        - Nombre de fichiers ignorés (extension non supportée)
+        - Nombre de chunks créés
+        - Durée de l'opération en secondes
+        - Timestamp de l'opération
+        - Détails des fichiers rejetés et ignorés
+        """
+        try:
+            report = load_ingestion_report()
+            
+            if report is None:
+                return jsonify({
+                    "message": "Aucun rapport d'ingestion disponible. Lancez une indexation d'abord.",
+                    "status": "no_report"
+                }), 404
+            
+            return jsonify({
+                "status": "success",
+                "report": {
+                    "fichiers_traites": report.get("fichiers_traites", 0),
+                    "fichiers_rejetes": report.get("fichiers_rejetes", 0),
+                    "fichiers_ignores": report.get("fichiers_ignores", 0),
+                    "chunks_crees": report.get("chunks_crees", 0),
+                    "duree_secondes": report.get("duree_secondes", 0),
+                    "timestamp": report.get("timestamp", ""),
+                    "details_rejetes": report.get("details_rejetes", []),
+                    "details_ignores": report.get("details_ignores", [])
+                }
+            })
+        
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération du statut d'ingestion : {e}")
             return jsonify({"error": str(e)}), 500

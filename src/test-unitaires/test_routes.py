@@ -164,3 +164,70 @@ def test_reindex_erreur(mock_index):
     data = json.loads(response.data)
     assert 'error' in data
     assert "Erreur d'indexation" in data['error']
+
+
+# ===== TESTS POUR /api/ingestion/status =====
+
+@patch('src.api.routes.load_ingestion_report')
+def test_ingestion_status_avec_rapport(mock_load_report):
+    """Test du statut d'ingestion quand un rapport existe."""
+    # Simuler un rapport d'ingestion
+    mock_load_report.return_value = {
+        "fichiers_traites": 5,
+        "fichiers_rejetes": 2,
+        "fichiers_ignores": 1,
+        "chunks_crees": 123,
+        "duree_secondes": 1.45,
+        "timestamp": "2026-03-04T10:30:00",
+        "details_rejetes": [
+            {"fichier": "bad.txt", "erreurs": ["Encodage invalide"]}
+        ],
+        "details_ignores": [
+            {"fichier": "test.py", "extension": ".py"}
+        ]
+    }
+    
+    app = creer_app_test()
+    client = app.test_client()
+    response = client.get('/api/ingestion/status')
+    
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['status'] == 'success'
+    assert data['report']['fichiers_traites'] == 5
+    assert data['report']['fichiers_rejetes'] == 2
+    assert data['report']['fichiers_ignores'] == 1
+    assert data['report']['chunks_crees'] == 123
+    assert data['report']['duree_secondes'] == 1.45
+    assert len(data['report']['details_rejetes']) == 1
+    assert len(data['report']['details_ignores']) == 1
+
+
+@patch('src.api.routes.load_ingestion_report')
+def test_ingestion_status_sans_rapport(mock_load_report):
+    """Test du statut d'ingestion quand aucun rapport n'existe."""
+    mock_load_report.return_value = None
+    
+    app = creer_app_test()
+    client = app.test_client()
+    response = client.get('/api/ingestion/status')
+    
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert data['status'] == 'no_report'
+    assert 'Aucun rapport' in data['message']
+
+
+@patch('src.api.routes.load_ingestion_report')
+def test_ingestion_status_erreur(mock_load_report):
+    """Test du statut d'ingestion en cas d'erreur."""
+    mock_load_report.side_effect = Exception("Erreur de lecture")
+    
+    app = creer_app_test()
+    client = app.test_client()
+    response = client.get('/api/ingestion/status')
+    
+    assert response.status_code == 500
+    data = json.loads(response.data)
+    assert 'error' in data
+    assert "Erreur de lecture" in data['error']

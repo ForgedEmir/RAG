@@ -7,7 +7,9 @@ les fait découper par le `chunker`, puis les fait stocker par le `loader`.
 import os
 import json
 import logging
-from typing import List, Set, Dict
+import time
+from datetime import datetime
+from typing import List, Set, Dict, Optional
 
 from src.ingestion.chunker import split_into_chunks
 from src.ingestion.parser import extract_text_from_file, clean_text
@@ -28,15 +30,48 @@ DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..
 # on se crée un petit carnet de notes (JSON) avec la date de dernière modif de chaque fichier.
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metadata.json")
 
+# Fichier pour stocker le dernier rapport d'ingestion
+INGESTION_REPORT_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "ingestion_report.json")
+
 # Les formats demandés par le cahier des charges de Marcus/Emir
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
 
 # Variables globales pour tracker les fichiers ignorés et rejetés
 ignored_files = []
 rejected_files = []
+current_ingestion_stats = {
+    "fichiers_traites": 0,
+    "fichiers_rejetes": 0,
+    "fichiers_ignores": 0,
+    "chunks_crees": 0,
+    "duree_secondes": 0,
+    "timestamp": None,
+    "details_rejetes": [],
+    "details_ignores": []
+}
 
 
 #  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
+
+def save_ingestion_report(report: dict) -> None:
+    """Sauvegarde le rapport d'ingestion dans un fichier JSON."""
+    os.makedirs(os.path.dirname(INGESTION_REPORT_FILE), exist_ok=True)
+    with open(INGESTION_REPORT_FILE, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    logger.info(f"Rapport d'ingestion sauvegardé : {report['fichiers_traites']} fichiers traités, {report['chunks_crees']} chunks")
+
+
+def load_ingestion_report() -> Optional[dict]:
+    """Charge le dernier rapport d'ingestion depuis le fichier JSON."""
+    if os.path.exists(INGESTION_REPORT_FILE):
+        try:
+            with open(INGESTION_REPORT_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Erreur lors de la lecture du rapport d'ingestion : {e}")
+            return None
+    return None
+
 
 def load_memory() -> dict:
     """Lit notre petit carnet de notes pour savoir ce qu'on a déjà traité."""
@@ -95,7 +130,7 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     Le pipeline de bout en bout pour une liste de fichiers donnés.
     On valide -> on lit -> on nettoie -> on découpe.
     """
-    global rejected_files
+    global rejected_files, current_ingestion_stats
     morceaux = []
     validation_results = {}
 
@@ -111,11 +146,13 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
         validation_results[nom] = validation_result
         
         if not validation_result.is_valid:
-            rejected_files.append({
-                "nom": nom,
-                "errors": validation_result.errors,
-                "warnings": validation_result.warnings
-            })
+            # Éviter les doublons : vérifier si le fichier n'est pas déjà dans rejected_files
+            if not any(f["nom"] == nom for f in rejected_files):
+                rejected_files.append({
+                    "nom": nom,
+                    "errors": validation_result.errors,
+                    "warnings": validation_result.warnings
+                })
             logger.error(f"Fichier rejeté : {nom}")
             for error in validation_result.errors:
                 logger.error(f"  ✗ {error}")
@@ -130,6 +167,7 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
     logger.info(f"{len(valid_files)} fichier(s) valide(s) seront traités")
 
     # Étape 1-3 : Traitement des fichiers valides
+    fichiers_traites_avec_succes = 0
     for nom in valid_files:
         chemin = os.path.join(DATA_FOLDER, nom)
         if not os.path.exists(chemin):
@@ -151,10 +189,16 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
 
             for morceau in petits_morceaux:
                 morceaux.append({"texte": morceau, "fichier": nom})
+            
+            fichiers_traites_avec_succes += 1
 
         except Exception as e:
             logger.error(f"Erreur imprévue pendant le traitement de {nom} : {e}")
             continue
+
+    # Mettre à jour les stats
+    current_ingestion_stats["fichiers_traites"] += fichiers_traites_avec_succes
+    current_ingestion_stats["chunks_crees"] += len(morceaux)
 
     return morceaux
 
@@ -162,6 +206,7 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[dict]:
 def log_rejected_files_summary():
     """
     Affiche un récapitulatif des fichiers rejetés à cause de la validation.
+    Tous les fichiers du dossier ont déjà été validés au début de index_data().
     """
     global rejected_files
     
@@ -174,7 +219,7 @@ def log_rejected_files_summary():
             logger.error(f"\n  ✗ {file_info['nom']}")
             for error in file_info['errors']:
                 logger.error(f"      → {error}")
-            if file_info['warnings']:
+            if file_info.get('warnings'):
                 for warning in file_info['warnings']:
                     logger.warning(f"      ⚠ {warning}")
         
@@ -224,12 +269,42 @@ def index_data(force_reindex: bool = False) -> bool:
     C'est la méthode qu'on appelle depuis main.py au démarrage.
     Elle est suffisamment intelligente pour ne travailler que sur ce qui a changé.
     """
-    global rejected_files
-    rejected_files = []  # Réinitialiser la liste des fichiers rejetés
+    global rejected_files, current_ingestion_stats
+    
+    # Réinitialiser les compteurs et listes
+    rejected_files = []
+    current_ingestion_stats = {
+        "fichiers_traites": 0,
+        "fichiers_rejetes": 0,
+        "fichiers_ignores": 0,
+        "chunks_crees": 0,
+        "duree_secondes": 0,
+        "timestamp": datetime.now().isoformat(),
+        "details_rejetes": [],
+        "details_ignores": []
+    }
+    
+    # Démarrer le chronomètre
+    start_time = time.time()
     
     logger.info("Vérification des archives de lore en cours...")
 
     fichiers_actuels = list_current_files()
+    
+    # Valider TOUS les fichiers du dossier pour avoir une vue complète des rejets
+    logger.info("Validation de tous les fichiers du dossier...")
+    for nom in fichiers_actuels.keys():
+        chemin = os.path.join(DATA_FOLDER, nom)
+        if not os.path.exists(chemin):
+            continue
+        
+        validation_result = validate_file(chemin)
+        if not validation_result.is_valid:
+            rejected_files.append({
+                "nom": nom,
+                "errors": validation_result.errors,
+                "warnings": validation_result.warnings
+            })
     
     # Afficher le récapitulatif des fichiers ignorés
     log_ignored_files_summary()
@@ -239,6 +314,22 @@ def index_data(force_reindex: bool = False) -> bool:
         logger.info("Destruction de la mémoire et réindexation totale...")
         morceaux = prepare_files_for_ai(set(fichiers_actuels.keys()))
         log_rejected_files_summary()
+        
+        # Calculer la durée et finaliser le rapport
+        end_time = time.time()
+        current_ingestion_stats["duree_secondes"] = round(end_time - start_time, 2)
+        current_ingestion_stats["fichiers_rejetes"] = len(rejected_files)
+        current_ingestion_stats["fichiers_ignores"] = len(ignored_files)
+        current_ingestion_stats["details_rejetes"] = [
+            {"fichier": f["nom"], "erreurs": f["errors"]} for f in rejected_files
+        ]
+        current_ingestion_stats["details_ignores"] = [
+            {"fichier": f["nom"], "extension": f["extension"]} for f in ignored_files
+        ]
+        
+        # Sauvegarder le rapport
+        save_ingestion_report(current_ingestion_stats)
+        
         if morceaux:
             store_in_chromadb(morceaux, force_reindex=True)
             save_memory(fichiers_actuels)
@@ -285,6 +376,21 @@ def index_data(force_reindex: bool = False) -> bool:
 
     # Bilan
     log_rejected_files_summary()
+    
+    # Calculer la durée et finaliser le rapport (toujours, car on a validé tous les fichiers)
+    end_time = time.time()
+    current_ingestion_stats["duree_secondes"] = round(end_time - start_time, 2)
+    current_ingestion_stats["fichiers_rejetes"] = len(rejected_files)
+    current_ingestion_stats["fichiers_ignores"] = len(ignored_files)
+    current_ingestion_stats["details_rejetes"] = [
+        {"fichier": f["nom"], "erreurs": f["errors"]} for f in rejected_files
+    ]
+    current_ingestion_stats["details_ignores"] = [
+        {"fichier": f["nom"], "extension": f["extension"]} for f in ignored_files
+    ]
+    
+    # Sauvegarder le rapport (toujours, pour refléter l'état actuel)
+    save_ingestion_report(current_ingestion_stats)
     
     if changements:
         save_memory(fichiers_actuels)
