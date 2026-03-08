@@ -92,3 +92,81 @@ def test_extension_non_supportee():
     
     os.unlink(nom_fichier)
 
+
+def test_lire_fichier_xml():
+    """Un fichier .xml doit être lu et nettoyé de ses balises."""
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<racine>
+    <titre>Le grand test</titre>
+    <contenu>
+        <paragraphe>Ceci est une phrase.</paragraphe>
+        <paragraphe>Une autre phrase vide : <vide></vide></paragraphe>
+    </contenu>
+</racine>
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+        f.write(xml_content)
+        nom_fichier = f.name
+    
+    resultat = extract_text_from_file(nom_fichier)
+    
+    # On vérifie que les balises ont disparu et que le texte est là
+    assert "Le grand test" in resultat
+    assert "Ceci est une phrase." in resultat
+    assert "Une autre phrase vide :" in resultat
+    # Les balises ne doivent pas être présentes
+    assert "<titre>" not in resultat
+    assert "<paragraphe>" not in resultat
+    
+    os.unlink(nom_fichier)
+
+def test_lire_fichier_xml_corrompu():
+    """Un fichier .xml mal formé ne doit pas crasher mais retourner une chaîne vide."""
+    xml_content = "<racine><titre>Pas de balise fermante"
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+        f.write(xml_content)
+        nom_fichier = f.name
+    
+    resultat = extract_text_from_file(nom_fichier)
+    
+    # Doit retourner une chaîne vide et ne pas lever d'exception
+    assert resultat == ""
+    
+    os.unlink(nom_fichier)
+
+def test_lire_fichier_xml_attributs():
+    """Un fichier XML avec des attributs ne doit extraire que le texte, pas les attributs."""
+    xml_content = '''<?xml version="1.0" encoding="UTF-8"?>
+<donjon>
+    <monstres>
+        <monstre niveau="5" type="volant">Chauve-souris géante</monstre>
+    </monstres>
+</donjon>
+'''
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+        f.write(xml_content)
+        nom_fichier = f.name
+    
+    resultat = extract_text_from_file(nom_fichier)
+    
+    assert "Chauve-souris" in resultat
+    assert "niveau" not in resultat
+    assert "volant" not in resultat
+    assert "5" not in resultat
+    
+    os.unlink(nom_fichier)
+
+def test_lire_fichier_xml_vide():
+    """Un fichier .xml sans texte retourne une chaîne vide."""
+    xml_content = "<racine><vide></vide><autre/></racine>"
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+        f.write(xml_content)
+        nom_fichier = f.name
+    
+    resultat = extract_text_from_file(nom_fichier)
+    
+    assert resultat == ""
+    
+    os.unlink(nom_fichier)

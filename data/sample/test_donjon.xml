@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<donjon>
+    <nom>La Crypte de Emir</nom>
+    <description>
+        Un lieu ancestral rempli de mystères.
+        Le roi squelette y règne en maître.
+    </description>
+    <monstres>
+        <monstre niveau="5">Chauve-souris géante</monstre>
+        <monstre niveau="10">Gargouille gardienne</monstre>
+    </monstres>
+</donjon>

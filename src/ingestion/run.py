@@ -28,7 +28,7 @@ DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "chroma_db", "files_metadata.json")
 
 # Les formats demandés par le cahier des charges de Marcus/Emir
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx")
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
 
 
 #  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE

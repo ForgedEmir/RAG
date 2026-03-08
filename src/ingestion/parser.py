@@ -85,6 +85,10 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         elif extension == '.xlsx':
             return _extraire_texte_excel(filepath)
 
+        # --- Fichiers XML ---
+        elif extension == '.xml':
+            return _extraire_texte_xml(filepath)
+
         else:
             logger.warning(f"Format non supporté : {extension}. Ce fichier sera ignoré.")
             return None
@@ -158,3 +162,37 @@ def _extraire_texte_json(data, niveau: int = 0) -> str:
         lignes.append(f"{espace}{data}")
 
     return "\n".join([l for l in lignes if l])
+
+
+def _extraire_texte_xml(filepath: str) -> str:
+    """
+    Lit un fichier XML et extrait tout le texte contenu dans les balises.
+    On lit l'arbre XML et on récupère le texte de chaque nœud en ignorant les balises elles-mêmes.
+    Simple et très efficace.
+    """
+    import xml.etree.ElementTree as ET
+    
+    try:
+        # On charge l'entièreté de l'arbre XML en mémoire.
+        tree = ET.parse(filepath)
+        root = tree.getroot()
+        lignes = []
+        
+        # On se balade dans absolument tous les éléments de l'arbre, peu importe leur profondeur
+        for elem in root.iter():
+            # Si l'élément contient du texte (et pas seulement d'autres balises)
+            texte_brut = elem.text
+            if texte_brut and isinstance(texte_brut, str):
+                # On nettoie un peu le texte pour éviter d'avoir des phrases vides faites d'espaces
+                texte = texte_brut.strip()
+                if texte:
+                    lignes.append(texte)
+                    
+        return "\n".join(lignes)
+        
+    except ET.ParseError as e:
+        # Si le fichier est corrompu, on envoie juste un log et on retourne du vide 
+        # pour éviter de crasher tout le système
+        logger.error(f"Impossible de lire le XML {filepath} (fichier corrompu ou mal formé) : {e}")
+        return ""
+
