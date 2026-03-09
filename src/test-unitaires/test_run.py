@@ -5,6 +5,8 @@ Teste les fonctions load_memory, save_memory, list_current_files, prepare_files_
 
 import json
 from unittest.mock import Mock, patch, MagicMock, mock_open
+from dataclasses import dataclass
+from typing import List
 
 from src.ingestion.run import (
     load_memory,
@@ -15,6 +17,15 @@ from src.ingestion.run import (
     MEMORY_FILE,
     DATA_FOLDER
 )
+
+
+# Copie de ValidationResult pour ne pas importer validator dans les tests
+@dataclass
+class ValidationResult:
+    is_valid: bool
+    filepath: str
+    errors: List[str]
+    warnings: List[str]
 
 
 # Note importante pour les débutants :
@@ -79,13 +90,21 @@ def test_list_current_files_ok(mock_getmtime, mock_listdir, mock_exists):
 
 # ===== TESTS POUR prepare_files_for_ai =====
 
+@patch('src.ingestion.run.validate_file')
 @patch('os.path.exists')
 @patch('src.ingestion.run.extract_text_from_file')
 @patch('src.ingestion.run.clean_text')
 @patch('src.ingestion.run.split_into_chunks')
-def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists):
+def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists, mock_validate):
     """On peut préparer des fichiers: extraction, nettoyage, découpage."""
     mock_exists.return_value = True
+    # Créer un ValidationResult valide
+    mock_validate.return_value = ValidationResult(
+        is_valid=True,
+        filepath="data/sample/file.md",
+        errors=[],
+        warnings=[]
+    )
     mock_extract.return_value = "Texte brut du fichier"
     mock_clean.return_value = "Texte nettoyé"
     mock_split.return_value = ["Chunk 1", "Chunk 2"]
