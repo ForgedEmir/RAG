@@ -8,12 +8,65 @@ import re
 import csv
 import json
 import logging
-from typing import Optional
+import unicodedata
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
 # Formats supportés
 SUPPORTED_FORMATS = [".txt", ".md", ".csv", ".json", ".xlsx", ".xml"]
+
+# Liste des encodages à essayer en cas d'échec (ordre de priorité)
+FALLBACK_ENCODINGS = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']
+
+
+def _try_multiple_encodings(filepath: str, encodings: List[str] = None) -> Optional[str]:
+    """
+    Essaie de lire un fichier avec plusieurs encodages différents.
+    Retourne le contenu du fichier dès qu'un encodage fonctionne, ou None si tous échouent.
+    """
+    if encodings is None:
+        encodings = FALLBACK_ENCODINGS
+    
+    for encoding in encodings:
+        try:
+            with open(filepath, 'r', encoding=encoding) as f:
+                content = f.read()
+                logger.debug(f"Fichier {os.path.basename(filepath)} lu avec succès en {encoding}")
+                return content
+        except (UnicodeDecodeError, UnicodeError):
+            logger.debug(f"Échec de lecture en {encoding} pour {os.path.basename(filepath)}")
+            continue
+        except Exception as e:
+            logger.warning(f"Erreur inattendue avec l'encodage {encoding} : {e}")
+            continue
+    
+    logger.error(f"Impossible de lire {os.path.basename(filepath)} avec les encodages : {', '.join(encodings)}")
+    return None
+
+
+def _clean_invalid_characters(text: str) -> str:
+    """
+    Nettoie les caractères invalides ou problématiques dans une chaîne Unicode.
+    Remplace les caractères de contrôle et normalise les caractères spéciaux.
+    """
+    if not text:
+        return ""
+    
+    # Normaliser les caractères Unicode (forme NFC = forme canonique composée)
+    text = unicodedata.normalize('NFC', text)
+    
+    # Supprimer les caractères de contrôle sauf les sauts de ligne et tabulations
+    cleaned = ""
+    for char in text:
+        # Garder les caractères imprimables et quelques blancs utiles
+        if char in ['\n', '\r', '\t'] or not unicodedata.category(char).startswith('C'):
+            cleaned += char
+        else:
+            # Remplacer les caractères de contrôle par un espace
+            cleaned += ' '
+    
+    return cleaned
 
 
 def clean_text(raw_text: str) -> str:
@@ -58,31 +111,18 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
     try:
         # --- Fichiers texte normaux ---
         if extension in ['.txt', '.md']:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return f.read()
+            content = _try_multiple_encodings(filepath)
+            if content is None:
+                return None
+            return _clean_invalid_characters(content)
 
         # --- Fichiers JSON ---
         elif extension == '.json':
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return _extraire_texte_json(data)
+            return _extraire_texte_json_safe(filepath)
 
         # --- Fichiers d'espacement (CSV) ---
         elif extension == '.csv':
-            lignes = []
-            with open(filepath, 'r', encoding='utf-8') as f:
-                # Le csv.Sniffer est intelligent : il devine tout seul si le fichier
-                # utilise des virgules, des points-virgules ou des tabulations.
-                contenu = f.read()
-                dialect = csv.Sniffer().sniff(contenu)
-                f.seek(0)
-                reader = csv.reader(f, dialect)
-                for row in reader:
-                    # On transforme chaque ligne du tableau en une phrase simple
-                    ligne = " ".join([cell for cell in row if cell.strip()])
-                    if ligne:
-                        lignes.append(ligne)
-            return "\n".join(lignes)
+            return _extraire_texte_csv_safe(filepath)
 
         # --- Fichiers Excel ---
         elif extension == '.xlsx':
@@ -102,43 +142,164 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
             return None
 
     except Exception as e:
-        # La philosophie ici : on log l'erreur pour pouvoir la réparer plus tard,
-        # mais on laisse l'application tourner tranquillement.
         logger.error(f"Un problème est survenu en lisant {filepath} : {e}")
         return None
 
 
+def _extraire_texte_csv_safe(filepath: str) -> Optional[str]:
+    """
+    Lit un fichier CSV avec gestion robuste des encodages mixtes.
+    Essaie plusieurs encodages et détecte automatiquement le délimiteur.
+    """
+    for encoding in FALLBACK_ENCODINGS:
+        try:
+            lignes = []
+            with open(filepath, 'r', encoding=encoding, errors='replace') as f:
+                # Le csv.Sniffer devine le délimiteur (virgule, point-virgule, tabulation...)
+                contenu = f.read()
+                
+                # Nettoyer les caractères invalides
+                contenu = _clean_invalid_characters(contenu)
+                
+                # Essayer de deviner le dialecte CSV
+                try:
+                    dialect = csv.Sniffer().sniff(contenu[:1024])  # Analyser les 1024 premiers caractères
+                except csv.Error:
+                    # Si Sniffer échoue, utiliser le délimiteur par défaut (virgule)
+                    dialect = csv.excel
+                
+                # Relire le fichier avec le bon dialecte
+                from io import StringIO
+                reader = csv.reader(StringIO(contenu), dialect)
+                
+                for row in reader:
+                    # Nettoyer chaque cellule et créer une phrase
+                    ligne = " ".join([cell.strip() for cell in row if cell.strip()])
+                    if ligne:
+                        lignes.append(ligne)
+                
+                if lignes:
+                    logger.info(f"CSV {os.path.basename(filepath)} lu avec succès en {encoding}")
+                    return "\n".join(lignes)
+                    
+        except Exception as e:
+            logger.debug(f"Échec de lecture CSV en {encoding} pour {filepath}: {e}")
+            continue
+    
+    logger.error(f"Impossible de lire le fichier CSV {filepath} avec tous les encodages disponibles")
+    return None
+
+
+def _extraire_texte_json_safe(filepath: str) -> Optional[str]:
+    """
+    Lit un fichier JSON avec gestion robuste des encodages et caractères spéciaux.
+    Essaie plusieurs encodages et nettoie les caractères invalides.
+    """
+    for encoding in FALLBACK_ENCODINGS:
+        try:
+            with open(filepath, 'r', encoding=encoding, errors='replace') as f:
+                content = f.read()
+                
+                # Nettoyer les caractères invalides
+                content = _clean_invalid_characters(content)
+                
+                # Parser le JSON
+                data = json.loads(content)
+                
+                logger.info(f"JSON {os.path.basename(filepath)} lu avec succès en {encoding}")
+                return _extraire_texte_json(data)
+                
+        except json.JSONDecodeError as e:
+            logger.debug(f"Erreur de parsing JSON en {encoding} pour {filepath}: {e}")
+            # Essayer avec un autre encodage
+            continue
+        except Exception as e:
+            logger.debug(f"Échec de lecture JSON en {encoding} pour {filepath}: {e}")
+            continue
+    
+    # Dernier recours : essayer de lire le fichier comme texte brut
+    try:
+        logger.warning(f"Impossible de parser {filepath} comme JSON, lecture en texte brut")
+        content = _try_multiple_encodings(filepath)
+        if content:
+            return _clean_invalid_characters(content)
+    except Exception:
+        pass
+    
+    logger.error(f"Impossible de lire le fichier JSON {filepath}")
+    return None
+
+
 def _extraire_texte_excel(filepath: str) -> str:
     """
-    On prend chaque ligne et on recrée un texte de type : "Colonne: Valeur | Autre: Valeur".
+    Extrait le texte d'un fichier Excel.
+    Gère les formules en récupérant les valeurs calculées plutôt que les formules elles-mêmes.
     """
     import openpyxl
-
-    # On l'ouvre en mode "read_only" pour économiser de la mémoire RAM
-    classeur = openpyxl.load_workbook(filepath, read_only=True)
+    
+    try:
+        # data_only=True : récupère les valeurs calculées des formules au lieu des formules
+        # read_only=True : économise la mémoire RAM
+        classeur = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    except Exception as e:
+        logger.error(f"Erreur lors de l'ouverture du fichier Excel {filepath}: {e}")
+        # Essayer sans data_only en dernier recours
+        try:
+            logger.warning(f"Nouvelle tentative sans data_only pour {filepath}")
+            classeur = openpyxl.load_workbook(filepath, read_only=True, data_only=False)
+        except Exception as e2:
+            logger.error(f"Impossible d'ouvrir le fichier Excel {filepath}: {e2}")
+            return ""
+    
     lignes = []
 
     for feuille in classeur.sheetnames:
-        sheet = classeur[feuille]
-        rows = list(sheet.rows)
+        try:
+            sheet = classeur[feuille]
+            rows = list(sheet.rows)
 
-        if not rows:
+            if not rows:
+                continue
+
+            # La toute première ligne contient généralement le titre des colonnes
+            en_tetes = [str(cell.value or "").strip() for cell in rows[0]]
+
+            # Ensuite, on boucle sur les vraies données
+            for row in rows[1:]:
+                parties = []
+                for i, cell in enumerate(row):
+                    try:
+                        # Gérer les différents types de valeurs
+                        valeur = cell.value
+                        
+                        # Si la valeur est None (formule non calculée ou cellule vide)
+                        if valeur is None:
+                            continue
+                        
+                        # Nettoyer la valeur
+                        valeur_str = str(valeur).strip()
+                        
+                        if valeur_str:
+                            nom_colonne = en_tetes[i] if i < len(en_tetes) and en_tetes[i] else f"Col{i}"
+                            parties.append(f"{nom_colonne}: {valeur_str}")
+                    except Exception as e:
+                        logger.debug(f"Erreur lors de la lecture d'une cellule : {e}")
+                        continue
+                
+                if parties:
+                    ligne = " | ".join(parties)
+                    # Nettoyer les caractères invalides
+                    ligne = _clean_invalid_characters(ligne)
+                    lignes.append(ligne)
+        except Exception as e:
+            logger.warning(f"Erreur lors de la lecture de la feuille {feuille} : {e}")
             continue
 
-        # La toute première ligne contient généralement le titre des colonnes
-        en_tetes = [str(cell.value or "") for cell in rows[0]]
-
-        # Ensuite, on boucle sur les vraies données
-        for row in rows[1:]:
-            parties = []
-            for i, cell in enumerate(row):
-                if cell.value is not None:
-                    nom_colonne = en_tetes[i] if i < len(en_tetes) else f"Col{i}"
-                    parties.append(f"{nom_colonne}: {cell.value}")
-            if parties:
-                lignes.append(" | ".join(parties))
-
     classeur.close()
+    
+    if not lignes:
+        logger.warning(f"Aucune donnée extraite du fichier Excel {filepath}")
+    
     return "\n".join(lignes)
 
 
