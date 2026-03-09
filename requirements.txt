@@ -1,12 +1,28 @@
-chromadb>=0.4.0
-pydantic>=2.0.0
+# === Framework Web ===
 flask>=3.0.0
 flask-cors>=4.0.0
-openai>=1.0.0
-python-dotenv>=1.0.0
-openpyxl>=3.1.0
-pytest>=7.0.0
-fastembed>=0.2.0
 gunicorn>=21.2.0
 
+# === LangChain (orchestration + abstraction) ===
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-text-splitters>=0.3.0
+langchain-qdrant>=0.2.0
+langchain-community>=0.3.0
 
+# === Vector DB ===
+qdrant-client>=1.7.0
+
+# === Embeddings ===
+fastembed>=0.2.0
+
+# === Data Parsing ===
+unstructured>=0.12.0
+openpyxl>=3.1.0
+
+# === Utilitaires ===
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# === Tests ===
+pytest>=7.0.0

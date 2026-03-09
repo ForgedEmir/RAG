@@ -1,66 +1,67 @@
 """
-Ce module donne une "voix" à notre système.
-Il envoie les textes qu'on a trouvés + la question à DeepSeek (notre IA), 
-et lui demande de rédiger une réponse de façon naturelle au lieu de simplement copier-coller.
+Ce module donne une "voix" a notre systeme.
+Il utilise LangChain pour communiquer avec le LLM (DeepSeek, Groq, OpenAI, etc.)
+et genere des reponses basees uniquement sur le contexte fourni (approche RAG).
+
+Le provider LLM est configurable via les variables d'environnement :
+- LLM_BASE_URL : URL de l'API (defaut: DeepSeek)
+- LLM_MODEL    : Nom du modele (defaut: deepseek-chat)
 """
 import os
 import logging
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
-from openai import OpenAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
 # On s'assure que les variables d'environnement (.env) sont bien lues
 load_dotenv()
 
-# On initialise le client OpenAI (ici configuré pour l'API de DeepSeek).
-# On le fait une seule fois au chargement du fichier (singleton) plutôt que 
-# de se reconnecter à chaque fois qu'un utilisateur pose une question.
-_api_key = os.getenv("OPENAI_API_KEY")
-_client = OpenAI(
+# Configuration du LLM via variables d'environnement
+_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+_base_url: str = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+_model: str = os.getenv("LLM_MODEL", "deepseek-chat")
+
+# On initialise le client LangChain une seule fois au chargement (singleton).
+# Compatible avec DeepSeek, Groq, OpenAI, Ollama, et tout provider OpenAI-compatible.
+_llm: Optional[ChatOpenAI] = ChatOpenAI(
+    model=_model,
+    base_url=_base_url,
     api_key=_api_key,
-    base_url="https://api.deepseek.com"
+    temperature=0.2
 ) if _api_key else None
 
 
 def generer_reponse(question: str, passages: List[str], sources: List[str] = None) -> str:
     """
     Le prompt "RAG" classique.
-    On donne des instructions strictes à l'IA pour qu'elle ne se base QUE
-    sur les morceaux de texte qu'on lui fournit, afin d'éviter les "hallucinations".
+    On donne des instructions strictes a l'IA pour qu'elle ne se base QUE
+    sur les morceaux de texte qu'on lui fournit, afin d'eviter les "hallucinations".
     """
-    if not _client:
-        raise ValueError("Clé OPENAI_API_KEY manquante. Vérifie ton fichier .env pour pouvoir utiliser l'IA.")
+    if not _llm:
+        raise ValueError("Cle OPENAI_API_KEY manquante. Verifie ton fichier .env pour pouvoir utiliser l'IA.")
 
-    # On colle tous les résultats trouvés par ChromaDB en un seul gros bloc de texte
+    # On colle tous les resultats trouves en un seul bloc de contexte
     contexte = "\n\n".join(passages)
     liste_sources = ", ".join(sources) if sources else "sources inconnues"
 
-    # L'appel à l'API LLM pour la complétion de chat
-    response = _client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Tu es un assistant spécialisé dans le lore du jeu Aethelgard Online. "
-                    "Réponds uniquement en te basant sur les informations du contexte fourni. "
-                    "N'invente absolument rien. Si l'information ne s'y trouve pas, dis-le honnêtement. "
-                    f"(pour t'aider, les sources de ce contexte sont : {liste_sources}).\n\n"
-                    f"Voici ton contexte de référence :\n{contexte}"
-                )
-            },
-            {
-                "role": "user",
-                "content": question
-            }
-        ],
-        # Une température basse (0.2) rend l'IA plus factuelle et moins "créative/inventive"
-        temperature=0.2
-    )
+    # Construction des messages avec LangChain
+    messages = [
+        SystemMessage(content=(
+            "Tu es un assistant specialise dans le lore du jeu Aethelgard Online. "
+            "Reponds uniquement en te basant sur les informations du contexte fourni. "
+            "N'invente absolument rien. Si l'information ne s'y trouve pas, dis-le honnetement. "
+            f"(pour t'aider, les sources de ce contexte sont : {liste_sources}).\n\n"
+            f"Voici ton contexte de reference :\n{contexte}"
+        )),
+        HumanMessage(content=question)
+    ]
 
-    logger.info(f"L'IA a terminé de rédiger sa réponse.")
-    
-    # On renvoie juste le texte généré final
-    return response.choices[0].message.content.strip()
+    # Appel au LLM via LangChain (fonctionne avec n'importe quel provider)
+    response = _llm.invoke(messages)
+
+    logger.info("L'IA a termine de rediger sa reponse.")
+
+    return response.content.strip()

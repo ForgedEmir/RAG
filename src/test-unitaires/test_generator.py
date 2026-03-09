@@ -1,153 +1,137 @@
 """
-Tests unitaires simplifiés pour le module generator
+Tests unitaires pour le module generator (version LangChain)
 
-Ce fichier teste la fonction qui génère des réponses avec l'IA (DeepSeek).
-On simule l'API pour ne pas faire de vrais appels (qui coûteraient de l'argent).
+Ce fichier teste la fonction qui genere des reponses avec l'IA.
+On simule le LLM LangChain pour ne pas faire de vrais appels (qui couteraient de l'argent).
 """
-
-# Import pour simuler l'API
-from unittest.mock import Mock, patch
-# Import de la fonction à tester
-from src.generation.generator import generer_reponse
+from unittest.mock import Mock, patch, MagicMock
+from langchain_core.messages import AIMessage
 
 
 # ===== TESTS POUR generer_reponse =====
 
-@patch('src.generation.generator._client')
-def test_generation_simple(mock_client):
-    """On peut générer une réponse simple avec l'IA."""
-    # On simule la réponse de l'API
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "  Réponse de l'IA  "
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
-    # On appelle la fonction
-    question = "Qui est le héros?"
-    passages = ["Le héros s'appelle Arthur."]
+@patch('src.generation.generator._llm')
+def test_generation_simple(mock_llm):
+    """On peut generer une reponse simple avec l'IA."""
+    from src.generation.generator import generer_reponse
+
+    # On simule la reponse LangChain
+    mock_llm.invoke.return_value = AIMessage(content="  Reponse de l'IA  ")
+
+    question = "Qui est le heros?"
+    passages = ["Le heros s'appelle Arthur."]
     sources = ["personnages.md"]
-    
+
     resultat = generer_reponse(question, passages, sources)
-    
-    # On vérifie le résultat (les espaces sont enlevés)
-    assert resultat == "Réponse de l'IA"
+
+    # On verifie le resultat (les espaces sont enleves)
+    assert resultat == "Reponse de l'IA"
 
 
-@patch('src.generation.generator._client')
-def test_plusieurs_passages(mock_client):
-    """On peut générer une réponse avec plusieurs passages."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "Réponse complète"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
-    question = "Décris le royaume"
+@patch('src.generation.generator._llm')
+def test_plusieurs_passages(mock_llm):
+    """On peut generer une reponse avec plusieurs passages."""
+    from src.generation.generator import generer_reponse
+
+    mock_llm.invoke.return_value = AIMessage(content="Reponse complete")
+
+    question = "Decris le royaume"
     passages = [
         "Le royaume est grand.",
-        "Il y a une forêt.",
+        "Il y a une foret.",
         "La capitale est belle."
     ]
     sources = ["lieux.md"]
-    
+
     resultat = generer_reponse(question, passages, sources)
-    
-    # On vérifie que tous les passages ont été envoyés
-    appel = mock_client.chat.completions.create.call_args
-    messages = appel.kwargs['messages']
-    contexte = messages[0]['content']
-    
-    assert "Le royaume est grand." in contexte
-    assert "Il y a une forêt." in contexte
+
+    # On verifie que les passages ont ete envoyes dans le message system
+    appel = mock_llm.invoke.call_args
+    messages = appel[0][0]  # Premier argument positionnel = liste de messages
+    system_content = messages[0].content
+
+    assert "Le royaume est grand." in system_content
+    assert "Il y a une foret." in system_content
 
 
-@patch('src.generation.generator._client')
-def test_sans_sources(mock_client):
-    """Si aucune source n'est fournie, ça marche quand même."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "Réponse"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
-    question = "Question"
-    passages = ["Passage"]
-    
-    resultat = generer_reponse(question, passages, sources=None)
-    
-    assert resultat == "Réponse"
-    # On vérifie que "sources inconnues" apparaît dans le prompt
-    appel = mock_client.chat.completions.create.call_args
-    messages = appel.kwargs['messages']
-    assert "sources inconnues" in messages[0]['content']
+@patch('src.generation.generator._llm')
+def test_sans_sources(mock_llm):
+    """Si aucune source n'est fournie, ca marche quand meme."""
+    from src.generation.generator import generer_reponse
+
+    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+
+    resultat = generer_reponse("Question", ["Passage"], sources=None)
+
+    assert resultat == "Reponse"
+    # On verifie que "sources inconnues" apparait dans le prompt
+    appel = mock_llm.invoke.call_args
+    messages = appel[0][0]
+    assert "sources inconnues" in messages[0].content
 
 
-@patch('src.generation.generator._client', None)
+@patch('src.generation.generator._llm', None)
 def test_sans_api_key():
-    """Sans clé API, une erreur est levée."""
-    question = "Question"
-    passages = ["Passage"]
-    
+    """Sans cle API, une erreur est levee."""
+    from src.generation.generator import generer_reponse
+
     try:
-        generer_reponse(question, passages)
-        # Si on arrive ici, le test échoue car l'erreur n'a pas été levée
-        assert False, "Une erreur aurait dû être levée"
+        generer_reponse("Question", ["Passage"])
+        assert False, "Une erreur aurait du etre levee"
     except ValueError as e:
-        # On vérifie que le message d'erreur est correct
         assert "OPENAI_API_KEY" in str(e)
 
 
-@patch('src.generation.generator._client')
-def test_parametres_api(mock_client):
-    """On vérifie que l'API est appelée avec les bons paramètres."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "Réponse"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
+@patch('src.generation.generator._llm')
+def test_parametres_llm(mock_llm):
+    """On verifie que le LLM est appele avec les bons messages."""
+    from src.generation.generator import generer_reponse
+
+    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+
     generer_reponse("Question", ["Passage"], ["test.md"])
-    
-    # On récupère les arguments de l'appel
-    appel = mock_client.chat.completions.create.call_args
-    
-    # On vérifie les paramètres importants
-    assert appel.kwargs['model'] == "deepseek-chat"
-    assert appel.kwargs['temperature'] == 0.2  # Température basse = factuel
-    assert len(appel.kwargs['messages']) == 2  # System + User
-    assert appel.kwargs['messages'][0]['role'] == "system"
-    assert appel.kwargs['messages'][1]['role'] == "user"
+
+    # On recupere les arguments de l'appel
+    appel = mock_llm.invoke.call_args
+    messages = appel[0][0]
+
+    # On verifie : 2 messages (System + Human)
+    assert len(messages) == 2
+    assert messages[0].__class__.__name__ == "SystemMessage"
+    assert messages[1].__class__.__name__ == "HumanMessage"
+    assert messages[1].content == "Question"
 
 
-@patch('src.generation.generator._client')
-def test_contexte_formate(mock_client):
-    """Les passages sont séparés par des doubles sauts de ligne."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "Réponse"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
+@patch('src.generation.generator._llm')
+def test_contexte_formate(mock_llm):
+    """Les passages sont separes par des doubles sauts de ligne."""
+    from src.generation.generator import generer_reponse
+
+    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+
     passages = ["Passage 1", "Passage 2", "Passage 3"]
     generer_reponse("Question", passages, ["test.md"])
-    
-    appel = mock_client.chat.completions.create.call_args
-    system_message = appel.kwargs['messages'][0]['content']
-    
-    # Les passages doivent être séparés par \n\n
+
+    appel = mock_llm.invoke.call_args
+    system_message = appel[0][0][0].content
+
+    # Les passages doivent etre separes par \n\n
     assert "Passage 1\n\nPassage 2\n\nPassage 3" in system_message
 
 
-@patch('src.generation.generator._client')
-def test_instructions_rag(mock_client):
+@patch('src.generation.generator._llm')
+def test_instructions_rag(mock_llm):
     """Le prompt contient les instructions RAG."""
-    reponse_simulee = Mock()
-    reponse_simulee.choices = [Mock()]
-    reponse_simulee.choices[0].message.content = "Réponse"
-    mock_client.chat.completions.create.return_value = reponse_simulee
-    
+    from src.generation.generator import generer_reponse
+
+    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+
     generer_reponse("Question", ["Passage"], ["test.md"])
-    
-    appel = mock_client.chat.completions.create.call_args
-    system_message = appel.kwargs['messages'][0]['content']
-    
-    # Vérifier que les instructions importantes sont là
+
+    appel = mock_llm.invoke.call_args
+    system_message = appel[0][0][0].content
+
+    # Verifier que les instructions importantes sont la
     assert "Aethelgard Online" in system_message
     assert "uniquement en te basant" in system_message
     assert "N'invente" in system_message

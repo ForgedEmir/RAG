@@ -1,46 +1,39 @@
 """
-Le cœur de notre moteur de recherche.
-C'est ici qu'on va fouiller dans ChromaDB (qui stocke les paragraphes sous forme de vecteurs)
-pour trouver les textes qui correspondent sémantiquement à la question posée.
+Le coeur de notre moteur de recherche.
+On utilise LangChain + Qdrant pour trouver les textes qui correspondent
+semantiquement a la question posee.
 """
 import logging
 from typing import List, Tuple
 
-from src.ingestion.loader import _get_collection
+from src.ingestion.vector_store import get_store, search
 
 logger = logging.getLogger(__name__)
 
 
 def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
     """
-    On prend la question, on la convertit en mots clés/vecteurs mathématiques
-    et on la compare à tout ce qu'on a déjà lu.
-    
-    Retourne : (Le texte des meilleurs résultats, Le nom des fichiers d'origine)
+    On prend la question, on la convertit en vecteurs mathematiques
+    et on la compare a tout ce qu'on a deja lu dans Qdrant.
+
+    Retourne : (Le texte des meilleurs resultats, Le nom des fichiers d'origine)
     """
-    collection = _get_collection()
+    store = get_store()
 
-    # ChromaDB fait la mathématique de comparaison ('embeddings') en arrière-plan.
-    # On lui demande de nous ramener strictement les 3 meilleurs "paragraphes".
-    results = collection.query(
-        query_texts=[question],
-        n_results=3
-    )
+    # LangChain fait la recherche semantique via Qdrant.
+    # On recupere les 3 documents les plus pertinents.
+    results = search(store, question, k=3)
 
-    # Récupération de la liste des textes qu'on a matchés
-    documents = results.get("documents", [[]])
-    passages = documents[0] if documents else []
+    # Extraction des textes et des sources depuis les Documents LangChain
+    passages = [doc.page_content for doc in results]
 
-    # On récolte aussi les métadonnées (nom du fichier) pour pouvoir dire "d'après tel document..."
-    metadatas = results.get("metadatas", [[]])
+    # On recolte les sources (nom du fichier) en evitant les doublons
     sources = []
-    if metadatas and metadatas[0]:
-        for meta in metadatas[0]:
-            nom_fichier = meta.get("fichier", "inconnu")
-            # Éviter les doublons de source si on a deux paragraphes du même fichier
-            if nom_fichier not in sources:
-                sources.append(nom_fichier)
+    for doc in results:
+        nom_fichier = doc.metadata.get("fichier", "inconnu")
+        if nom_fichier not in sources:
+            sources.append(nom_fichier)
 
-    logger.info(f"Recherche pour '{question}' : {len(passages)} passage(s) trouvé(s) dans nos archives.")
+    logger.info(f"Recherche pour '{question}' : {len(passages)} passage(s) trouve(s) dans nos archives.")
 
     return passages, sources

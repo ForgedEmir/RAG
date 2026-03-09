@@ -9,7 +9,10 @@ __pycache__/
 # Binaires
 *.bin
 
-# ChromaDB
+# Qdrant (base vectorielle locale)
+qdrant_db/
+
+# ChromaDB (ancien, plus utilise)
 chroma_db/
 *.sqlite3
 *.sqlite3-journal

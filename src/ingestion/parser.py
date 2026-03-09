@@ -24,6 +24,9 @@ def clean_text(raw_text: str) -> str:
     # On utilise une expression régulière (Regex) pour effacer tout ce qui ressemble à une balise <...>.
     text = re.sub(r'<[^>]+>', '', raw_text)
 
+    # On convertit les titres Markdown (## Titre) en texte simple (Titre)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+
     # Il y a aussi des variables de code du jeu. On les remplace par du texte en bon français.
     text = text.replace('%PLAYER_NAME%', 'le joueur')
 
@@ -35,8 +38,12 @@ def clean_text(raw_text: str) -> str:
     # on garde le nom de la variable sans les % pour que l'IA ait du contexte.
     text = re.sub(r'%[A-Z_0-9]+%', replace_unknown_vars, text)
 
-    # Enfin, on vire les doubles ou triples espaces créés par nos nettoyages précédents.
-    return " ".join(text.split())
+    # On normalise les espaces dans chaque paragraphe, mais on garde les sauts de paragraphe
+    # pour que le chunker puisse decouper intelligemment par section.
+    import re as _re
+    paragraphs = _re.split(r'\n\s*\n', text)
+    paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
+    return "\n\n".join(paragraphs)
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
