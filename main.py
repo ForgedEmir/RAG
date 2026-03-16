@@ -5,17 +5,22 @@ et s'assurer que notre base de connaissances est à jour au lancement.
 """
 import sys
 import os
+import secrets
 import logging
 
+# Charger le .env EN PREMIER, avant tout import de modules projet.
+# Sans ça, les variables comme EMBEDDING_PROVIDER sont lues avant d'être définies.
+from dotenv import load_dotenv
+load_dotenv()
+
 # On configure les logs pour voir ce qu'il se passe dans la console.
-# Le format 'date - niveau - message' est classique et facile à lire au besoin.
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# Petite astuce pour que Python trouve facilement nos dossiers "src" : 
+# Petite astuce pour que Python trouve facilement nos dossiers "src" :
 # on ajoute la racine du projet au PATH système.
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
@@ -27,6 +32,9 @@ from src.ingestion.run import index_data
 
 # On initialise notre serveur web
 app = Flask(__name__)
+
+# Clé secrète pour les sessions Flask (admin interface)
+app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
 # Le CORS est indispensable si jamais on veut séparer le frontend du backend plus tard.
 # Ça autorise les navigateurs à discuter avec notre API sans bloquer pour raisons de sécurité.

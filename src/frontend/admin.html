@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sanctum Administratorum — Oracle LoreKeeper</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Kalam:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+    <!-- ══════════════════════════════════════════
+         OVERLAY DE CONNEXION
+    ══════════════════════════════════════════ -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-box">
+            <div class="login-rune">⚗️</div>
+            <h1 class="login-title">Sanctum Administratorum</h1>
+            <p class="login-subtitle">Accès réservé aux Archivistes</p>
+            <div class="login-form">
+                <input
+                    type="password"
+                    id="passwordInput"
+                    class="login-input"
+                    placeholder="Mot de passe secret..."
+                    autocomplete="current-password"
+                >
+                <button id="loginBtn" class="login-btn">Entrer dans le Sanctum</button>
+            </div>
+            <p id="loginError" class="login-error"></p>
+            <a href="/" class="login-back">← Retour à l'Oracle</a>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         APPLICATION ADMIN (cachée jusqu'à auth)
+    ══════════════════════════════════════════ -->
+    <div id="adminApp" class="admin-app" style="display:none">
+
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <div class="sidebar-brand">
+                <span class="sidebar-rune">⚗️</span>
+                <span class="sidebar-brand-name">Sanctum</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a class="nav-item active" data-section="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span>Tableau de Bord</span>
+                </a>
+                <a class="nav-item" data-section="files">
+                    <span class="nav-icon">📁</span>
+                    <span>Grimoire des Fichiers</span>
+                </a>
+                <a class="nav-item" data-section="search">
+                    <span class="nav-icon">🔍</span>
+                    <span>Épreuve Arcane</span>
+                </a>
+                <a class="nav-item" data-section="history">
+                    <span class="nav-icon">📜</span>
+                    <span>Chroniques</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="/" class="nav-item nav-item-secondary">
+                    <span class="nav-icon">🔮</span>
+                    <span>Retour à l'Oracle</span>
+                </a>
+                <button id="logoutBtn" class="nav-item nav-item-danger">
+                    <span class="nav-icon">🚪</span>
+                    <span>Déconnexion</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="admin-main">
+
+            <!-- ── TABLEAU DE BORD ─────────────────────────── -->
+            <section id="dashboardSection" class="admin-section active">
+                <div class="section-header">
+                    <h2>Tableau de Bord</h2>
+                    <p class="section-desc">Vue d'ensemble des archives mystiques</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🗝️</div>
+                        <div class="stat-value" id="statVectors">—</div>
+                        <div class="stat-label">Fragments Indexés</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📜</div>
+                        <div class="stat-value" id="statFiles">—</div>
+                        <div class="stat-label">Archives</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔮</div>
+                        <div class="stat-value" id="statQueries">—</div>
+                        <div class="stat-label">Questions Récentes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-value" id="statMode">—</div>
+                        <div class="stat-label">Mode de Stockage</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">⚙️ Actions Rapides</div>
+                    <div class="action-row">
+                        <button class="action-btn" id="quickReindexBtn">
+                            🔥 Réindexation Totale
+                        </button>
+                        <button class="action-btn action-btn-secondary" id="quickUpdateBtn">
+                            🔄 Mise à Jour Incrémentale
+                        </button>
+                    </div>
+                    <p id="reindexStatus" class="status-msg"></p>
+                </div>
+            </section>
+
+            <!-- ── GRIMOIRE DES FICHIERS ──────────────────── -->
+            <section id="filesSection" class="admin-section">
+                <div class="section-header">
+                    <h2>Grimoire des Fichiers</h2>
+                    <p class="section-desc">Gérez les archives lore indexées dans l'Oracle</p>
+                </div>
+
+                <!-- Zone d'upload -->
+                <div id="uploadZone" class="upload-zone">
+                    <div class="upload-icon">📜</div>
+                    <p class="upload-title">Déposez vos parchemins ici</p>
+                    <p class="upload-hint">ou cliquez pour sélectionner · Formats acceptés : .md .txt .csv .json .xlsx .xml</p>
+                    <input type="file" id="fileInput" multiple accept=".md,.txt,.csv,.json,.xlsx,.xml" style="display:none">
+                </div>
+                <p id="uploadStatus" class="status-msg"></p>
+
+                <!-- Table des fichiers -->
+                <div class="card">
+                    <div class="card-header-row">
+                        <div class="card-title">📋 Archives Indexées</div>
+                        <button class="refresh-btn" id="refreshFilesBtn" title="Rafraîchir">↻</button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="grimoire-table">
+                            <thead>
+                                <tr>
+                                    <th>Archive</th>
+                                    <th>Taille</th>
+                                    <th>Fragments</th>
+                                    <th>Modifié le</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="filesTableBody">
+                                <tr><td colspan="5" class="table-loading">Consultation des archives...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── ÉPREUVE ARCANE (Search Test) ─────────────── -->
+            <section id="searchSection" class="admin-section">
+                <div class="section-header">
+                    <h2>Épreuve Arcane</h2>
+                    <p class="section-desc">
+                        Testez le moteur de recherche. Visualisez exactement quels passages de vos archives
+                        sont récupérés pour répondre à une question.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="search-test-row">
+                        <input
+                            type="text"
+                            id="searchTestInput"
+                            class="search-test-input"
+                            placeholder="Posez votre question aux archives..."
+                        >
+                        <button id="searchTestBtn" class="action-btn">🔍 Rechercher</button>
+                    </div>
+                </div>
+
+                <div id="searchResults" class="search-results-container"></div>
+            </section>
+
+            <!-- ── CHRONIQUES (Query History) ────────────────── -->
+            <section id="historySection" class="admin-section">
+                <div class="section-header">
+                    <h2>Chroniques des Questions</h2>
+                    <p class="section-desc">Historique des dernières questions posées à l'Oracle par les utilisateurs</p>
+                </div>
+                <div id="historyContainer" class="history-container">
+                    <p class="table-loading">Chargement des chroniques...</p>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         MODAL VISIONNEUR DE DOCUMENT
+    ══════════════════════════════════════════ -->
+    <div id="docModal" class="doc-modal" style="display:none">
+        <div class="doc-modal-overlay" id="docModalOverlay"></div>
+        <div class="doc-modal-content">
+            <div class="doc-modal-header">
+                <h3 id="docModalTitle">Document</h3>
+                <div class="doc-modal-actions">
+                    <span id="docHighlightCount" class="highlight-badge" style="display:none"></span>
+                    <button id="prevHighlight" class="nav-highlight-btn" title="Passage précédent" style="display:none">▲</button>
+                    <button id="nextHighlight" class="nav-highlight-btn" title="Passage suivant" style="display:none">▼</button>
+                    <button id="closeDocModal" class="close-modal-btn">✕</button>
+                </div>
+            </div>
+            <div id="docModalLegend" class="doc-legend" style="display:none">
+                <span class="legend-dot"></span> Passage récupéré par la recherche
+            </div>
+            <div class="doc-modal-body">
+                <pre id="docContent" class="doc-content"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

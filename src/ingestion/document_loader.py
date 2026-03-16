@@ -1,10 +1,15 @@
 """
-Chargeur de documents via LangChain.
-Utilise des loaders specifiques par type de fichier pour une extraction fiable.
+Chargeur de documents via Unstructured.io.
+Utilise la fonction partition() d'Unstructured pour extraire le texte
+de n'importe quel format de fichier (Markdown, JSON, CSV, XML, XLSX, etc.)
+
 Le nettoyage specifique au jeu (%PLAYER_NAME%, balises HTML, etc.)
 est applique apres l'extraction via clean_text() du parser maison.
 
-Fallback : si le loader LangChain echoue, on utilise le parser custom.
+Fallback : si Unstructured echoue ou n'est pas installe, on utilise le parser custom.
+
+Note technique : l'import d'Unstructured est fait a l'interieur de la fonction
+(import paresseux) car la librairie python-magic peut crasher sur Windows.
 """
 import os
 import logging
@@ -15,74 +20,68 @@ from src.ingestion.parser import clean_text, extract_text_from_file
 logger = logging.getLogger(__name__)
 
 
-def _get_loader(filepath: str):
-    """Retourne le bon loader LangChain selon l'extension du fichier."""
-    _, ext = os.path.splitext(filepath)
-    ext = ext.lower()
+def _try_partition(filepath: str) -> list:
+    """
+    Tente d'utiliser Unstructured pour extraire les elements du fichier.
+    Import paresseux pour eviter les crashes au demarrage sur Windows
+    (python-magic peut provoquer un segfault a l'import).
 
-    if ext in ('.md', '.txt'):
-        from langchain_community.document_loaders import TextLoader
-        return TextLoader(filepath, encoding='utf-8')
-
-    elif ext == '.csv':
-        from langchain_community.document_loaders import CSVLoader
-        return CSVLoader(filepath, encoding='utf-8')
-
-    elif ext == '.json':
-        from langchain_community.document_loaders import JSONLoader
-        return JSONLoader(filepath, jq_schema='.', text_content=False)
-
-    # Pour XML et autres formats, pas de loader LangChain fiable -> fallback custom
-    return None
+    Retourne la liste des elements, ou leve une exception si ca echoue.
+    """
+    from unstructured.partition.auto import partition
+    return partition(filepath)
 
 
 def load_document(filepath: str) -> List[Document]:
     """
     Charge un fichier et retourne une liste de Documents LangChain.
-    Utilise un loader LangChain specifique, avec fallback vers le parser custom.
+    Utilise Unstructured.io pour l'extraction, avec fallback vers le parser custom.
     """
     if not os.path.exists(filepath):
         logger.error(f"Le fichier {filepath} n'existe pas.")
         return []
 
     try:
-        loader = _get_loader(filepath)
+        elements = _try_partition(filepath)
 
-        if loader:
-            docs = loader.load()
-        else:
-            # Fallback : parser custom pour les formats sans loader LangChain (XML, XLSX, etc.)
-            texte = extract_text_from_file(filepath)
-            if not texte:
-                return []
-            docs = [Document(page_content=texte, metadata={"source": filepath})]
+        if not elements:
+            logger.warning(f"Unstructured n'a rien extrait de {filepath}. Fallback vers parser custom.")
+            return _fallback_custom(filepath)
 
-        # Appliquer le nettoyage specifique au jeu sur chaque document
+        # On convertit les Elements Unstructured en Documents LangChain
+        # Chaque element a un attribut .text qui contient le texte extrait
         cleaned_docs = []
-        for doc in docs:
-            texte_nettoye = clean_text(doc.page_content)
+        for elem in elements:
+            texte_nettoye = clean_text(elem.text)
             if texte_nettoye:
                 cleaned_docs.append(Document(
                     page_content=texte_nettoye,
-                    metadata=doc.metadata
+                    metadata={"source": filepath}
                 ))
 
         return cleaned_docs
 
     except Exception as e:
-        logger.warning(f"Loader LangChain echoue pour {filepath}: {e}. Fallback vers parser custom.")
-        # Fallback : parser custom
-        texte = extract_text_from_file(filepath)
-        if texte:
-            texte_nettoye = clean_text(texte)
-            if texte_nettoye:
-                return [Document(page_content=texte_nettoye, metadata={"source": filepath})]
-        return []
+        logger.warning(f"Unstructured a echoue pour {filepath}: {e}. Fallback vers parser custom.")
+        return _fallback_custom(filepath)
+
+
+def _fallback_custom(filepath: str) -> List[Document]:
+    """
+    Plan B : si Unstructured n'arrive pas a lire le fichier,
+    on utilise notre parser maison qui sait gerer les cas tordus.
+    """
+    texte = extract_text_from_file(filepath)
+    if texte:
+        texte_nettoye = clean_text(texte)
+        if texte_nettoye:
+            return [Document(page_content=texte_nettoye, metadata={"source": filepath})]
+    return []
 
 
 def extract_text_with_unstructured(filepath: str) -> Optional[str]:
     """
-    Extrait le texte d'un fichier via LangChain loaders et applique clean_text().
+    Extrait le texte d'un fichier via Unstructured.io et applique clean_text().
     Interface compatible avec l'ancien extract_text_from_file() du parser maison.
 
     Retourne le texte nettoye, ou None en cas d'erreur.

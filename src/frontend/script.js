@@ -1,5 +1,38 @@
 // Oracle des Archives - JavaScript Interface
 
+// Terms and Conditions Management
+const TERMS_ACCEPTED_KEY = 'oracleTermsAccepted';
+
+function checkTermsAcceptance() {
+    const accepted = localStorage.getItem(TERMS_ACCEPTED_KEY);
+    const termsModal = document.getElementById('termsModal');
+    
+    if (accepted === 'true') {
+        termsModal.style.display = 'none';
+    } else {
+        termsModal.style.display = 'flex';
+    }
+}
+
+function initializeTermsModal() {
+    const termsModal = document.getElementById('termsModal');
+    const acceptCheckbox = document.getElementById('acceptTerms');
+    const acceptButton = document.getElementById('acceptTermsButton');
+    
+    // Enable/disable button based on checkbox
+    acceptCheckbox.addEventListener('change', function() {
+        acceptButton.disabled = !this.checked;
+    });
+    
+    // Handle accept button click
+    acceptButton.addEventListener('click', function() {
+        if (acceptCheckbox.checked) {
+            localStorage.setItem(TERMS_ACCEPTED_KEY, 'true');
+            termsModal.style.display = 'none';
+        }
+    });
+}
+
 const userInput = document.getElementById('userInput');
 const revealButton = document.getElementById('revealButton');
 const oracleResponses = document.getElementById('oracleResponses');
@@ -28,6 +61,19 @@ function addUserQuestion(question) {
         </div>
     `;
     oracleResponses.appendChild(messageDiv);
+}
+
+function addBlockedMessage(message, blockType) {
+    const isInjection = blockType === 'prompt_injection';
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'oracle-message';
+    messageDiv.innerHTML = `
+        <div class="oracle-response-blocked ${isInjection ? 'blocked-injection' : 'blocked-offtopic'}">
+            ${message}
+        </div>
+    `;
+    oracleResponses.appendChild(messageDiv);
+    oracleResponses.scrollTop = oracleResponses.scrollHeight;
 }
 
 function addOracleResponse(response) {
@@ -81,7 +127,11 @@ async function consultOracle() {
         hideLoading();
 
         setTimeout(() => {
-            addOracleResponse(data.reponse);
+            if (data.blocked) {
+                addBlockedMessage(data.reponse, data.block_type);
+            } else {
+                addOracleResponse(data.reponse);
+            }
         }, 500);
 
     } catch (error) {
@@ -99,6 +149,10 @@ async function consultOracle() {
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize terms modal
+    checkTermsAcceptance();
+    initializeTermsModal();
+    
     // Event listeners
     revealButton.addEventListener('click', consultOracle);
 

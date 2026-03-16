@@ -8,8 +8,51 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Modal pour les conditions d'utilisation -->
+    <div id="termsModal" class="terms-modal">
+        <div class="terms-content">
+            <div class="terms-header">
+                <h2>Conditions d'Utilisation de l'Oracle</h2>
+            </div>
+            <div class="terms-body">
+                <p>Avant de consulter l'Oracle des Archives, veuillez prendre connaissance des conditions suivantes :</p>
+                
+                <div class="terms-section">
+                    <h3>Utilisation de l'Intelligence Artificielle</h3>
+                    <p>L'Oracle utilise une intelligence artificielle pour analyser vos questions et générer des réponses basées sur les archives disponibles.</p>
+                </div>
+                
+                <div class="terms-section">
+                    <h3>Traitement des Données</h3>
+                    <p>Vos questions sont traitées par l'IA pour vous fournir des réponses pertinentes. Ces données peuvent être utilisées pour améliorer la qualité du service.</p>
+                </div>
+                
+                <div class="terms-section">
+                    <h3>Données Personnelles</h3>
+                    <p><strong>Ne partagez jamais d'informations personnelles sensibles</strong> telles que :</p>
+                    <ul>
+                        <li>Numéros de carte bancaire, mots de passe ou identifiants</li>
+                        <li>Informations médicales confidentielles</li>
+                        <li>Données d'identification personnelle (numéro de sécurité sociale, etc.)</li>
+                        <li>Informations privées sur vous-même ou d'autres personnes</li>
+                    </ul>
+                </div>
+                
+                <div class="terms-checkbox">
+                    <label>
+                        <input type="checkbox" id="acceptTerms">
+                        <span>J'ai lu et j'accepte ces conditions d'utilisation. Je m'engage à ne pas partager de données personnelles sensibles.</span>
+                    </label>
+                </div>
+            </div>
+            <div class="terms-footer">
+                <button id="acceptTermsButton" class="terms-button" disabled>Accepter et Continuer</button>
+            </div>
+        </div>
+    </div>
+
     <div class="grimoire-container">
-        <div class="grimoire-title">L'Oracle</div>
+        <div class="grimoire-title">LoreKeeper</div>
         
         <div class="book">
             <div class="pages-container">
