@@ -135,3 +135,54 @@ def test_instructions_rag(mock_llm):
     assert "Aethelgard Online" in system_message
     assert "uniquement en te basant" in system_message
     assert "N'invente" in system_message
+
+
+# ===== TESTS POUR reformuler_question =====
+
+@patch('src.generation.generator._llm')
+def test_reformuler_sans_historique(mock_llm):
+    """Sans historique, la question originale est retournee sans appel LLM."""
+    from src.generation.generator import reformuler_question
+
+    resultat = reformuler_question("Qui est Lucas ?", [])
+
+    assert resultat == "Qui est Lucas ?"
+    mock_llm.invoke.assert_not_called()
+
+
+@patch('src.generation.generator._llm')
+def test_reformuler_avec_historique(mock_llm):
+    """Avec historique, le LLM est appele et la question reformulee est retournee."""
+    from src.generation.generator import reformuler_question
+
+    mock_llm.invoke.return_value = AIMessage(content="Quelle est la taille de Lucas le Tranchant ?")
+
+    history = [{"question": "Qui est Lucas ?", "answer": "Lucas est un guerrier d'1m30."}]
+    resultat = reformuler_question("il fait quelle taille ?", history)
+
+    assert resultat == "Quelle est la taille de Lucas le Tranchant ?"
+    mock_llm.invoke.assert_called_once()
+
+
+@patch('src.generation.generator._llm', None)
+def test_reformuler_llm_indisponible():
+    """Sans LLM disponible, la question originale est retournee."""
+    from src.generation.generator import reformuler_question
+
+    history = [{"question": "Qui est Lucas ?", "answer": "Un guerrier."}]
+    resultat = reformuler_question("il fait quelle taille ?", history)
+
+    assert resultat == "il fait quelle taille ?"
+
+
+@patch('src.generation.generator._llm')
+def test_reformuler_erreur_llm(mock_llm):
+    """Si le LLM echoue, la question originale est retournee (fail-silent)."""
+    from src.generation.generator import reformuler_question
+
+    mock_llm.invoke.side_effect = Exception("Erreur reseau")
+
+    history = [{"question": "Qui est Lucas ?", "answer": "Un guerrier."}]
+    resultat = reformuler_question("il fait quelle taille ?", history)
+
+    assert resultat == "il fait quelle taille ?"

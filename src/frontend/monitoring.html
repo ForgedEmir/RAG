@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring — Oracle LoreKeeper</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'EB Garamond', Georgia, serif;
+            background: #1a1008;
+            color: #d4b896;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        /* ── Auth screen ── */
+        #auth-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 1rem;
+        }
+        #auth-screen h1 { font-family: 'Cinzel', serif; color: #c9a84c; font-size: 1.8rem; }
+        #auth-screen input {
+            padding: .6rem 1rem;
+            border: 1px solid #5a3e1b;
+            background: #2a1a08;
+            color: #d4b896;
+            border-radius: 6px;
+            font-size: 1rem;
+            width: 300px;
+        }
+        #auth-screen button {
+            padding: .6rem 2rem;
+            background: #5a3e1b;
+            color: #f0d9a0;
+            border: 1px solid #c9a84c;
+            border-radius: 6px;
+            font-family: 'Cinzel', serif;
+            cursor: pointer;
+            font-size: .9rem;
+        }
+        #auth-screen button:hover { background: #7a5e2b; }
+        #auth-error { color: #c0392b; font-size: .9rem; }
+
+        /* ── Dashboard ── */
+        #dashboard { display: none; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #5a3e1b;
+        }
+        header h1 { font-family: 'Cinzel', serif; color: #c9a84c; font-size: 1.6rem; }
+        #refresh-info { font-size: .85rem; color: #8a7a6a; font-style: italic; }
+
+        /* ── Spike alert ── */
+        #spike-alert {
+            display: none;
+            background: rgba(180, 30, 30, 0.15);
+            border: 1px solid #8B2020;
+            color: #e07070;
+            padding: .8rem 1.2rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: .95rem;
+        }
+
+        /* ── Stat cards ── */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: #2a1a08;
+            border: 1px solid #5a3e1b;
+            border-radius: 10px;
+            padding: 1.2rem;
+            text-align: center;
+        }
+        .card-label {
+            font-size: .8rem;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #8a7a6a;
+            margin-bottom: .5rem;
+        }
+        .card-value {
+            font-family: 'Cinzel', serif;
+            font-size: 2rem;
+            color: #c9a84c;
+        }
+        .card-value.danger { color: #e07070; }
+        .card-value.warn { color: #e0a840; }
+        .card-value.ok { color: #70c070; }
+
+        /* ── Events table ── */
+        h2 { font-family: 'Cinzel', serif; color: #c9a84c; font-size: 1.1rem; margin-bottom: 1rem; }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+        thead th {
+            text-align: left;
+            padding: .5rem .8rem;
+            border-bottom: 1px solid #5a3e1b;
+            font-family: 'Cinzel', serif;
+            font-size: .75rem;
+            color: #8a7a6a;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+        tbody tr:hover { background: rgba(90, 62, 27, 0.2); }
+        tbody td { padding: .5rem .8rem; border-bottom: 1px solid rgba(90, 62, 27, 0.3); }
+
+        .badge {
+            display: inline-block;
+            padding: .15rem .5rem;
+            border-radius: 4px;
+            font-size: .75rem;
+            font-weight: 600;
+        }
+        .badge-question        { background: rgba(70,130,180,.2); color: #87ceeb; }
+        .badge-injection_regex { background: rgba(180,30,30,.2);  color: #e07070; }
+        .badge-injection_lakera{ background: rgba(180,30,30,.2);  color: #e07070; }
+        .badge-rate_limit      { background: rgba(180,130,0,.2);  color: #e0a840; }
+        .badge-error           { background: rgba(180,60,0,.2);   color: #e09060; }
+
+        .latency { color: #8a7a6a; font-size: .85rem; }
+        .detail  { color: #a09080; font-size: .85rem; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .time    { color: #6a5a4a; font-size: .8rem; }
+
+        #error-msg { color: #e07070; font-style: italic; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+
+<!-- ── Écran d'authentification ── -->
+<div id="auth-screen">
+    <h1>⚔ Monitoring Oracle</h1>
+    <p style="color:#8a7a6a;font-style:italic">Accès réservé</p>
+    <input type="password" id="key-input" placeholder="Clé de monitoring..." />
+    <button onclick="authenticate()">Entrer</button>
+    <span id="auth-error"></span>
+</div>
+
+<!-- ── Dashboard ── -->
+<div id="dashboard">
+    <header>
+        <h1>⚔ Oracle LoreKeeper — Monitoring</h1>
+        <span id="refresh-info">Actualisation dans <span id="countdown">30</span>s</span>
+    </header>
+
+    <div id="spike-alert">⚠️ Spike d'injections détecté : plus de 10 tentatives en 5 minutes.</div>
+    <div id="error-msg"></div>
+
+    <div class="cards">
+        <div class="card">
+            <div class="card-label">Questions</div>
+            <div class="card-value ok" id="cnt-question">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Injections (regex)</div>
+            <div class="card-value danger" id="cnt-injection_regex">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Injections (Lakera)</div>
+            <div class="card-value danger" id="cnt-injection_lakera">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Rate limits</div>
+            <div class="card-value warn" id="cnt-rate_limit">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Erreurs</div>
+            <div class="card-value danger" id="cnt-error">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Latence moy.</div>
+            <div class="card-value" id="cnt-latency">—</div>
+        </div>
+    </div>
+
+    <h2>Derniers événements</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Détail</th>
+                    <th>Latence</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody id="events-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let monitoringKey = '';
+    let countdownVal = 30;
+    let countdownTimer = null;
+
+    function authenticate() {
+        const key = document.getElementById('key-input').value.trim();
+        if (!key) return;
+        monitoringKey = key;
+        fetchStats(true);
+    }
+
+    document.getElementById('key-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') authenticate();
+    });
+
+    function fetchStats(isAuth = false) {
+        fetch(`/api/monitoring/stats?key=${encodeURIComponent(monitoringKey)}`)
+            .then(r => {
+                if (r.status === 403) throw new Error('Clé invalide');
+                return r.json();
+            })
+            .then(data => {
+                if (isAuth) {
+                    document.getElementById('auth-screen').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    startCountdown();
+                }
+                renderStats(data);
+            })
+            .catch(err => {
+                if (isAuth) {
+                    document.getElementById('auth-error').textContent = err.message;
+                } else {
+                    document.getElementById('error-msg').textContent = 'Erreur de chargement : ' + err.message;
+                }
+            });
+    }
+
+    function renderStats(data) {
+        document.getElementById('error-msg').textContent = data.error || '';
+
+        const counts = data.counts || {};
+        ['question','injection_regex','injection_lakera','rate_limit','error'].forEach(t => {
+            const el = document.getElementById('cnt-' + t);
+            if (el) el.textContent = counts[t] ?? '—';
+        });
+
+        const lat = document.getElementById('cnt-latency');
+        lat.textContent = data.avg_latency_ms ? data.avg_latency_ms + ' ms' : '—';
+
+        const spike = document.getElementById('spike-alert');
+        spike.style.display = data.injection_spike ? 'block' : 'none';
+
+        const tbody = document.getElementById('events-body');
+        tbody.innerHTML = '';
+        (data.events || []).forEach(ev => {
+            const tr = document.createElement('tr');
+            const date = new Date(ev.created_at).toLocaleString('fr-FR');
+            const latency = ev.latency_ms ? `<span class="latency">${ev.latency_ms} ms</span>` : '<span class="latency">—</span>';
+            tr.innerHTML = `
+                <td><span class="badge badge-${ev.type}">${formatType(ev.type)}</span></td>
+                <td class="detail" title="${ev.detail || ''}">${ev.detail || '—'}</td>
+                <td>${latency}</td>
+                <td class="time">${date}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function formatType(type) {
+        return {
+            question: 'Question',
+            injection_regex: 'Injection (regex)',
+            injection_lakera: 'Injection (Lakera)',
+            rate_limit: 'Rate limit',
+            error: 'Erreur',
+        }[type] || type;
+    }
+
+    function startCountdown() {
+        if (countdownTimer) clearInterval(countdownTimer);
+        countdownVal = 30;
+        countdownTimer = setInterval(() => {
+            countdownVal--;
+            document.getElementById('countdown').textContent = countdownVal;
+            if (countdownVal <= 0) {
+                countdownVal = 30;
+                fetchStats();
+            }
+        }, 1000);
+    }
+</script>
+</body>
+</html>

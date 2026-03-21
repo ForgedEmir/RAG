@@ -1,109 +1,244 @@
 // Oracle des Archives - JavaScript Interface
 
-// Terms and Conditions Management
+// ── Gestion multi-sessions ────────────────────────────────────────────────
+const SESSIONS_KEY = 'oracle_sessions';
+const CURRENT_KEY  = 'oracle_current_session';
+
+function getSessions() {
+    return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+}
+
+function saveSessions(sessions) {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+function getSessionId() {
+    let id = localStorage.getItem(CURRENT_KEY);
+    if (!id) id = startNewSession();
+    return id;
+}
+
+function startNewSession() {
+    const id = crypto.randomUUID();
+    localStorage.setItem(CURRENT_KEY, id);
+    return id;
+}
+
+function registerSession(sessionId, firstQuestion) {
+    const sessions = getSessions();
+    if (sessions.find(s => s.id === sessionId)) return;
+    sessions.unshift({ id: sessionId, title: firstQuestion.slice(0, 55), created_at: Date.now() });
+    saveSessions(sessions);
+    renderSidebar();
+}
+
+function formatDate(ts) {
+    return new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+}
+
+// ── Terms and Conditions ──────────────────────────────────────────────────
 const TERMS_ACCEPTED_KEY = 'oracleTermsAccepted';
 
 function checkTermsAcceptance() {
     const accepted = localStorage.getItem(TERMS_ACCEPTED_KEY);
-    const termsModal = document.getElementById('termsModal');
-    
-    if (accepted === 'true') {
-        termsModal.style.display = 'none';
-    } else {
-        termsModal.style.display = 'flex';
-    }
+    document.getElementById('termsModal').style.display = accepted === 'true' ? 'none' : 'flex';
 }
 
 function initializeTermsModal() {
-    const termsModal = document.getElementById('termsModal');
     const acceptCheckbox = document.getElementById('acceptTerms');
-    const acceptButton = document.getElementById('acceptTermsButton');
-    
-    // Enable/disable button based on checkbox
+    const acceptButton   = document.getElementById('acceptTermsButton');
+
     acceptCheckbox.addEventListener('change', function() {
         acceptButton.disabled = !this.checked;
     });
-    
-    // Handle accept button click
+
     acceptButton.addEventListener('click', function() {
         if (acceptCheckbox.checked) {
             localStorage.setItem(TERMS_ACCEPTED_KEY, 'true');
-            termsModal.style.display = 'none';
+            document.getElementById('termsModal').style.display = 'none';
         }
     });
 }
 
-const userInput = document.getElementById('userInput');
-const revealButton = document.getElementById('revealButton');
-const oracleResponses = document.getElementById('oracleResponses');
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const userInput        = document.getElementById('userInput');
+const revealButton     = document.getElementById('revealButton');
+const oracleResponses  = document.getElementById('oracleResponses');
 const loadingIndicator = document.getElementById('loadingIndicator');
-const welcomeMessage = document.getElementById('welcomeMessage');
+const sidebar          = document.getElementById('sidebar');
+const convList         = document.getElementById('convList');
 
 let isFirstMessage = true;
 
-function addUserQuestion(question) {
-    // Hide welcome message on first user message
-    if (isFirstMessage && welcomeMessage) {
-        welcomeMessage.classList.add('fade-out');
-        setTimeout(() => {
-            if (welcomeMessage.parentNode) {
-                welcomeMessage.parentNode.removeChild(welcomeMessage);
-            }
-        }, 800);
+// ── Sidebar ───────────────────────────────────────────────────────────────
+function renderSidebar() {
+    const sessions = getSessions();
+    const currentId = localStorage.getItem(CURRENT_KEY);
+    convList.innerHTML = '';
+
+    if (sessions.length === 0) {
+        convList.innerHTML = '<div class="conv-empty">Aucune consultation passée.<br>Posez votre première question à l\'Oracle.</div>';
+        return;
+    }
+
+    sessions.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'conv-item' + (s.id === currentId ? ' active' : '');
+        item.innerHTML = `
+            <div class="conv-item-title">${s.title}</div>
+            <div class="conv-item-date">${formatDate(s.created_at)}</div>
+            <button class="conv-item-delete" title="Supprimer">×</button>
+        `;
+        item.querySelector('.conv-item-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteConversation(s.id);
+        });
+        item.addEventListener('click', () => loadConversation(s.id));
+        convList.appendChild(item);
+    });
+}
+
+async function loadConversation(sessionId) {
+    localStorage.setItem(CURRENT_KEY, sessionId);
+    renderSidebar();
+    clearResponses();
+
+    try {
+        const res = await fetch(`/api/conversations?session_id=${sessionId}`);
+        const data = await res.json();
+        if (data.exchanges && data.exchanges.length > 0) {
+            isFirstMessage = false;
+            data.exchanges.forEach(ex => {
+                addUserQuestion(ex.question, true);
+                addOracleResponse(ex.answer, true);
+            });
+        }
+    } catch (e) {
+        console.error('Erreur chargement conversation:', e);
+    }
+
+    sidebar.classList.remove('open');
+    userInput.focus();
+}
+
+async function deleteConversation(sessionId) {
+    // Supprimer de Supabase
+    await fetch(`/api/conversations?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
+
+    // Supprimer du localStorage
+    const sessions = getSessions().filter(s => s.id !== sessionId);
+    saveSessions(sessions);
+
+    // Si c'était la session active, en démarrer une nouvelle
+    if (localStorage.getItem(CURRENT_KEY) === sessionId) {
+        startNewSession();
+        clearResponses();
+        oracleResponses.innerHTML = `
+            <div class="oracle-message welcome-message" id="welcomeMessage">
+                <div class="oracle-response">
+                    Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps.
+                    <br><br>
+                    Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez.
+                </div>
+            </div>`;
+    }
+
+    renderSidebar();
+}
+
+function clearResponses() {
+    oracleResponses.innerHTML = '';
+    isFirstMessage = true;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────
+function addUserQuestion(question, fromHistory = false) {
+    if (!fromHistory && isFirstMessage) {
+        const welcome = document.getElementById('welcomeMessage');
+        if (welcome) {
+            welcome.classList.add('fade-out');
+            setTimeout(() => welcome.parentNode?.removeChild(welcome), 800);
+        }
         isFirstMessage = false;
     }
-    
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'oracle-message';
-    messageDiv.innerHTML = `
-        <div class="user-question">
-            ${question}
-        </div>
-    `;
-    oracleResponses.appendChild(messageDiv);
+    const div = document.createElement('div');
+    div.className = 'oracle-message' + (fromHistory ? ' from-history' : '');
+    div.innerHTML = `<div class="user-question">${question}</div>`;
+    oracleResponses.appendChild(div);
 }
 
 function addBlockedMessage(message, blockType) {
-    const isInjection = blockType === 'prompt_injection';
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'oracle-message';
-    messageDiv.innerHTML = `
+    const isInjection = blockType === 'prompt_injection' || blockType === 'jailbreak';
+    const div = document.createElement('div');
+    div.className = 'oracle-message';
+    div.innerHTML = `
         <div class="oracle-response-blocked ${isInjection ? 'blocked-injection' : 'blocked-offtopic'}">
             ${message}
-        </div>
-    `;
-    oracleResponses.appendChild(messageDiv);
+        </div>`;
+    oracleResponses.appendChild(div);
     oracleResponses.scrollTop = oracleResponses.scrollHeight;
 }
 
-function addOracleResponse(response) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'oracle-message';
-    messageDiv.innerHTML = `
-        <div class="oracle-response">
-            ${response}
-        </div>
-    `;
-    oracleResponses.appendChild(messageDiv);
+function addOracleResponse(text, fromHistory = false) {
+    const div = document.createElement('div');
+    div.className = 'oracle-message' + (fromHistory ? ' from-history' : '');
+    div.innerHTML = `<div class="oracle-response">${text}</div>`;
+    oracleResponses.appendChild(div);
     oracleResponses.scrollTop = oracleResponses.scrollHeight;
 }
 
-function showLoading() {
-    loadingIndicator.classList.add('visible');
+function createStreamingMessage() {
+    const div = document.createElement('div');
+    div.className = 'oracle-message';
+    const inner = document.createElement('div');
+    inner.className = 'oracle-response';
+    div.appendChild(inner);
+    oracleResponses.appendChild(div);
+    return inner;
 }
 
-function hideLoading() {
-    loadingIndicator.classList.remove('visible');
+function addTtsButton(textEl) {
+    const btn = document.createElement('button');
+    btn.className = 'tts-btn';
+    btn.textContent = '🔊 Écouter';
+    btn.addEventListener('click', async () => {
+        if (btn.classList.contains('playing')) return;
+        btn.classList.add('playing');
+        btn.textContent = '🔊 En cours...';
+        try {
+            const res = await fetch('/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: textEl.textContent }),
+            });
+            if (!res.ok) throw new Error('TTS indisponible');
+            const blob = await res.blob();
+            const audio = new Audio(URL.createObjectURL(blob));
+            audio.onended = () => {
+                btn.classList.remove('playing');
+                btn.textContent = '🔊 Écouter';
+            };
+            audio.play();
+        } catch (e) {
+            btn.classList.remove('playing');
+            btn.textContent = '🔊 Écouter';
+        }
+    });
+    textEl.parentNode.appendChild(btn);
 }
 
+function showLoading() { loadingIndicator.classList.add('visible'); }
+function hideLoading() { loadingIndicator.classList.remove('visible'); }
+
+// ── Consultation de l'Oracle ──────────────────────────────────────────────
 async function consultOracle() {
     const question = userInput.value.trim();
-
     if (!question) {
         alert('Veuillez écrire votre question sur le parchemin mystique...');
         return;
     }
 
+    const sessionId = getSessionId();
     addUserQuestion(question);
     userInput.value = '';
     showLoading();
@@ -111,65 +246,106 @@ async function consultOracle() {
     try {
         const response = await fetch('/api/ask', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                question: question
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, session_id: sessionId }),
         });
 
         if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            if (response.status === 429) {
+                hideLoading();
+                addBlockedMessage(err.error || 'Trop de requêtes.', 'rate_limit');
+                return;
+            }
             throw new Error(`Erreur HTTP: ${response.status}`);
         }
 
-        const data = await response.json();
-        hideLoading();
+        const contentType = response.headers.get('content-type') || '';
 
-        setTimeout(() => {
-            if (data.blocked) {
-                addBlockedMessage(data.reponse, data.block_type);
-            } else {
-                addOracleResponse(data.reponse);
+        // ── Réponse bloquée (JSON) ────────────────────────────────────────
+        if (!contentType.includes('text/event-stream')) {
+            const data = await response.json();
+            hideLoading();
+            setTimeout(() => {
+                if (data.blocked) addBlockedMessage(data.reponse, data.block_type);
+                else addOracleResponse(data.reponse);
+            }, 500);
+            return;
+        }
+
+        // ── Réponse streamée (SSE) ────────────────────────────────────────
+        hideLoading();
+        const msgEl = createStreamingMessage();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let isFirstQuestion = getSessions().find(s => s.id === sessionId) === undefined;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6).trim();
+                if (!payload) continue;
+
+                try {
+                    const event = JSON.parse(payload);
+                    if (event.type === 'text') {
+                        msgEl.textContent += event.text;
+                        oracleResponses.scrollTop = oracleResponses.scrollHeight;
+                    } else if (event.type === 'done') {
+                        if (isFirstQuestion) registerSession(sessionId, question);
+                        addTtsButton(msgEl);
+                    }
+                } catch (_) {}
             }
-        }, 500);
+        }
 
     } catch (error) {
         console.error('Erreur:', error);
         hideLoading();
-
-        setTimeout(() => {
-            addOracleResponse(
-                'Les brumes mystiques obscurcissent ma vision... L\'Oracle semble être dans un sommeil profond. ' +
-                'Vérifiez que le serveur des mystères soit éveillé et tentez à nouveau votre invocation.'
-            );
-        }, 500);
+        setTimeout(() => addOracleResponse(
+            "Les brumes mystiques obscurcissent ma vision... L'Oracle semble être dans un sommeil profond. " +
+            "Vérifiez que le serveur des mystères soit éveillé et tentez à nouveau votre invocation."
+        ), 500);
     }
 }
 
-// Initialize when DOM is loaded
+// ── Init ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize terms modal
     checkTermsAcceptance();
     initializeTermsModal();
-    
-    // Event listeners
-    revealButton.addEventListener('click', consultOracle);
+    renderSidebar();
 
-    userInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            consultOracle();
-        }
+    document.getElementById('sidebarToggle').addEventListener('click', () => {
+        sidebar.classList.toggle('open');
     });
 
+    document.getElementById('newConvButton').addEventListener('click', () => {
+        startNewSession();
+        clearResponses();
+        oracleResponses.innerHTML = `
+            <div class="oracle-message welcome-message" id="welcomeMessage">
+                <div class="oracle-response">
+                    Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps.
+                    <br><br>
+                    Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez.
+                </div>
+            </div>`;
+        renderSidebar();
+        sidebar.classList.remove('open');
+        userInput.focus();
+    });
+
+    revealButton.addEventListener('click', consultOracle);
+    userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); consultOracle(); }
+    });
     userInput.focus();
-
-    // userInput.addEventListener('focus', () => {
-    //     userInput.style.background = 'rgba(244,228,188,0.1)';
-    // });
-
-    // userInput.addEventListener('blur', () => {
-    //     userInput.style.background = 'transparent';
-    // });
 });

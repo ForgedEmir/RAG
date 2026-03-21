@@ -1,82 +1,149 @@
-# Projet Oracle — Assistant Intelligent pour le Lore
+# Oracle LoreKeeper
 
-Le **Projet Oracle** est un assistant conversationnel intelligent (RAG) conçu pour interagir avec l'univers et le lore de votre jeu. Les joueurs peuvent poser des questions en langage naturel et obtenir des réponses fiables, basées *exclusivement* sur vos documents officiels.
-
----
-
-## 🚀 Prérequis
-
-Pour faire fonctionner le projet sur votre machine, vous aurez besoin de :
-- **Python 3.11** (Recommandé pour la stabilité avec les modèles d'IA)
-- **Git** (Pour cloner le dépôt)
+Assistant conversationnel intelligent pour le lore du jeu **Aethelgard Online**.
+Les joueurs posent des questions en langage naturel et reçoivent des réponses basées exclusivement sur les documents officiels du jeu.
 
 ---
 
-## 🛠️ Installation
+## Stack technique
 
-**1. Cloner le projet**
-```bash
-git clone https://git.helmo.be/q240047/projet-oracle.git
-cd projet-oracle
-```
+| Composant | Technologie |
+|-----------|-------------|
+| Backend | Flask (Python 3.11) |
+| LLM | Groq — llama-3.3-70b-versatile |
+| Base vectorielle | Qdrant Cloud |
+| Embeddings | FastEmbed (paraphrase-multilingual-MiniLM) |
+| Parser de documents | Unstructured |
+| Mémoire & monitoring | Supabase (PostgreSQL) |
+| Sécurité | Lakera Guard + Regex |
+| TTS | Edge TTS — Henri Neural (fr-FR) |
+| Déploiement | Railway (Gunicorn + Gevent) |
 
-**2. Créer un environnement virtuel**
-Il est fortement recommandé de créer un environnement virtuel pour isoler les dépendances.
+---
+
+## Prérequis
+
+- Python 3.11
+- Comptes : [Groq](https://console.groq.com), [Qdrant Cloud](https://cloud.qdrant.io), [Supabase](https://supabase.com), [Lakera](https://platform.lakera.ai)
+
+---
+
+## Installation
+
 ```bash
-# Sous Windows
+git clone <url-du-repo>
+cd Oracle-LoreKeeper
 python -m venv venv
+
+# Windows
 venv\Scripts\activate
-
-# Sous MacOS / Linux
-python3 -m venv venv
+# Linux / macOS
 source venv/bin/activate
-```
 
-**3. Installer les dépendances**
-Le fichier `requirements.txt` contient toutes les bibliothèques nécessaires (Flask, ChromaDB, OpenAI, etc.).
-```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🔐 Configuration
+## Configuration
 
-L'assistant utilise l'intelligence artificielle de **DeepSeek** pour générer les réponses, et **FastEmbed** pour comprendre le texte localement (en français) sans surcharger votre machine.
+Copier le fichier d'exemple et remplir les clés :
 
-Vous devez fournir votre propre clé API DeepSeek.
+```bash
+cp .env.example .env
+```
 
-1. Faites une copie du fichier `.env.example` et renommez-la en `.env` :
-   ```bash
-   # Sous Windows
-   copy .env.example .env
+Variables requises dans `.env` :
 
-   # Sous MacOS / Linux
-   cp .env.example .env
-   ```
-2. Ouvrez ce nouveau fichier `.env` et remplacez `"votre_cle_api_ici"` par votre véritable clé API **DeepSeek** (et non OpenAI). 
-*(Note : Ce fichier est ignoré par Git et restera strictement confidentiel sur votre machine).*
+```env
+# LLM (Groq)
+OPENAI_API_KEY=gsk_...
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.3-70b-versatile
+
+# Base vectorielle (Qdrant Cloud)
+QDRANT_URL=https://...qdrant.io
+QDRANT_API_KEY=...
+
+# Mémoire & monitoring (Supabase)
+SUPABASE_URL=https://....supabase.co
+SUPABASE_KEY=eyJ...
+MONITORING_KEY=mot_de_passe_dashboard
+
+# Sécurité (Lakera Guard)
+LAKERA_API_KEY=...
+LAKERA_PROJECT_ID=project-...  # optionnel
+
+# Parser (unstructured recommandé)
+PARSER=unstructured
+```
+
+### Supabase — tables requises
+
+Exécuter dans l'éditeur SQL Supabase :
+
+```sql
+-- Événements de monitoring
+CREATE TABLE events (
+    id bigint generated always as identity primary key,
+    type varchar,
+    detail text,
+    latency_ms int4,
+    created_at timestamptz default now()
+);
+ALTER TABLE events DISABLE ROW LEVEL SECURITY;
+
+-- Historique des conversations
+CREATE TABLE conversations (
+    id bigint generated always as identity primary key,
+    session_id text not null,
+    question text not null,
+    answer text not null,
+    created_at timestamptz default now()
+);
+ALTER TABLE conversations DISABLE ROW LEVEL SECURITY;
+CREATE INDEX ON conversations (session_id, created_at);
+```
 
 ---
 
-## 🏃‍♂️ Lancement du projet
+## Ajouter du contenu lore
 
-Le projet est conçu pour être lancé via un seul point d'entrée qui s'occupe de tout : l'ingestion de vos documents de lore et le lancement du serveur web.
+Placer les fichiers dans `data/sample/`. Formats supportés : `.md`, `.txt`, `.csv`, `.json`, `.xlsx`, `.xml`
 
-1. Placez vos documents Markdown (`.md`) dans le dossier `data/sample/`.
-2. Lancez l'application :
+L'indexation est automatique au démarrage. Pour forcer une réindexation :
+
+```bash
+curl -X POST http://localhost:5000/api/reindex -H "Content-Type: application/json" -d '{"force": true}'
+```
+
+---
+
+## Lancement
+
 ```bash
 python main.py
 ```
-3. L'intelligence artificielle va lire vos documents, les découper intelligemment et les stocker dans la base de données. 
-4. Une fois l'indexation terminée, le serveur sera accessible à l'adresse : `http://127.0.0.1:5000`
+
+Interface accessible sur : `http://localhost:5000`
+Dashboard monitoring : `http://localhost:5000/monitoring?key=<MONITORING_KEY>`
 
 ---
 
-## 🌍 Déploiement (Production)
+## Tests
 
-Ce projet est prêt à être hébergé gratuitement sur des plateformes comme **Railway** ou **Render** :
-1. Connectez votre dépôt Git à la plateforme.
-2. La plateforme va détecter automatiquement qu'il s'agit d'un projet Python grâce à `requirements.txt` et `main.py`.
-3. **Important** : N'oubliez pas d'ajouter votre variable d'environnement `OPENAI_API_KEY` dans les paramètres (Variables) de votre hébergeur web pour que l'IA fonctionne !
-4. La plateforme s'occupera d'attribuer le bon port dynamique.
+```bash
+pytest src/test-unitaires/ -v
+```
+
+77 tests unitaires couvrant : génération, recherche, ingestion, sécurité, routes, monitoring.
+
+---
+
+## Déploiement Railway
+
+1. Connecter le dépôt Git à Railway
+2. Ajouter toutes les variables d'environnement dans **Settings → Variables**
+3. Railway détecte automatiquement le `Procfile` et lance Gunicorn avec Gevent
+
+> Le endpoint `/health` est disponible pour les health checks Railway.

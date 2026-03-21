@@ -1,53 +1,47 @@
 """
-C'est le point d'entrée de notre projet.
-Son rôle est simple : préparer l'application, démarrer le serveur web (Flask) 
-et s'assurer que notre base de connaissances est à jour au lancement.
+Point d'entrée de l'application Oracle LoreKeeper.
 """
 import sys
 import os
-import secrets
 import logging
 
-# Charger le .env EN PREMIER, avant tout import de modules projet.
-# Sans ça, les variables comme EMBEDDING_PROVIDER sont lues avant d'être définies.
 from dotenv import load_dotenv
 load_dotenv()
 
-# On configure les logs pour voir ce qu'il se passe dans la console.
+# Sentry (optionnel — activer via SENTRY_DSN dans .env)
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    sentry_sdk.init(dsn=_sentry_dsn, integrations=[FlaskIntegration()], traces_sample_rate=0.2)
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# Petite astuce pour que Python trouve facilement nos dossiers "src" :
-# on ajoute la racine du projet au PATH système.
-project_root = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from src.api.routes import register_routes
 from src.ingestion.run import index_data
 
-# On initialise notre serveur web
 app = Flask(__name__)
 
-# Clé secrète pour les sessions Flask (admin interface)
-app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
+# CORS : restreint au domaine configuré en prod, ouvert en local
+_allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
+CORS(app, origins=_allowed_origins)
 
-# Le CORS est indispensable si jamais on veut séparer le frontend du backend plus tard.
-# Ça autorise les navigateurs à discuter avec notre API sans bloquer pour raisons de sécurité.
-CORS(app)
-
-# On charge toutes les URL (routes) définies dans notre dossier api
 register_routes(app)
 
-if __name__ == "__main__":
-    # Avant même d'ouvrir les portes du serveur, on vérifie si 
-    # de nouveaux fichiers de lore ont été ajoutés dans le dossier 'data'.
-    index_data(force_reindex=False)
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
 
-    # C'est parti, on lance le serveur ! 
-    # Le debug=True est super pratique en développement car ça recharge le code tout seul.
+# Indexation au démarrage (Gunicorn + dev)
+index_data(force_reindex=False)
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

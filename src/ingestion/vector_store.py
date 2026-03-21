@@ -1,13 +1,14 @@
 """
-Le pont entre notre code et la base de donnees vectorielle (Qdrant).
-Utilise LangChain + FastEmbed pour les embeddings multilingues (384 dims, local).
+Interface avec la base vectorielle Qdrant.
+Gère la connexion, l'indexation et la recherche de documents.
 
-Qdrant supporte deux modes :
-  - Local : stockage dans qdrant_db/ (aucun serveur externe)
-  - Cloud : QDRANT_URL + QDRANT_API_KEY -> Qdrant Cloud
+Deux modes selon la configuration .env :
+  - Cloud  : QDRANT_URL + QDRANT_API_KEY → Qdrant Cloud
+  - Local  : stockage dans le dossier qdrant_db/
 """
 import os
 import logging
+import shutil
 from typing import List, Set, Optional
 
 from langchain_qdrant import QdrantVectorStore
@@ -18,162 +19,117 @@ from qdrant_client.models import Distance, VectorParams, FilterSelector, Filter,
 
 logger = logging.getLogger(__name__)
 
-# ── Chemins / noms ─────────────────────────────────────────────────────────
 _BASE_DIR        = os.path.dirname(__file__)
 _DB_PATH         = os.path.join(_BASE_DIR, "qdrant_db")
 _COLLECTION_NAME = "lore"
-_VECTOR_SIZE     = 384  # MiniLM-L12-v2
+_VECTOR_SIZE     = 384  # paraphrase-multilingual-MiniLM-L12-v2
 
-# ── Qdrant Cloud ────────────────────────────────────────────────────────────
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
-# ── Singleton embeddings ────────────────────────────────────────────────────
+# Singletons — créés une seule fois, réutilisés sur toutes les requêtes
 _embeddings: Optional[FastEmbedEmbeddings] = None
+_client: Optional[QdrantClient] = None
+_collection_ready: bool = False
 
 
 def _get_embeddings() -> FastEmbedEmbeddings:
-    """Retourne l'instance singleton des embeddings FastEmbed."""
     global _embeddings
     if _embeddings is None:
-        model = os.getenv(
-            "EMBEDDING_MODEL",
-            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-        )
+        model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         _embeddings = FastEmbedEmbeddings(model_name=model)
-        logger.info(f"Embeddings FastEmbed charges : {model} ({_VECTOR_SIZE} dims)")
+        logger.info(f"Modèle d'embeddings chargé : {model}")
     return _embeddings
 
 
 def _get_client() -> QdrantClient:
-    """Retourne un client Qdrant Cloud ou local selon la configuration."""
-    if _QDRANT_URL and _QDRANT_API_KEY:
-        return QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
-    return QdrantClient(path=_DB_PATH)
+    global _client
+    if _client is None:
+        if _QDRANT_URL and _QDRANT_API_KEY:
+            _client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
+        else:
+            _client = QdrantClient(path=_DB_PATH)
+    return _client
 
 
 def _ensure_collection(client: QdrantClient) -> None:
-    """Cree la collection 'lore' si elle n'existe pas encore."""
-    collections = [c.name for c in client.get_collections().collections]
-    if _COLLECTION_NAME not in collections:
+    """Crée la collection 'lore' si elle n'existe pas encore. Vérifié une seule fois."""
+    global _collection_ready
+    if _collection_ready:
+        return
+    existing = [c.name for c in client.get_collections().collections]
+    if _COLLECTION_NAME not in existing:
         client.create_collection(
             collection_name=_COLLECTION_NAME,
             vectors_config=VectorParams(size=_VECTOR_SIZE, distance=Distance.COSINE),
         )
-        logger.info(f"Collection '{_COLLECTION_NAME}' creee (dims={_VECTOR_SIZE}).")
+        logger.info(f"Collection '{_COLLECTION_NAME}' créée.")
+    _collection_ready = True
 
 
 def get_store(force_reindex: bool = False) -> QdrantVectorStore:
     """
-    Ouvre l'acces au coffre (notre collection 'lore') dans Qdrant.
-    Si force_reindex est vrai, on vide la collection (cloud) ou le dossier local.
+    Retourne le vector store Qdrant prêt à l'emploi.
+    Si force_reindex=True, supprime et recrée la collection de zéro.
     """
+    global _client, _collection_ready
+
     if force_reindex:
+        _client = None
+        _collection_ready = False
         if _QDRANT_URL and _QDRANT_API_KEY:
-            temp_client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
+            temp = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
             try:
-                temp_client.delete_collection(_COLLECTION_NAME)
-                logger.info(f"Collection '{_COLLECTION_NAME}' reinitalisee (mode cloud).")
-            except Exception:
-                pass
+                temp.delete_collection(_COLLECTION_NAME)
+                logger.info("Collection réinitialisée (cloud).")
+            except Exception as e:
+                logger.warning(f"Impossible de supprimer la collection cloud : {e}")
         elif os.path.exists(_DB_PATH):
-            import shutil
+            # Sauvegarde le fichier mémoire avant de tout supprimer
             memory_file = os.path.join(_DB_PATH, "files_metadata.json")
-            memory_backup = None
+            backup = None
             if os.path.exists(memory_file):
                 with open(memory_file, "r", encoding="utf-8") as f:
-                    memory_backup = f.read()
+                    backup = f.read()
             shutil.rmtree(_DB_PATH)
-            logger.info("Ancienne base Qdrant supprimee. On fait place nette.")
             os.makedirs(_DB_PATH, exist_ok=True)
-            if memory_backup:
+            if backup:
                 with open(memory_file, "w", encoding="utf-8") as f:
-                    f.write(memory_backup)
+                    f.write(backup)
+            logger.info("Base locale supprimée et recréée.")
 
     client = _get_client()
     _ensure_collection(client)
-
-    return QdrantVectorStore(
-        client=client,
-        collection_name=_COLLECTION_NAME,
-        embedding=_get_embeddings(),
-    )
+    return QdrantVectorStore(client=client, collection_name=_COLLECTION_NAME, embedding=_get_embeddings())
 
 
 def add_documents(store: QdrantVectorStore, documents: List[Document]) -> None:
-    """Ajoute une liste de Documents LangChain dans le vector store."""
+    """Ajoute des documents dans Qdrant."""
     if not documents:
         return
     store.add_documents(documents)
-    logger.info(f"{len(documents)} morceaux ont bien ete indexes dans Qdrant.")
+    logger.info(f"{len(documents)} documents indexés dans Qdrant.")
 
 
 def remove_files(store: QdrantVectorStore, fichiers: Set[str]) -> None:
-    """Nettoie tous les fragments d'un ou plusieurs fichiers dans Qdrant."""
+    """Supprime tous les chunks associés à une liste de fichiers en un seul appel."""
     if not fichiers:
         return
-    client = store.client
-    for nom_fichier in fichiers:
-        try:
-            client.delete(
-                collection_name=_COLLECTION_NAME,
-                points_selector=FilterSelector(
-                    filter=Filter(
-                        must=[
-                            FieldCondition(
-                                key="metadata.fichier",
-                                match=MatchValue(value=nom_fichier),
-                            )
-                        ]
-                    )
-                ),
-            )
-        except Exception as e:
-            logger.warning(f"Impossible de supprimer les donnees de {nom_fichier}: {e}")
-    logger.info(f"{len(fichiers)} fichier(s) nettoye(s) de Qdrant.")
+    try:
+        store.client.delete(
+            collection_name=_COLLECTION_NAME,
+            points_selector=FilterSelector(
+                filter=Filter(should=[
+                    FieldCondition(key="metadata.fichier", match=MatchValue(value=nom))
+                    for nom in fichiers
+                ])
+            ),
+        )
+        logger.info(f"{len(fichiers)} fichier(s) retiré(s) de Qdrant.")
+    except Exception as e:
+        logger.warning(f"Impossible de supprimer les fichiers : {e}")
 
 
 def search(store: QdrantVectorStore, question: str, k: int = 3) -> List[Document]:
-    """Recherche les k documents les plus similaires a la question."""
+    """Recherche les k documents les plus proches de la question."""
     return store.similarity_search(question, k=k)
-
-
-def get_collection_stats() -> dict:
-    """Retourne les statistiques de la collection Qdrant."""
-    client = _get_client()
-    _ensure_collection(client)
-    try:
-        info  = client.get_collection(_COLLECTION_NAME)
-        total = client.count(_COLLECTION_NAME).count
-        return {
-            "total_vectors":   total,
-            "collection_name": _COLLECTION_NAME,
-            "status":          str(info.status),
-            "mode":            "cloud" if (_QDRANT_URL and _QDRANT_API_KEY) else "local",
-            "vector_size":     _VECTOR_SIZE,
-        }
-    except Exception as e:
-        return {"error": str(e), "total_vectors": 0}
-
-
-def count_chunks_by_file() -> dict:
-    """Retourne un dictionnaire {nom_fichier: nb_chunks} pour tous les fichiers indexes."""
-    client = _get_client()
-    _ensure_collection(client)
-    counts: dict = {}
-    offset = None
-    while True:
-        points, next_offset = client.scroll(
-            collection_name=_COLLECTION_NAME,
-            with_payload=True,
-            with_vectors=False,
-            limit=500,
-            offset=offset,
-        )
-        for point in points:
-            nom = point.payload.get("metadata", {}).get("fichier", "inconnu")
-            counts[nom] = counts.get(nom, 0) + 1
-        if next_offset is None:
-            break
-        offset = next_offset
-    return counts

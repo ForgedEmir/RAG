@@ -1,42 +1,55 @@
 """
-Le maestro du projet.
-C'est le script qui orchestre toute la chaine de traitement (l'ingestion de donnees).
-Il repere quelles archives sont nouvelles ou modifiees, les fait lire par le parser,
-les fait decouper par le chunker, puis les fait stocker dans Qdrant via LangChain.
+Orchestre le pipeline d'indexation des fichiers de lore.
+Détecte les fichiers nouveaux/modifiés/supprimés et met à jour Qdrant en conséquence.
 """
 import os
 import json
 import logging
 from typing import List, Set
 
-from dotenv import load_dotenv
 from langchain_core.documents import Document
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from src.ingestion.chunker import split_into_chunks
 from src.ingestion.parser import extract_text_from_file, clean_text
 from src.ingestion.vector_store import get_store, add_documents, remove_files
+from src.security.validator import check_patterns
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Choix du parser via variable d'environnement
-# "unstructured" = Unstructured.io (recommande), "custom" = parser maison (fallback)
-PARSER_MODE = os.getenv("PARSER", "unstructured")
-
-# On part du principe que nos archives de lore sont dans le dossier data/sample/
+# Dossier contenant les fichiers à indexer
 DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
 
-# Pour eviter de relire tous les fichiers a chaque fois qu'on lance l'app,
-# on se cree un petit carnet de notes (JSON) avec la date de derniere modif de chaque fichier.
+# Fichier qui mémorise la date de dernière modification de chaque fichier indexé
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "files_metadata.json")
 
-# Les formats demandes par le cahier des charges de Marcus
+# Formats de fichiers supportés
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
 
+# Mode du parser : "unstructured" (recommandé) ou "custom" (fallback)
+PARSER_MODE = os.getenv("PARSER", "unstructured")
 
-#  FONCTIONS UTILITAIRES DE GESTION DE LA MEMOIRE
+# LLM pour la vérification hors-sujet (singleton)
+_llm_checker = None
+
+
+def _get_llm_checker() -> ChatOpenAI:
+    global _llm_checker
+    if _llm_checker is None:
+        _llm_checker = ChatOpenAI(
+            model=os.getenv("LLM_MODEL", "deepseek-chat"),
+            base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            temperature=0,
+            max_tokens=10,
+        )
+    return _llm_checker
+
+
+# ── Mémoire des fichiers indexés ─────────────────────────────────────────────
 
 def load_memory() -> dict:
-    """Lit notre petit carnet de notes pour savoir ce qu'on a deja traite."""
+    """Lit le fichier de suivi des dates de modification."""
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -44,30 +57,53 @@ def load_memory() -> dict:
 
 
 def save_memory(fichiers: dict) -> None:
-    """Met a jour notre carnet de notes avec les dernieres dates de modif."""
+    """Sauvegarde les dates de modification actuelles."""
     os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
     with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(fichiers, f, indent=2)
 
 
 def list_current_files() -> dict:
-    """
-    Jette un oeil dans le dossier data/ et note la date de chaque fichier.
-    Format de retour : { "persos.md": 1705322941.5, ... }
-    """
-    fichiers = {}
-    if os.path.exists(DATA_FOLDER):
-        for nom in os.listdir(DATA_FOLDER):
-            if nom.lower().endswith(SUPPORTED_EXTENSIONS):
-                chemin = os.path.join(DATA_FOLDER, nom)
-                fichiers[nom] = os.path.getmtime(chemin)
-    return fichiers
+    """Retourne {nom_fichier: date_modification} pour tous les fichiers supportés."""
+    if not os.path.exists(DATA_FOLDER):
+        return {}
+    return {
+        nom: os.path.getmtime(os.path.join(DATA_FOLDER, nom))
+        for nom in os.listdir(DATA_FOLDER)
+        if nom.lower().endswith(SUPPORTED_EXTENSIONS)
+    }
 
+
+# ── Validation du contenu ────────────────────────────────────────────────────
+
+def _is_lore_content(texte: str, nom: str) -> bool:
+    """
+    Vérifie via LLM que le fichier contient bien du lore de jeu et pas du contenu hors-sujet.
+    Un seul appel par fichier. Fail-open si le LLM est indisponible.
+    """
+    try:
+        llm = _get_llm_checker()
+        response = llm.invoke([
+            SystemMessage(content=(
+                "Tu valides du contenu pour une base de lore de jeu de rôle fantastique. "
+                "Réponds OUI si le texte contient du lore (personnages, lieux, artefacts, factions, histoire fictive). "
+                "Réponds NON si c'est clairement hors-sujet (recette, code, document réel). "
+                "En cas de doute, réponds OUI."
+            )),
+            HumanMessage(content=f"Fichier '{nom}' :\n\n{texte[:2000]}"),
+        ])
+        return "NON" not in response.content.strip().upper()
+    except Exception as e:
+        logger.warning(f"Vérification hors-sujet impossible pour '{nom}', accepté par défaut : {e}")
+        return True
+
+
+# ── Pipeline d'indexation ────────────────────────────────────────────────────
 
 def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
     """
-    Le pipeline de bout en bout pour une liste de fichiers donnes.
-    On lit -> on nettoie -> on decoupe -> on retourne des Documents LangChain.
+    Traite une liste de fichiers et retourne des Documents LangChain prêts à indexer.
+    Pipeline : extraction → vérification hors-sujet → découpage → filtrage anti-injection
     """
     documents = []
 
@@ -77,104 +113,82 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
             continue
 
         try:
-            # 1. Extraction du texte selon le parser choisi
+            # 1. Extraction du texte
             if PARSER_MODE == "unstructured":
                 from src.ingestion.document_loader import extract_text_with_unstructured
-                texte_propre = extract_text_with_unstructured(chemin)
+                texte = extract_text_with_unstructured(chemin)
             else:
-                # Fallback : parser maison
-                texte_brut = extract_text_from_file(chemin)
-                texte_propre = clean_text(texte_brut) if texte_brut else None
+                brut = extract_text_from_file(chemin)
+                texte = clean_text(brut) if brut else None
 
-            if not texte_propre:
+            if not texte:
                 continue
 
-            # 3. On demande au chunker d'en faire des paragraphes optimises
-            petits_morceaux = split_into_chunks(texte_propre)
+            # 2. Vérification hors-sujet (1 appel LLM par fichier)
+            if not _is_lore_content(texte, nom):
+                logger.warning(f"'{nom}' ignoré : contenu hors-sujet.")
+                continue
 
-            # 4. On transforme chaque morceau en Document LangChain
-            for morceau in petits_morceaux:
-                documents.append(Document(
-                    page_content=morceau,
-                    metadata={"fichier": nom}
-                ))
+            # 3. Découpage en chunks + filtrage des chunks suspects
+            for chunk in split_into_chunks(texte):
+                if not check_patterns(chunk)["valid"]:
+                    logger.warning(f"Chunk suspect ignoré dans '{nom}'.")
+                    continue
+                documents.append(Document(page_content=chunk, metadata={"fichier": nom}))
 
         except Exception as e:
-            logger.error(f"Erreur imprevue pendant le traitement de {nom} : {e}")
-            continue
+            logger.error(f"Erreur sur '{nom}' : {e}")
 
     return documents
 
 
-#  FONCTION PRINCIPALE D'ORCHESTRATION
-
-
 def index_data(force_reindex: bool = False) -> bool:
     """
-    C'est la methode qu'on appelle depuis main.py au demarrage.
-    Elle est suffisamment intelligente pour ne travailler que sur ce qui a change.
+    Met à jour Qdrant avec les fichiers nouveaux, modifiés ou supprimés.
+    Si force_reindex=True, repart de zéro.
+    Retourne True si des changements ont eu lieu.
     """
-    logger.info("Verification des archives de lore en cours...")
-
+    logger.info("Vérification des fichiers de lore...")
     fichiers_actuels = list_current_files()
 
-    # --- CAS 1 : On nous demande explicitement de tout reconstruire ---
     if force_reindex:
-        logger.info("Destruction de la memoire et reindexation totale...")
-        documents = prepare_files_for_ai(set(fichiers_actuels.keys()))
-        if documents:
+        docs = prepare_files_for_ai(set(fichiers_actuels.keys()))
+        if docs:
             store = get_store(force_reindex=True)
-            add_documents(store, documents)
+            add_documents(store, docs)
             save_memory(fichiers_actuels)
-            logger.info("Fin de la reconstruction de la base !")
+            logger.info("Réindexation complète terminée.")
             return True
-        else:
-            logger.warning("Rien de valide n'a ete trouve pour peupler la base.")
-            return False
+        logger.warning("Aucun fichier valide trouvé.")
+        return False
 
-    # --- CAS 2 : On fait une petite mise a jour intelligente ---
+    # Détection des changements
     memoire = load_memory()
+    actuels  = set(fichiers_actuels.keys())
+    anciens  = set(memoire.keys())
 
-    fichiers_actuels_set = set(fichiers_actuels.keys())
-    fichiers_memoire_set = set(memoire.keys())
+    supprimes = anciens - actuels
+    nouveaux  = actuels - anciens
+    modifies  = {n for n in (actuels & anciens) if fichiers_actuels[n] > memoire[n]}
 
-    fichiers_supprimes = fichiers_memoire_set - fichiers_actuels_set
-    fichiers_nouveaux = fichiers_actuels_set - fichiers_memoire_set
+    if not (supprimes or nouveaux or modifies):
+        logger.info("Aucun changement détecté.")
+        return False
 
-    # Un fichier est considere comme "modifie" si sa date reelle est plus recente que dans notre carnet
-    fichiers_modifies = {
-        nom for nom in (fichiers_actuels_set & fichiers_memoire_set)
-        if fichiers_actuels[nom] > memoire[nom]
-    }
-
-    changements = False
     store = get_store(force_reindex=False)
 
-    # Etape A: Si un fichier a disparu ou ete modifie, on commence par retirer sa vieille version
-    a_supprimer = fichiers_supprimes | fichiers_modifies
-    if a_supprimer:
-        logger.info(f"On nettoie les anciennes traces de {len(a_supprimer)} fichier(s)...")
-        remove_files(store, a_supprimer)
-        changements = True
+    if supprimes | modifies:
+        remove_files(store, supprimes | modifies)
 
-    # Etape B: On ajoute les nouveaux fichiers et les versions mises a jour
-    a_ajouter = fichiers_nouveaux | fichiers_modifies
-    if a_ajouter:
-        logger.info(f"Traitement de {len(a_ajouter)} nouveau(x) fichier(s)...")
-        documents = prepare_files_for_ai(a_ajouter)
-        add_documents(store, documents)
-        changements = True
+    a_indexer = nouveaux | modifies
+    if a_indexer:
+        docs = prepare_files_for_ai(a_indexer)
+        add_documents(store, docs)
 
-    # Bilan
-    if changements:
-        save_memory(fichiers_actuels)
-        logger.info("Mise a jour incrementale terminee avec succes.")
-        return True
-    else:
-        logger.info("Rien n'a bouge. Les archives sont toujours a jour.")
-        return False
+    save_memory(fichiers_actuels)
+    logger.info(f"Mise à jour : +{len(nouveaux)} nouveau(x), ~{len(modifies)} modifié(s), -{len(supprimes)} supprimé(s).")
+    return True
 
 
 if __name__ == "__main__":
-    # Test local rapide si jamais on execute juste ce fichier
     index_data(force_reindex=False)

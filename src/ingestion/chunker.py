@@ -1,32 +1,27 @@
 """
-Ce module s'occupe de la decoupe des textes en utilisant LangChain.
-Le RecursiveCharacterTextSplitter est plus robuste que notre ancien decoupage maison :
-il gere mieux les cas limites et respecte les frontieres semantiques (paragraphes, phrases).
+Découpe un texte long en morceaux (chunks) pour l'indexation.
+Respecte les paragraphes et phrases pour garder le sens intact.
 """
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+
+# Splitter par défaut — réutilisé sur tous les fichiers lors de l'indexation
+_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200, separators=_SEPARATORS)
+
 
 def split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) -> List[str]:
     """
-    Decoupe un texte long en plusieurs "morceaux" (chunks) via LangChain.
-
-    La logique :
-    1. Essaie de couper par paragraphe (double saut de ligne).
-    2. Si un paragraphe est trop long, coupe par ligne, puis par phrase, puis par mot.
-    3. Garde un chevauchement (overlap) entre les morceaux pour preserver le contexte.
+    Découpe un texte en morceaux avec chevauchement pour ne pas perdre le contexte entre deux chunks.
+    Ordre de découpe : paragraphes → lignes → phrases → mots.
     """
     if not text:
         return []
-
-    # Garde-fou : si l'overlap depasse la taille du chunk, on le reduit
-    if overlap >= chunk_size:
-        overlap = chunk_size // 5
-
-    splitter = RecursiveCharacterTextSplitter(
+    if chunk_size == 1200 and overlap == 200:
+        return _SPLITTER.split_text(text)
+    return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
-        chunk_overlap=overlap,
-        separators=["\n\n", "\n", ". ", " ", ""]
-    )
-
-    return splitter.split_text(text)
+        chunk_overlap=min(overlap, chunk_size // 5) if overlap >= chunk_size else overlap,
+        separators=_SEPARATORS,
+    ).split_text(text)

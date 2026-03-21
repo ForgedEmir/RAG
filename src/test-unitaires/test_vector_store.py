@@ -76,8 +76,8 @@ def test_supprimer_plusieurs_fichiers(mock_embeddings):
 
     remove_files(mock_store, {"file1.md", "file2.md"})
 
-    # delete() doit etre appele une fois par fichier
-    assert mock_store.client.delete.call_count == 2
+    # delete() doit etre appele une seule fois (batch)
+    assert mock_store.client.delete.call_count == 1
 
 
 # ===== TESTS POUR search =====

@@ -128,5 +128,5 @@ def test_parametres_search(mock_search, mock_get_store):
     question = "Ma question de test"
     rechercher_passages(question)
 
-    # On verifie que search a ete appele avec le bon store, question et k=3
-    mock_search.assert_called_once_with(mock_store, question, k=3)
+    # On verifie que search a ete appele avec le bon store, question et k=5
+    mock_search.assert_called_once_with(mock_store, question, k=5)

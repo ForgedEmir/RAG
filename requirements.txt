@@ -2,6 +2,7 @@
 flask>=3.0.0
 flask-cors>=4.0.0
 gunicorn>=21.2.0
+gevent>=24.0.0
 
 # === LangChain (orchestration + abstraction) ===
 langchain-core>=0.3.0
@@ -25,6 +26,15 @@ python-magic-bin; sys_platform == "win32"
 # === Utilitaires ===
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+requests>=2.31.0
+flask-limiter>=3.5.0
+
+# === Monitoring ===
+sentry-sdk[flask]>=2.0.0
+supabase>=2.0.0
+
+# === TTS ===
+edge-tts>=7.0.0
 
 # === Tests ===
 pytest>=7.0.0
