@@ -20,5 +20,5 @@ chroma_db/
 # Env
 venv/
 
-# Documents de schema locaux
-Schéma/
+# Documents de schema locaux (PDF exclus, draw.io inclus)
+Schéma/*.pdf
