@@ -182,9 +182,13 @@ function addBlockedMessage(message, blockType) {
 function addOracleResponse(text, fromHistory = false) {
     const div = document.createElement('div');
     div.className = 'oracle-message' + (fromHistory ? ' from-history' : '');
-    div.innerHTML = `<div class="oracle-response">${text}</div>`;
+    const inner = document.createElement('div');
+    inner.className = 'oracle-response';
+    inner.innerHTML = marked.parse(text);
+    div.appendChild(inner);
     oracleResponses.appendChild(div);
     oracleResponses.scrollTop = oracleResponses.scrollHeight;
+    return inner;
 }
 
 function createStreamingMessage() {
@@ -279,6 +283,7 @@ async function consultOracle() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let fullText = '';
         let isFirstQuestion = getSessions().find(s => s.id === sessionId) === undefined;
 
         while (true) {
@@ -297,9 +302,11 @@ async function consultOracle() {
                 try {
                     const event = JSON.parse(payload);
                     if (event.type === 'text') {
-                        msgEl.textContent += event.text;
+                        fullText += event.text;
+                        msgEl.textContent = fullText;
                         oracleResponses.scrollTop = oracleResponses.scrollHeight;
                     } else if (event.type === 'done') {
+                        msgEl.innerHTML = marked.parse(fullText);
                         if (isFirstQuestion) registerSession(sessionId, question);
                         addTtsButton(msgEl);
                     }

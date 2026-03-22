@@ -21,4 +21,4 @@ chroma_db/
 venv/
 
 # Documents de schema locaux
-Schéma/*.pdf
+Schéma/
