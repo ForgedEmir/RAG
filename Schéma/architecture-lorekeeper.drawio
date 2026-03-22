@@ -1,119 +1,168 @@
 <mxfile host="app.diagrams.net" modified="2026-03-23" type="device">
   <diagram name="Architecture Globale" id="arch">
-    <mxGraphModel dx="1200" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
         <!-- TITRE -->
-        <mxCell id="title" value="Oracle LoreKeeper — Architecture" style="text;html=1;fontSize=22;fontStyle=1;align=center;fillColor=none;strokeColor=none;fontColor=#1a1a2e;" vertex="1" parent="1">
-          <mxGeometry x="350" y="20" width="700" height="35" as="geometry"/>
+        <mxCell id="title" value="Oracle LoreKeeper — Flux d'une question" style="text;html=1;fontSize=20;fontStyle=1;align=center;fillColor=none;strokeColor=none;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="300" y="18" width="800" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="subtitle" value="RedDragon Games · Aethelgard Online · LangChain + Qdrant Cloud + Groq + Supabase" style="text;html=1;fontSize=11;fontStyle=2;align=center;fillColor=none;strokeColor=none;fontColor=#888888;" vertex="1" parent="1">
-          <mxGeometry x="200" y="52" width="1000" height="22" as="geometry"/>
-        </mxCell>
-
-        <!-- UTILISATEUR -->
-        <mxCell id="user" value="Joueur / Testeur" style="shape=actor;whiteSpace=wrap;html=1;fontSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="645" y="95" width="60" height="65" as="geometry"/>
+        <mxCell id="subtitle" value="RedDragon Games · Aethelgard Online · LangChain + Qdrant Cloud + Groq + Supabase · Railway" style="text;html=1;fontSize=10;fontStyle=2;align=center;fillColor=none;strokeColor=none;fontColor=#888888;" vertex="1" parent="1">
+          <mxGeometry x="200" y="48" width="1000" height="18" as="geometry"/>
         </mxCell>
 
-        <!-- FRONTEND -->
-        <mxCell id="fe" value="&lt;b&gt;Grimoire UI&lt;/b&gt;&lt;br&gt;HTML · CSS · JS&lt;br&gt;&lt;i style='font-size:10px'&gt;Sidebar multi-sessions · marked.js · TTS&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=middle;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
-          <mxGeometry x="530" y="195" width="290" height="60" as="geometry"/>
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- COLONNE CENTRALE — FLUX PRINCIPAL          -->
+        <!-- ═══════════════════════════════════════════ -->
+
+        <!-- 0 · UTILISATEUR -->
+        <mxCell id="user" value="Joueur" style="shape=actor;whiteSpace=wrap;html=1;fontSize=12;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="630" y="80" width="55" height="60" as="geometry"/>
         </mxCell>
 
-        <!-- FLASK API -->
-        <mxCell id="api" value="&lt;b&gt;Flask API&lt;/b&gt; — Railway · Gunicorn + Gevent&lt;br&gt;&lt;i style='font-size:10px'&gt;/api/ask (SSE) · /api/tts · /api/conversations · /monitoring · /health&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
-          <mxGeometry x="430" y="300" width="490" height="60" as="geometry"/>
+        <!-- 1 · FRONTEND -->
+        <mxCell id="fe" value="① Grimoire UI&#xa;HTML · CSS · JS · marked.js" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
+          <mxGeometry x="545" y="185" width="225" height="55" as="geometry"/>
         </mxCell>
 
-        <!-- SECURITE -->
-        <mxCell id="security" value="&lt;b&gt;Sécurité&lt;/b&gt;&lt;br&gt;Lakera Guard + Regex" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="130" y="305" width="175" height="50" as="geometry"/>
+        <!-- 2 · FLASK API (Railway) -->
+        <mxCell id="railway_bg" value="Railway — Gunicorn + Gevent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#aaaaaa;fontSize=10;fontStyle=2;verticalAlign=top;dashed=1;dashPattern=8 4;" vertex="1" parent="1">
+          <mxGeometry x="490" y="278" width="335" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="② Flask API&#xa;routes.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="545" y="290" width="225" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- QUERY REWRITING -->
-        <mxCell id="rewrite" value="&lt;b&gt;Query Rewriting&lt;/b&gt;&lt;br&gt;Reformule les questions de suivi" style="shape=parallelogram;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="430" y="415" width="230" height="50" as="geometry"/>
+        <!-- 3 · SECURITE -->
+        <mxCell id="security" value="③ Sécurité&#xa;Lakera Guard + Regex" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="545" y="395" width="225" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="blocked" value="⛔ Bloqué" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="200" y="405" width="100" height="32" as="geometry"/>
         </mxCell>
 
-        <!-- QDRANT -->
-        <mxCell id="qdrant" value="&lt;b&gt;Qdrant Cloud&lt;/b&gt;&lt;br&gt;Recherche sémantique (k=5)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;verticalLabelPosition=middle;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="440" y="515" width="210" height="65" as="geometry"/>
+        <!-- 4 · MEMOIRE -->
+        <mxCell id="memory_read" value="④ Lecture mémoire&#xa;5 derniers échanges" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="545" y="490" width="225" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- FASTEMBED -->
-        <mxCell id="embed" value="&lt;b&gt;FastEmbed&lt;/b&gt;&lt;br&gt;paraphrase-multilingual-MiniLM" style="shape=parallelogram;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="195" y="525" width="215" height="45" as="geometry"/>
+        <!-- 5 · QUERY REWRITING -->
+        <mxCell id="rewrite" value="⑤ Query Rewriting (Groq)&#xa;« il fait quelle taille ? »&#xa;→ « Quelle taille fait Lucas ? »" style="shape=parallelogram;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="545" y="585" width="225" height="60" as="geometry"/>
         </mxCell>
 
-        <!-- DATA FILES -->
-        <mxCell id="data" value="&lt;b&gt;data/sample/&lt;/b&gt;&lt;br&gt;.md · .txt · .csv · .json · .xlsx · .xml&lt;br&gt;&lt;i style='font-size:9px'&gt;Indexation auto au démarrage (Unstructured)&lt;/i&gt;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;verticalAlign=top;" vertex="1" parent="1">
-          <mxGeometry x="60" y="510" width="115" height="75" as="geometry"/>
+        <!-- 6 · QDRANT -->
+        <mxCell id="qdrant" value="⑥ Qdrant Cloud&#xa;Recherche sémantique (k=5)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;verticalLabelPosition=middle;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="555" y="695" width="205" height="65" as="geometry"/>
         </mxCell>
 
-        <!-- GROQ LLM -->
-        <mxCell id="groq" value="&lt;b&gt;Groq LLM&lt;/b&gt;&lt;br&gt;llama-3.3-70b-versatile&lt;br&gt;&lt;i style='font-size:10px'&gt;Fallback : llama-3.1-8b-instant&lt;/i&gt;" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="755" y="400" width="200" height="80" as="geometry"/>
+        <!-- 7 · GROQ GENERATION -->
+        <mxCell id="groq" value="⑦ Groq — Génération&#xa;llama-3.3-70b-versatile&#xa;Fallback : llama-3.1-8b-instant" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="545" y="805" width="225" height="80" as="geometry"/>
         </mxCell>
 
-        <!-- SUPABASE -->
-        <mxCell id="supabase" value="&lt;b&gt;Supabase&lt;/b&gt;&lt;br&gt;Mémoire conversations&lt;br&gt;Monitoring &amp; logs" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalLabelPosition=middle;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="990" y="290" width="175" height="80" as="geometry"/>
-        </mxCell>
+        <!-- ═══════════════════════════════════════ -->
+        <!-- FLECHES FLUX PRINCIPAL (centre)        -->
+        <!-- ═══════════════════════════════════════ -->
 
-        <!-- EDGE TTS -->
-        <mxCell id="tts" value="&lt;b&gt;Edge TTS&lt;/b&gt;&lt;br&gt;fr-FR-HenriNeural" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#999999;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="870" y="190" width="155" height="50" as="geometry"/>
-        </mxCell>
-
-        <!-- FLECHES PRINCIPALES -->
-        <mxCell id="e1" value="question" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontColor=#6c8ebf;" edge="1" parent="1" source="user" target="fe">
+        <mxCell id="e_user_fe" value="pose une question" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontColor=#6c8ebf;" edge="1" parent="1" source="user" target="fe">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" value="POST /api/ask" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontColor=#82b366;" edge="1" parent="1" source="fe" target="api">
+        <mxCell id="e_fe_api" value="POST /api/ask" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;fontColor=#82b366;" edge="1" parent="1" source="fe" target="api">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e3" value="SSE stream" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;dashed=1;fontSize=10;fontColor=#82b366;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.9;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="fe">
+        <mxCell id="e_api_sec" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="api" target="security">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_sec_mem" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="security" target="memory_read">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mem_rew" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="memory_read" target="rewrite">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_rew_qdr" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="rewrite" target="qdrant">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_qdr_groq" value="passages trouvés" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d79b00;strokeWidth=2;fontSize=10;fontColor=#d79b00;" edge="1" parent="1" source="qdrant" target="groq">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- RETOUR SSE (gauche) -->
+        <mxCell id="e_stream_back" value="⑧ SSE stream token par token" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;dashed=1;fontSize=10;fontColor=#82b366;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="groq" target="fe">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="400" y="330"/>
-              <mxPoint x="400" y="240"/>
+              <mxPoint x="430" y="845"/>
+              <mxPoint x="430" y="240"/>
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e4" value="valide" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;fontSize=10;fontColor=#b85450;" edge="1" parent="1" source="api" target="security">
+
+        <!-- BLOQUÉ (fleche gauche depuis securite) -->
+        <mxCell id="e_blocked" value="injection détectée" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=1;dashed=1;fontSize=10;fontColor=#b85450;" edge="1" parent="1" source="security" target="blocked">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" value="reformule" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontColor=#9673a6;" edge="1" parent="1" source="api" target="rewrite">
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- COLONNE DROITE — SERVICES EXTERNES     -->
+        <!-- ═══════════════════════════════════════ -->
+
+        <!-- SUPABASE -->
+        <mxCell id="supabase" value="Supabase&#xa;PostgreSQL&#xa;— conversations —&#xa;— events (monitoring) —" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;verticalLabelPosition=middle;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="440" width="175" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_mem_supa" value="lit l'historique" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;dashed=1;fontSize=10;fontColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="memory_read" target="supabase">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="recherche" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontColor=#9673a6;" edge="1" parent="1" source="rewrite" target="qdrant">
+        <mxCell id="e_save_supa" value="sauvegarde l'échange" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;dashed=1;fontSize=10;fontColor=#6c8ebf;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" edge="1" parent="1" source="groq" target="supabase">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="845"/>
+              <mxPoint x="1000" y="512"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- EDGE TTS -->
+        <mxCell id="tts" value="Edge TTS&#xa;fr-FR-HenriNeural&#xa;(bouton Écouter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#999999;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="185" width="165" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_fe_tts" value="POST /api/tts" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;" edge="1" parent="1" source="fe" target="tts">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e7" value="vectorise" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontColor=#9673a6;" edge="1" parent="1" source="embed" target="qdrant">
+
+        <!-- ═══════════════════════════════════════ -->
+        <!-- COLONNE GAUCHE — INGESTION             -->
+        <!-- ═══════════════════════════════════════ -->
+
+        <mxCell id="ingestion_group" value="Pipeline Ingestion (au démarrage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=3;verticalAlign=top;dashed=1;dashPattern=5 5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="680" width="350" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="data" value="data/sample/&#xa;.md .txt .csv&#xa;.json .xlsx .xml" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="75" y="715" width="110" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="unstructured" value="Unstructured&#xa;Parser + Chunker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="210" y="720" width="130" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="embed_label" value="FastEmbed&#xa;MiniLM multilingue" style="shape=parallelogram;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="210" y="778" width="130" height="35" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_data_unstr" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" edge="1" parent="1" source="data" target="unstructured">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e8" value="index" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontColor=#d6b656;" edge="1" parent="1" source="data" target="embed">
+        <mxCell id="e_unstr_embed" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="unstructured" target="embed_label">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e9" value="génère (stream)" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d79b00;strokeWidth=2;fontSize=10;fontColor=#d79b00;" edge="1" parent="1" source="api" target="groq">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e10" value="mémoire + logs" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontColor=#6c8ebf;" edge="1" parent="1" source="api" target="supabase">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e11" value="MP3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#999999;strokeWidth=2;fontSize=10;" edge="1" parent="1" source="tts" target="fe">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e12" value="/api/tts" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;" edge="1" parent="1" source="api" target="tts">
+        <mxCell id="e_embed_qdr" value="indexe" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;fontColor=#9673a6;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="embed_label" target="qdrant">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
         <!-- LEGENDE -->
-        <mxCell id="legend" value="&lt;b&gt;Légende&lt;/b&gt;&lt;br&gt;─── Flux principal&lt;br&gt;- - - Flux retour / secondaire" style="text;html=1;fontSize=10;fillColor=#f5f5f5;strokeColor=#999999;rounded=1;align=left;spacingLeft=8;" vertex="1" parent="1">
-          <mxGeometry x="1170" y="540" width="185" height="65" as="geometry"/>
+        <mxCell id="legend" value="─── Flux question&#xa;- - - Flux retour / secondaire&#xa;⑧ = réponse en streaming" style="text;html=0;fontSize=10;fillColor=#f5f5f5;strokeColor=#aaaaaa;rounded=1;align=left;spacingLeft=8;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="640" width="195" height="65" as="geometry"/>
         </mxCell>
 
       </root>
