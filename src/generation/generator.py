@@ -1,6 +1,7 @@
 """
 Génère une réponse à partir du contexte trouvé dans les archives (RAG).
 Utilise Groq (ou tout LLM OpenAI-compatible) — fonctionne avec n'importe quel fournisseur.
+En cas d'erreur (ex: rate limit), bascule automatiquement sur le LLM de secours si configuré.
 """
 import os
 import logging
@@ -12,13 +13,25 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 logger = logging.getLogger(__name__)
 
 _api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+_primary_model: str = os.getenv("LLM_MODEL", "deepseek-chat")
 
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "deepseek-chat"),
+    model=_primary_model,
     base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
     api_key=_api_key,
     temperature=0.2,
 ) if _api_key else None
+
+# LLM de secours — activé si FALLBACK_API_KEY est défini dans .env
+_fallback_api_key: Optional[str] = os.getenv("FALLBACK_API_KEY")
+_fallback_model: str = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
+
+_llm_fallback: Optional[ChatOpenAI] = ChatOpenAI(
+    model=_fallback_model,
+    base_url=os.getenv("FALLBACK_BASE_URL", "https://api.groq.com/openai/v1"),
+    api_key=_fallback_api_key,
+    temperature=0.2,
+) if _fallback_api_key else None
 
 
 def _build_messages(question: str, passages: List[str], sources: List[str], history: List[dict]) -> list:
@@ -85,11 +98,29 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
     return response.content.strip()
 
 
-def stream_reponse(question: str, passages: List[str], sources: List[str] = None, history: List[dict] = None) -> Iterator[str]:
-    """Génère la réponse en streaming, token par token."""
+def stream_reponse(question: str, passages: List[str], sources: List[str] = None, history: List[dict] = None, model_used: Optional[list] = None) -> Iterator[str]:
+    """Génère la réponse en streaming, token par token.
+    Si le LLM principal échoue (ex: rate limit), bascule sur le LLM de secours.
+    `model_used` est une liste mutable [nom_modèle] mise à jour pour que l'appelant sache quel modèle a répondu.
+    """
     if not _llm:
         raise ValueError("Clé OPENAI_API_KEY manquante dans le fichier .env")
     messages = _build_messages(question, passages, sources or [], history or [])
-    for chunk in _llm.stream(messages):
-        if chunk.content:
-            yield chunk.content
+
+    if model_used is not None:
+        model_used.append(_primary_model)
+
+    try:
+        for chunk in _llm.stream(messages):
+            if chunk.content:
+                yield chunk.content
+    except Exception as e:
+        if _llm_fallback:
+            logger.warning(f"LLM principal indisponible ({e}), bascule sur le fallback ({_fallback_model})")
+            if model_used is not None:
+                model_used[0] = f"{_fallback_model} [fallback]"
+            for chunk in _llm_fallback.stream(messages):
+                if chunk.content:
+                    yield chunk.content
+        else:
+            raise

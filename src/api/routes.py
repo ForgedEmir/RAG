@@ -103,21 +103,23 @@ def register_routes(app: Flask) -> None:
 
             def generate():
                 accumulated = []
+                model_used = []
                 try:
                     yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'passages': passages})}\n\n"
 
-                    for chunk in stream_reponse(question, passages, sources, history):
+                    for chunk in stream_reponse(question, passages, sources, history, model_used=model_used):
                         accumulated.append(chunk)
                         yield f"data: {json.dumps({'type': 'text', 'text': chunk})}\n\n"
 
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    model_name = model_used[0] if model_used else "inconnu"
+                    yield f"data: {json.dumps({'type': 'done', 'model': model_name})}\n\n"
 
                     if session_id:
                         save_exchange(session_id, question, "".join(accumulated))
 
                     latency = int((time.time() - start) * 1000)
-                    track("question", detail=question[:200], latency_ms=latency)
-                    logger.info("Réponse streamée.")
+                    track("question", detail=f"{question[:150]} | model:{model_name}", latency_ms=latency)
+                    logger.info(f"Réponse streamée via {model_name}.")
 
                 except Exception as e:
                     track("error", detail=str(e)[:200])

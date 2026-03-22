@@ -188,6 +188,10 @@
             <div class="card-label">Latence moy.</div>
             <div class="card-value" id="cnt-latency">—</div>
         </div>
+        <div class="card">
+            <div class="card-label">Dernier modèle</div>
+            <div class="card-value" id="cnt-model" style="font-size:.75rem;word-break:break-all">—</div>
+        </div>
     </div>
 
     <h2>Derniers événements</h2>
@@ -196,7 +200,8 @@
             <thead>
                 <tr>
                     <th>Type</th>
-                    <th>Détail</th>
+                    <th>Question</th>
+                    <th>Modèle</th>
                     <th>Latence</th>
                     <th>Date</th>
                 </tr>
@@ -260,15 +265,38 @@
         const spike = document.getElementById('spike-alert');
         spike.style.display = data.injection_spike ? 'block' : 'none';
 
+        // Dernier modèle utilisé
+        const lastQuestion = (data.events || []).find(e => e.type === 'question');
+        const modelEl = document.getElementById('cnt-model');
+        if (lastQuestion?.detail) {
+            const modelMatch = lastQuestion.detail.match(/model:(.+)$/);
+            const modelName = modelMatch ? modelMatch[1] : '—';
+            modelEl.textContent = modelName;
+            modelEl.style.color = modelName.includes('fallback') ? '#e67e22' : '#2ecc71';
+        }
+
         const tbody = document.getElementById('events-body');
         tbody.innerHTML = '';
         (data.events || []).forEach(ev => {
             const tr = document.createElement('tr');
             const date = new Date(ev.created_at).toLocaleString('fr-FR');
             const latency = ev.latency_ms ? `<span class="latency">${ev.latency_ms} ms</span>` : '<span class="latency">—</span>';
+
+            // Séparer question et modèle depuis le champ detail
+            let questionText = ev.detail || '—';
+            let modelBadge = '';
+            if (ev.type === 'question' && ev.detail?.includes(' | model:')) {
+                const parts = ev.detail.split(' | model:');
+                questionText = parts[0];
+                const m = parts[1];
+                const color = m.includes('fallback') ? '#e67e22' : '#2ecc71';
+                modelBadge = `<span style="color:${color};font-size:.75rem">${m}</span>`;
+            }
+
             tr.innerHTML = `
                 <td><span class="badge badge-${ev.type}">${formatType(ev.type)}</span></td>
-                <td class="detail" title="${ev.detail || ''}">${ev.detail || '—'}</td>
+                <td class="detail" title="${ev.detail || ''}">${questionText}</td>
+                <td>${modelBadge}</td>
                 <td>${latency}</td>
                 <td class="time">${date}</td>
             `;
