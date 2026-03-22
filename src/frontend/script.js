@@ -234,6 +234,25 @@ function addTtsButton(textEl) {
 function showLoading() { loadingIndicator.classList.add('visible'); }
 function hideLoading() { loadingIndicator.classList.remove('visible'); }
 
+// ── Cooldown anti-spam (5 secondes) ──────────────────────────────────────
+let _cooldownTimer = null;
+
+function startCooldown() {
+    let remaining = 5;
+    revealButton.disabled = true;
+    revealButton.textContent = `Patienter... ${remaining}s`;
+    _cooldownTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(_cooldownTimer);
+            revealButton.disabled = false;
+            revealButton.textContent = 'Révéler';
+        } else {
+            revealButton.textContent = `Patienter... ${remaining}s`;
+        }
+    }, 1000);
+}
+
 // ── Consultation de l'Oracle ──────────────────────────────────────────────
 async function consultOracle() {
     const question = userInput.value.trim();
@@ -242,6 +261,7 @@ async function consultOracle() {
         return;
     }
 
+    startCooldown();
     const sessionId = getSessionId();
     addUserQuestion(question);
     userInput.value = '';

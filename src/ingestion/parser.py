@@ -1,6 +1,6 @@
 """
-Extrait et nettoie le texte de tous les formats supportés : .md, .txt, .json, .csv, .xlsx, .xml
-Utilisé comme fallback si Unstructured n'est pas disponible.
+Extrait et nettoie le texte de tous les formats supportés : .md, .txt, .json, .csv, .xlsx, .xml, .pdf
+Pour les PDF : utilise LlamaParse si LLAMA_CLOUD_API_KEY est défini, sinon Unstructured.
 """
 import os
 import re
@@ -10,6 +10,27 @@ import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_LLAMA_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
+
+
+def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
+    """Parse un PDF complexe via LlamaParse (tableaux, multi-colonnes, OCR).
+    Retourne None si llama-parse n'est pas installé ou si la clé est absente.
+    """
+    if not _LLAMA_API_KEY:
+        return None
+    try:
+        from llama_parse import LlamaParse
+        parser = LlamaParse(api_key=_LLAMA_API_KEY, result_type="markdown")
+        documents = parser.load_data(filepath)
+        return "\n\n".join(doc.text for doc in documents if doc.text)
+    except ImportError:
+        logger.warning("llama-parse non installé — pip install llama-parse")
+        return None
+    except Exception as e:
+        logger.warning(f"LlamaParse échoué pour {filepath}, fallback Unstructured : {e}")
+        return None
 
 
 def clean_text(raw_text: str) -> str:
@@ -47,6 +68,15 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
     ext = ext.lower()
 
     try:
+        if ext == '.pdf':
+            text = _parse_pdf_llamaparse(filepath)
+            if text:
+                logger.info(f"PDF parsé via LlamaParse : {filepath}")
+                return text
+            # Fallback Unstructured géré dans document_loader.py
+            logger.info(f"PDF parsé via Unstructured (pas de clé LlamaParse) : {filepath}")
+            return None
+
         if ext in ('.txt', '.md'):
             with open(filepath, 'r', encoding='utf-8') as f:
                 return f.read()

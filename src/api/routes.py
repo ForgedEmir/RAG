@@ -56,6 +56,7 @@ def register_routes(app: Flask) -> None:
     # ── API ───────────────────────────────────────────────────────────────────
 
     @app.route("/api/ask", methods=["POST"])
+    @limiter.limit("1 per 5 seconds")
     @limiter.limit("10 per minute")
     @limiter.limit("100 per day")
     def ask():
