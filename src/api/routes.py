@@ -28,10 +28,19 @@ def _check_monitoring_key() -> bool:
     return request.args.get("key", "") == _MONITORING_KEY and _MONITORING_KEY != ""
 
 
+def _get_rate_limit_key() -> str:
+    """Clé de rate limit : session_id du body JSON, sinon IP en fallback.
+    Permet à plusieurs utilisateurs sur la même IP (école, VPN) d'avoir des limites indépendantes.
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("session_id", "").strip()
+    return session_id if session_id else get_remote_address()
+
+
 def register_routes(app: Flask) -> None:
 
     limiter = Limiter(
-        get_remote_address,
+        _get_rate_limit_key,
         app=app,
         default_limits=[],
         storage_uri="memory://",
