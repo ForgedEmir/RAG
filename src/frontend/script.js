@@ -206,9 +206,16 @@ function addTtsButton(textEl) {
     btn.className = 'tts-btn';
     btn.textContent = '🔊 Écouter';
     btn.addEventListener('click', async () => {
-        if (btn.classList.contains('playing')) return;
+        // Si déjà en lecture → stop
+        if (btn.classList.contains('playing')) {
+            stopCurrentAudio();
+            btn.classList.remove('playing');
+            btn.textContent = '🔊 Écouter';
+            return;
+        }
+        stopCurrentAudio();
         btn.classList.add('playing');
-        btn.textContent = '🔊 En cours...';
+        btn.textContent = '⏹ Arrêter';
         try {
             const res = await fetch('/api/tts', {
                 method: 'POST',
@@ -216,13 +223,14 @@ function addTtsButton(textEl) {
                 body: JSON.stringify({ text: textEl.textContent }),
             });
             if (!res.ok) throw new Error('TTS indisponible');
-            const blob = await res.blob();
-            const audio = new Audio(URL.createObjectURL(blob));
-            audio.onended = () => {
+            const blob = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
+            currentAudio = new Audio(URL.createObjectURL(blob));
+            currentAudio.onended = () => {
                 btn.classList.remove('playing');
                 btn.textContent = '🔊 Écouter';
+                currentAudio = null;
             };
-            audio.play();
+            currentAudio.play();
         } catch (e) {
             btn.classList.remove('playing');
             btn.textContent = '🔊 Écouter';
@@ -255,6 +263,7 @@ function startCooldown() {
 
 // ── Consultation de l'Oracle ──────────────────────────────────────────────
 async function consultOracle() {
+    stopCurrentAudio();
     const question = userInput.value.trim();
     if (!question) {
         alert('Veuillez écrire votre question sur le parchemin mystique...');
@@ -355,6 +364,15 @@ let audioChunks   = [];
 let voiceMode     = false;
 let _vadInterval  = null;
 let _audioCtx     = null;
+let currentAudio  = null;   // lecture TTS en cours
+
+function stopCurrentAudio() {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.src = '';
+        currentAudio = null;
+    }
+}
 
 async function startRecording(pushToTalk = false) {
     if (mediaRecorder?.state === 'recording') return;
@@ -423,16 +441,18 @@ function stopRecording() {
 }
 
 async function autoPlayTts(textEl) {
+    stopCurrentAudio();
     try {
-        const res  = await fetch('/api/tts', {
+        const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: textEl.textContent }),
         });
         if (!res.ok) return;
-        const blob  = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
-        const audio = new Audio(URL.createObjectURL(blob));
-        audio.play();
+        const blob = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.onended = () => { currentAudio = null; };
+        currentAudio.play();
     } catch (_) {}
 }
 
@@ -477,6 +497,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Push-to-talk clavier — maintenir PTT_KEY pour parler
     document.addEventListener('keydown', async (e) => {
         if (e.key !== PTT_KEY || e.repeat || mediaRecorder?.state === 'recording') return;
+        stopCurrentAudio();
         micBtn.classList.add('recording');
         await startRecording(true);
     });
