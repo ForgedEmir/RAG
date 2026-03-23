@@ -192,6 +192,29 @@ def register_routes(app: Flask) -> None:
             logger.error(f"Erreur TTS : {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/stt", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def stt():
+        """Transcrit un fichier audio en texte via Groq Whisper large-v3."""
+        try:
+            audio = request.files.get("audio")
+            if not audio:
+                return jsonify({"error": "Aucun fichier audio"}), 400
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url="https://api.groq.com/openai/v1",
+            )
+            transcription = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=(audio.filename or "audio.webm", audio.read()),
+                language="fr",
+            )
+            return jsonify({"text": transcription.text})
+        except Exception as e:
+            logger.error(f"Erreur STT : {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/monitoring/stats")
     def monitoring_stats():
         if not _check_monitoring_key():

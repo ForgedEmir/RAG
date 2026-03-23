@@ -329,6 +329,7 @@ async function consultOracle() {
                         msgEl.innerHTML = marked.parse(fullText);
                         if (isFirstQuestion) registerSession(sessionId, question);
                         addTtsButton(msgEl);
+                        if (voiceMode) { voiceMode = false; autoPlayTts(msgEl); }
                     }
                 } catch (_) {}
             }
@@ -342,6 +343,97 @@ async function consultOracle() {
             "Vérifiez que le serveur des mystères soit éveillé et tentez à nouveau votre invocation."
         ), 500);
     }
+}
+
+// ── Mode vocal (STT → RAG → TTS auto) ────────────────────────────────────
+const PTT_KEY     = 'F2';          // Touche push-to-talk (configurable)
+const SILENCE_MS  = 1500;          // Délai silence avant envoi auto (ms)
+const SILENCE_THR = 10;            // Seuil silence (0–255)
+
+let mediaRecorder = null;
+let audioChunks   = [];
+let voiceMode     = false;
+let _vadInterval  = null;
+let _audioCtx     = null;
+
+async function startRecording(pushToTalk = false) {
+    if (mediaRecorder?.state === 'recording') return;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+        if (_vadInterval) { clearInterval(_vadInterval); _vadInterval = null; }
+        if (_audioCtx)    { _audioCtx.close(); _audioCtx = null; }
+        stream.getTracks().forEach(t => t.stop());
+
+        const micBtn = document.getElementById('micButton');
+        micBtn.textContent = '⏳';
+        micBtn.disabled = true;
+        micBtn.classList.remove('recording');
+
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const form = new FormData();
+        form.append('audio', blob, 'audio.webm');
+        try {
+            const res  = await fetch('/api/stt', { method: 'POST', body: form });
+            const data = await res.json();
+            if (data.text?.trim()) {
+                userInput.value = data.text.trim();
+                voiceMode = true;
+                consultOracle();
+            }
+        } catch (err) {
+            console.error('STT error:', err);
+        } finally {
+            micBtn.textContent = '🎤';
+            micBtn.disabled = false;
+        }
+    };
+    mediaRecorder.start();
+
+    // ── Détection de silence (désactivée en push-to-talk) ──────────────────
+    if (!pushToTalk) {
+        _audioCtx = new AudioContext();
+        const analyser = _audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        _audioCtx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        let silenceTimer = null;
+        let recordingMs  = 0;
+
+        _vadInterval = setInterval(() => {
+            recordingMs += 100;
+            if (recordingMs < 800) return;   // laisse au moins 0.8s avant de détecter
+
+            analyser.getByteFrequencyData(buf);
+            const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+
+            if (avg < SILENCE_THR) {
+                if (!silenceTimer) silenceTimer = setTimeout(() => stopRecording(), SILENCE_MS);
+            } else {
+                if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+            }
+        }, 100);
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
+}
+
+async function autoPlayTts(textEl) {
+    try {
+        const res  = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: textEl.textContent }),
+        });
+        if (!res.ok) return;
+        const blob  = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.play();
+    } catch (_) {}
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -368,6 +460,29 @@ document.addEventListener('DOMContentLoaded', function() {
         renderSidebar();
         sidebar.classList.remove('open');
         userInput.focus();
+    });
+
+    // Bouton micro — clic = mode silence auto
+    const micBtn = document.getElementById('micButton');
+    micBtn.title = `Clic : silence auto  |  Maintenir ${PTT_KEY} : push-to-talk`;
+    micBtn.addEventListener('click', async () => {
+        if (mediaRecorder?.state === 'recording') {
+            stopRecording();
+        } else {
+            micBtn.classList.add('recording');
+            await startRecording(false);
+        }
+    });
+
+    // Push-to-talk clavier — maintenir PTT_KEY pour parler
+    document.addEventListener('keydown', async (e) => {
+        if (e.key !== PTT_KEY || e.repeat || mediaRecorder?.state === 'recording') return;
+        micBtn.classList.add('recording');
+        await startRecording(true);
+    });
+    document.addEventListener('keyup', (e) => {
+        if (e.key !== PTT_KEY) return;
+        stopRecording();
     });
 
     revealButton.addEventListener('click', consultOracle);
