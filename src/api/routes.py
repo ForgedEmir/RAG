@@ -54,8 +54,6 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/monitoring")
     def monitoring():
-        if not _check_monitoring_key():
-            return jsonify({"error": "Accès refusé"}), 403
         return send_from_directory(frontend_dir, "monitoring.html")
 
     @app.route("/<path:path>")
@@ -155,6 +153,7 @@ def register_routes(app: Flask) -> None:
             force = (request.get_json(silent=True) or {}).get("force", False)
             resultat = index_data(force_reindex=force)
             msg = "Indexation terminée avec succès." if resultat else "La base est déjà à jour."
+            track("reindex", detail=f"force={force} | {'changements détectés' if resultat else 'aucun changement'}")
             return jsonify({"message": msg})
         except Exception as e:
             logger.error(f"Erreur reindex : {e}")
@@ -187,6 +186,7 @@ def register_routes(app: Flask) -> None:
             if not text:
                 return jsonify({"error": "Texte vide"}), 400
             audio = generer_audio(text)
+            track("tts", detail=f"{len(text)} chars")
             return Response(audio, mimetype="audio/mpeg")
         except Exception as e:
             logger.error(f"Erreur TTS : {e}")
@@ -210,6 +210,7 @@ def register_routes(app: Flask) -> None:
                 file=(audio.filename or "audio.webm", audio.read()),
                 language="fr",
             )
+            track("voice", detail=f"whisper | {audio.filename or 'audio.webm'}")
             return jsonify({"text": transcription.text})
         except Exception as e:
             logger.error(f"Erreur STT : {e}")
@@ -220,6 +221,82 @@ def register_routes(app: Flask) -> None:
         if not _check_monitoring_key():
             return jsonify({"error": "Accès refusé"}), 403
         return jsonify(get_stats())
+
+    @app.route("/api/admin/sources")
+    def admin_sources():
+        """Liste les fichiers lore indexés. Protégé par la clé monitoring."""
+        if not _check_monitoring_key():
+            return jsonify({"error": "Accès refusé"}), 403
+        from src.ingestion.run import list_current_files
+        fichiers = list_current_files()
+        return jsonify({"files": sorted(fichiers.keys()), "total": len(fichiers)})
+
+    @app.route("/api/admin/upload", methods=["POST"])
+    @limiter.limit("20 per hour")
+    def admin_upload():
+        """Upload un fichier lore dans data/sample/. Protégé par la clé monitoring."""
+        if not _check_monitoring_key():
+            return jsonify({"error": "Accès refusé"}), 403
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return jsonify({"error": "Aucun fichier"}), 400
+
+        ALLOWED = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx"}
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED:
+            return jsonify({"error": f"Extension non supportée. Formats : {', '.join(ALLOWED)}"}), 400
+
+        raw = f.read()
+
+        # Vérification taille (max 500 Ko)
+        MAX_SIZE = 500 * 1024
+        if len(raw) > MAX_SIZE:
+            return jsonify({"error": f"Fichier trop volumineux ({len(raw)//1024} Ko). Maximum : 500 Ko."}), 400
+
+        # Vérification du contenu (regex injection) sur début + fin + milieu
+        try:
+            text = raw.decode("utf-8", errors="ignore")
+        except Exception:
+            return jsonify({"error": "Impossible de lire le fichier (encodage invalide)."}), 400
+
+        lines = text.splitlines()
+        mid = len(lines) // 2
+        sample_lines = lines[:20] + lines[max(0, mid - 5) : mid + 5] + lines[-20:]
+        sample = "\n".join(sample_lines) or text[:2000]
+
+        from src.security.validator import valider_entree
+        check = valider_entree(sample)
+        if not check["valid"]:
+            logger.warning(f"Upload bloqué [{check['type']}] — '{f.filename}'")
+            track("upload_blocked", detail=f"{f.filename} | raison:{check['type']}")
+            return jsonify({"error": "Contenu suspect détecté dans le fichier. Upload refusé."}), 400
+
+        data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
+        os.makedirs(data_dir, exist_ok=True)
+        dest = os.path.join(data_dir, os.path.basename(f.filename))
+        with open(dest, "wb") as out:
+            out.write(raw)
+
+        logger.info(f"Fichier uploadé : {f.filename} ({len(raw)//1024} Ko)")
+        track("upload", detail=f"{f.filename} | {len(raw)//1024} Ko")
+        return jsonify({"message": f"'{f.filename}' uploadé ({len(raw)//1024} Ko). Lance une réindexation pour l'activer.", "filename": f.filename})
+
+    @app.route("/api/admin/delete", methods=["DELETE"])
+    def admin_delete():
+        """Supprime un fichier lore de data/sample/. Protégé par la clé monitoring."""
+        if not _check_monitoring_key():
+            return jsonify({"error": "Accès refusé"}), 403
+        filename = (request.get_json(silent=True) or {}).get("filename", "").strip()
+        if not filename or "/" in filename or "\\" in filename or ".." in filename:
+            return jsonify({"error": "Nom de fichier invalide"}), 400
+        data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
+        path = os.path.join(data_dir, filename)
+        if not os.path.exists(path):
+            return jsonify({"error": "Fichier introuvable"}), 404
+        os.remove(path)
+        track("reindex", detail=f"suppression : {filename}")
+        logger.info(f"Fichier supprimé : {filename}")
+        return jsonify({"message": f"'{filename}' supprimé. Réindexe pour mettre à jour Qdrant."})
 
     @app.errorhandler(429)
     def trop_de_requetes(e):

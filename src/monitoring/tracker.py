@@ -146,7 +146,8 @@ def get_stats() -> dict:
 
     try:
         # Compteurs par type
-        types = ["question", "injection_regex", "injection_lakera", "rate_limit", "error"]
+        types = ["question", "injection_regex", "injection_lakera", "rate_limit", "error",
+                 "voice", "tts", "upload", "upload_blocked", "reindex", "fallback"]
         counts = {}
         for t in types:
             r = client.table("events").select("id", count="exact").eq("type", t).execute()

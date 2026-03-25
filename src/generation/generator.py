@@ -119,6 +119,11 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
             logger.warning(f"LLM principal indisponible ({e}), bascule sur le fallback ({_fallback_model})")
             if model_used is not None:
                 model_used[0] = f"{_fallback_model} [fallback]"
+            try:
+                from src.monitoring.tracker import track as _track
+                _track("fallback", detail=f"{_primary_model} → {_fallback_model} | {str(e)[:100]}")
+            except Exception:
+                pass
             for chunk in _llm_fallback.stream(messages):
                 if chunk.content:
                     yield chunk.content

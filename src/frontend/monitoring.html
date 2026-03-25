@@ -134,12 +134,64 @@
         .badge-injection_lakera{ background: rgba(180,30,30,.2);  color: #e07070; }
         .badge-rate_limit      { background: rgba(180,130,0,.2);  color: #e0a840; }
         .badge-error           { background: rgba(180,60,0,.2);   color: #e09060; }
+        .badge-voice           { background: rgba(130,70,180,.2); color: #c87cea; }
+        .badge-tts             { background: rgba(70,160,130,.2); color: #70c8a8; }
+        .badge-upload          { background: rgba(70,180,70,.2);  color: #70e070; }
+        .badge-upload_blocked  { background: rgba(180,30,30,.2);  color: #e07070; }
+        .badge-reindex         { background: rgba(180,160,50,.2); color: #e0c840; }
+        .badge-fallback        { background: rgba(220,120,0,.2);  color: #e67e22; }
 
         .latency { color: #8a7a6a; font-size: .85rem; }
         .detail  { color: #a09080; font-size: .85rem; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .time    { color: #6a5a4a; font-size: .8rem; }
 
         #error-msg { color: #e07070; font-style: italic; margin: 1rem 0; }
+
+        /* ── Logs terminal ── */
+        #logs-section { margin-top: 2.5rem; }
+        #logs-box {
+            background: #0d0800;
+            border: 1px solid #3a2a10;
+            border-radius: 8px;
+            padding: 1rem;
+            height: 320px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: .78rem;
+            line-height: 1.6;
+        }
+        #logs-box::-webkit-scrollbar { width: 6px; }
+        #logs-box::-webkit-scrollbar-thumb { background: #5a3e1b; border-radius: 3px; }
+        .log-line { display: flex; gap: .6rem; }
+        .log-time  { color: #5a4a3a; min-width: 62px; }
+        .log-name  { color: #7a6a5a; min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .log-msg   { color: #c4a476; flex: 1; word-break: break-all; }
+        .log-INFO    .log-level { color: #87ceeb; }
+        .log-WARNING .log-level { color: #e0a840; }
+        .log-ERROR   .log-level { color: #e07070; }
+        .log-DEBUG   .log-level { color: #6a5a4a; }
+        .log-level { min-width: 52px; font-weight: 600; }
+        #logs-controls { display: flex; gap: .8rem; align-items: center; margin-bottom: .6rem; }
+        #logs-controls button {
+            padding: .25rem .7rem;
+            background: #3a2a10;
+            border: 1px solid #5a3e1b;
+            color: #d4b896;
+            border-radius: 4px;
+            font-size: .78rem;
+            cursor: pointer;
+        }
+        #logs-controls button:hover { border-color: #c9a84c; }
+        #log-filter {
+            padding: .25rem .6rem;
+            background: #2a1a08;
+            border: 1px solid #5a3e1b;
+            color: #d4b896;
+            border-radius: 4px;
+            font-size: .78rem;
+            width: 180px;
+        }
+        #autoscroll-label { font-size: .78rem; color: #8a7a6a; display: flex; align-items: center; gap: .3rem; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -192,6 +244,58 @@
             <div class="card-label">Dernier modèle</div>
             <div class="card-value" id="cnt-model" style="font-size:.75rem;word-break:break-all">—</div>
         </div>
+        <div class="card">
+            <div class="card-label">Requêtes vocales</div>
+            <div class="card-value" id="cnt-voice">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">TTS générés</div>
+            <div class="card-value" id="cnt-tts">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Fichiers uploadés</div>
+            <div class="card-value ok" id="cnt-upload">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Uploads bloqués</div>
+            <div class="card-value danger" id="cnt-upload_blocked">—</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Fallbacks LLM</div>
+            <div class="card-value warn" id="cnt-fallback">—</div>
+        </div>
+    </div>
+
+    <!-- ── Section Admin ── -->
+    <div style="margin-bottom:2.5rem">
+        <h2>⚙ Administration des Archives</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1rem">
+
+            <!-- Upload -->
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1.2rem">
+                <div style="font-family:'Cinzel',serif;color:#c9a84c;font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.8rem">Ajouter un fichier lore</div>
+                <div id="drop-zone" style="border:2px dashed #5a3e1b;border-radius:8px;padding:1.2rem;text-align:center;color:#8a7a6a;font-size:.9rem;cursor:pointer;transition:border-color .2s"
+                    onclick="document.getElementById('file-input').click()"
+                    ondragover="event.preventDefault();this.style.borderColor='#c9a84c'"
+                    ondragleave="this.style.borderColor='#5a3e1b'"
+                    ondrop="handleDrop(event)">
+                    Glisse un fichier ici<br><span style="font-size:.8rem">.txt .md .csv .json .xml .xlsx</span>
+                </div>
+                <input type="file" id="file-input" style="display:none" accept=".txt,.md,.csv,.json,.xml,.xlsx" onchange="uploadFile(this.files[0])">
+                <div id="upload-status" style="margin-top:.6rem;font-size:.85rem;min-height:1.2rem"></div>
+            </div>
+
+            <!-- Sources + Reindex -->
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1.2rem">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+                    <div style="font-family:'Cinzel',serif;color:#c9a84c;font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Fichiers indexés</div>
+                    <button onclick="triggerReindex()" style="padding:.3rem .8rem;background:#3a2a10;border:1px solid #c9a84c;color:#f0d9a0;border-radius:5px;font-family:'Cinzel',serif;font-size:.75rem;cursor:pointer">↺ Réindexer</button>
+                </div>
+                <div id="sources-list" style="font-size:.85rem;color:#a09080;line-height:1.8">Chargement...</div>
+                <div id="reindex-status" style="margin-top:.6rem;font-size:.85rem;min-height:1.2rem"></div>
+            </div>
+
+        </div>
     </div>
 
     <h2>Derniers événements</h2>
@@ -209,12 +313,25 @@
             <tbody id="events-body"></tbody>
         </table>
     </div>
+    <!-- ── Logs terminal ── -->
+    <div id="logs-section">
+        <div id="logs-controls">
+            <h2 style="margin:0">📋 Logs serveur</h2>
+            <input type="text" id="log-filter" placeholder="Filtrer... (ex: ERROR, routes)">
+            <button onclick="fetchLogs()">↺ Actualiser</button>
+            <button onclick="document.getElementById('logs-box').innerHTML='';allLogs=[]">✕ Vider</button>
+            <label id="autoscroll-label"><input type="checkbox" id="autoscroll" checked> Auto-scroll</label>
+        </div>
+        <div id="logs-box"></div>
+    </div>
 </div>
 
 <script>
     let monitoringKey = '';
     let countdownVal = 30;
     let countdownTimer = null;
+    let allLogs = [];
+    let logsTimer = null;
 
     function authenticate() {
         const key = document.getElementById('key-input').value.trim();
@@ -238,6 +355,9 @@
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
                     startCountdown();
+                    loadSources();
+                    fetchLogs();
+                    logsTimer = setInterval(fetchLogs, 5000);
                 }
                 renderStats(data);
             })
@@ -254,7 +374,8 @@
         document.getElementById('error-msg').textContent = data.error || '';
 
         const counts = data.counts || {};
-        ['question','injection_regex','injection_lakera','rate_limit','error'].forEach(t => {
+        ['question','injection_regex','injection_lakera','rate_limit','error',
+         'voice','tts','upload','upload_blocked','reindex','fallback'].forEach(t => {
             const el = document.getElementById('cnt-' + t);
             if (el) el.textContent = counts[t] ?? '—';
         });
@@ -306,12 +427,137 @@
 
     function formatType(type) {
         return {
-            question: 'Question',
-            injection_regex: 'Injection (regex)',
+            question:         'Question',
+            injection_regex:  'Injection (regex)',
             injection_lakera: 'Injection (Lakera)',
-            rate_limit: 'Rate limit',
-            error: 'Erreur',
+            rate_limit:       'Rate limit',
+            error:            'Erreur',
+            voice:            'Vocal',
+            tts:              'TTS',
+            upload:           'Upload',
+            upload_blocked:   'Upload bloqué',
+            reindex:          'Réindexation',
+            fallback:         'Fallback LLM',
         }[type] || type;
+    }
+
+    function fetchLogs() {
+        fetch(`/api/monitoring/logs?key=${encodeURIComponent(monitoringKey)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.logs) return;
+                allLogs = data.logs;
+                renderLogs();
+            })
+            .catch(() => {});
+    }
+
+    function renderLogs() {
+        const filter = document.getElementById('log-filter').value.toLowerCase();
+        const box = document.getElementById('logs-box');
+        const wasAtBottom = box.scrollHeight - box.clientHeight <= box.scrollTop + 10;
+        box.innerHTML = allLogs
+            .filter(l => !filter || l.msg.toLowerCase().includes(filter) || l.level.toLowerCase().includes(filter) || l.name.toLowerCase().includes(filter))
+            .map(l => `<div class="log-line log-${l.level}">
+                <span class="log-time">${l.time}</span>
+                <span class="log-level">${l.level}</span>
+                <span class="log-name">${l.name}</span>
+                <span class="log-msg">${l.msg.replace(/</g,'&lt;')}</span>
+            </div>`).join('');
+        if (document.getElementById('autoscroll').checked && wasAtBottom) {
+            box.scrollTop = box.scrollHeight;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const filterInput = document.getElementById('log-filter');
+        if (filterInput) filterInput.addEventListener('input', renderLogs);
+    });
+
+    function loadSources() {
+        fetch(`/api/admin/sources?key=${encodeURIComponent(monitoringKey)}`)
+            .then(r => r.json())
+            .then(data => {
+                const el = document.getElementById('sources-list');
+                if (!data.files || data.files.length === 0) {
+                    el.textContent = 'Aucun fichier indexé.';
+                } else {
+                    el.innerHTML = data.files.map(f => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:.15rem 0">
+                            <span>📄 ${f}</span>
+                            <button onclick="deleteFile('${f}')" title="Supprimer" style="background:none;border:none;color:#8a4a4a;cursor:pointer;font-size:.9rem;padding:0 .3rem;line-height:1" onmouseover="this.style.color='#e07070'" onmouseout="this.style.color='#8a4a4a'">✕</button>
+                        </div>`).join('') +
+                        `<div style="margin-top:.5rem;color:#6a5a4a;font-size:.8rem">${data.total} fichier(s) au total</div>`;
+                }
+            })
+            .catch(() => { document.getElementById('sources-list').textContent = 'Erreur de chargement.'; });
+    }
+
+    function uploadFile(file) {
+        if (!file) return;
+        const status = document.getElementById('upload-status');
+        status.style.color = '#c9a84c';
+        status.textContent = `Envoi de "${file.name}"...`;
+        const form = new FormData();
+        form.append('file', file);
+        fetch(`/api/admin/upload?key=${encodeURIComponent(monitoringKey)}`, { method: 'POST', body: form })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    status.style.color = '#e07070';
+                    status.textContent = '✗ ' + data.error;
+                } else {
+                    status.style.color = '#70c070';
+                    status.textContent = '✓ ' + data.message;
+                    loadSources();
+                }
+            })
+            .catch(() => { status.style.color = '#e07070'; status.textContent = 'Erreur réseau.'; });
+    }
+
+    function handleDrop(event) {
+        event.preventDefault();
+        document.getElementById('drop-zone').style.borderColor = '#5a3e1b';
+        const file = event.dataTransfer.files[0];
+        if (file) uploadFile(file);
+    }
+
+    function deleteFile(filename) {
+        if (!confirm(`Supprimer "${filename}" ?`)) return;
+        const status = document.getElementById('reindex-status');
+        status.style.color = '#c9a84c';
+        status.textContent = `Suppression de "${filename}"...`;
+        fetch(`/api/admin/delete?key=${encodeURIComponent(monitoringKey)}`, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filename})
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    status.style.color = '#e07070';
+                    status.textContent = '✗ ' + data.error;
+                } else {
+                    status.style.color = '#70c070';
+                    status.textContent = '✓ ' + data.message;
+                    loadSources();
+                }
+            })
+            .catch(() => { status.style.color = '#e07070'; status.textContent = 'Erreur réseau.'; });
+    }
+
+    function triggerReindex() {
+        const status = document.getElementById('reindex-status');
+        status.style.color = '#c9a84c';
+        status.textContent = 'Réindexation en cours...';
+        fetch('/api/reindex', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force: false}) })
+            .then(r => r.json())
+            .then(data => {
+                status.style.color = '#70c070';
+                status.textContent = '✓ ' + (data.message || 'Terminé.');
+                loadSources();
+            })
+            .catch(() => { status.style.color = '#e07070'; status.textContent = 'Erreur.'; });
     }
 
     function startCountdown() {
