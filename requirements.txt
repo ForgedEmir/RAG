@@ -16,13 +16,16 @@ qdrant-client>=1.7.0
 
 # === Embeddings ===
 fastembed>=0.2.0
+sentence-transformers>=2.2.0
+
+# === Search ===
+rank-bm25>=0.2.2
 
 # === Data Parsing ===
-unstructured>=0.12.0
+unstructured[md,csv]>=0.12.0
 openpyxl>=3.1.0
 python-magic-bin; sys_platform == "win32"
 llama-parse>=0.5.0
-
 
 # === MCP (Model Context Protocol) ===
 mcp>=1.26.0,<2

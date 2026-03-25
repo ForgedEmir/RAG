@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "files_metadata.json")
+BM25_CORPUS_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "bm25_corpus.json")
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
 PARSER_MODE = os.getenv("PARSER", "unstructured")
 
@@ -133,6 +134,18 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
     return documents
 
 
+def _save_bm25_corpus(documents: List[Document]) -> None:
+    """Sauvegarde les chunks en JSON pour que la hybrid search puisse construire BM25."""
+    os.makedirs(os.path.dirname(BM25_CORPUS_FILE), exist_ok=True)
+    corpus = [
+        {"text": doc.page_content, "fichier": doc.metadata.get("fichier", "inconnu")}
+        for doc in documents
+    ]
+    with open(BM25_CORPUS_FILE, "w", encoding="utf-8") as f:
+        json.dump(corpus, f, ensure_ascii=False, indent=1)
+    logger.info(f"Corpus BM25 sauvegardé ({len(corpus)} chunks).")
+
+
 def index_data(force_reindex: bool = False) -> bool:
     """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés.
     Si force_reindex=True, repart de zéro.
@@ -145,6 +158,7 @@ def index_data(force_reindex: bool = False) -> bool:
         if docs:
             store = get_store(force_reindex=True)
             add_documents(store, docs)
+            _save_bm25_corpus(docs)
             save_memory(fichiers_actuels)
             logger.info("Réindexation complète terminée.")
             return True
@@ -173,6 +187,10 @@ def index_data(force_reindex: bool = False) -> bool:
     if a_indexer:
         docs = prepare_files_for_ai(a_indexer)
         add_documents(store, docs)
+
+    # Reconstruire le corpus BM25 complet (tous les fichiers actuels)
+    all_docs = prepare_files_for_ai(actuels)
+    _save_bm25_corpus(all_docs)
 
     save_memory(fichiers_actuels)
     logger.info(f"Mise à jour : +{len(nouveaux)} nouveau(x), ~{len(modifies)} modifié(s), -{len(supprimes)} supprimé(s).")

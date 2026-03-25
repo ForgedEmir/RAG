@@ -12,7 +12,7 @@ import shutil
 from typing import List, Set, Optional
 
 from langchain_qdrant import QdrantVectorStore
-from langchain_community.embeddings import FastEmbedEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, FilterSelector, Filter, FieldCondition, MatchValue
@@ -22,22 +22,26 @@ logger = logging.getLogger(__name__)
 _BASE_DIR        = os.path.dirname(__file__)
 _DB_PATH         = os.path.join(_BASE_DIR, "qdrant_db")
 _COLLECTION_NAME = "lore"
-_VECTOR_SIZE     = 384  # paraphrase-multilingual-MiniLM-L12-v2
+_VECTOR_SIZE     = 1024  # BAAI/bge-m3
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 # Singletons — créés une seule fois
-_embeddings: Optional[FastEmbedEmbeddings] = None
+_embeddings: Optional[HuggingFaceEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
 
 
-def _get_embeddings() -> FastEmbedEmbeddings:
+def _get_embeddings() -> HuggingFaceEmbeddings:
     global _embeddings
     if _embeddings is None:
-        model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-        _embeddings = FastEmbedEmbeddings(model_name=model)
+        model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+        _embeddings = HuggingFaceEmbeddings(
+            model_name=model,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
         logger.info(f"Modèle d'embeddings chargé : {model}")
     return _embeddings
 

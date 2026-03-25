@@ -154,6 +154,9 @@ def register_routes(app: Flask) -> None:
         try:
             force = (request.get_json(silent=True) or {}).get("force", False)
             resultat = index_data(force_reindex=force)
+            if resultat:
+                from src.search.search import invalidate_bm25_cache
+                invalidate_bm25_cache()
             msg = "Indexation terminée avec succès." if resultat else "La base est déjà à jour."
             track("reindex", detail=f"force={force} | {'changements' if resultat else 'aucun changement'}")
             return jsonify({"message": msg})
