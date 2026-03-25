@@ -1,6 +1,7 @@
-// Oracle des Archives - JavaScript Interface
+// Oracle des Archives — Script principal
 
-// ── Gestion multi-sessions ────────────────────────────────────────────────
+// ── Sessions (multi-conversations) ─────────────────────────────────────────
+
 const SESSIONS_KEY = 'oracle_sessions';
 const CURRENT_KEY  = 'oracle_current_session';
 
@@ -18,6 +19,7 @@ function getSessionId() {
     return id;
 }
 
+// Génère un UUID v4 compatible avec tous les navigateurs
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         let r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -26,8 +28,8 @@ function generateUUID() {
 }
 
 function startNewSession() {
-    const id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') 
-        ? crypto.randomUUID() 
+    const id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
         : generateUUID();
     localStorage.setItem(CURRENT_KEY, id);
     return id;
@@ -45,7 +47,8 @@ function formatDate(ts) {
     return new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
-// ── Terms and Conditions ──────────────────────────────────────────────────
+// ── Conditions d'utilisation ────────────────────────────────────────────────
+
 const TERMS_ACCEPTED_KEY = 'oracleTermsAccepted';
 
 function checkTermsAcceptance() {
@@ -69,7 +72,8 @@ function initializeTermsModal() {
     });
 }
 
-// ── DOM refs ──────────────────────────────────────────────────────────────
+// ── Éléments du DOM ─────────────────────────────────────────────────────────
+
 const userInput        = document.getElementById('userInput');
 const revealButton     = document.getElementById('revealButton');
 const oracleResponses  = document.getElementById('oracleResponses');
@@ -79,7 +83,8 @@ const convList         = document.getElementById('convList');
 
 let isFirstMessage = true;
 
-// ── Sidebar ───────────────────────────────────────────────────────────────
+// ── Sidebar (historique) ────────────────────────────────────────────────────
+
 function renderSidebar() {
     const sessions = getSessions();
     const currentId = localStorage.getItem(CURRENT_KEY);
@@ -130,26 +135,26 @@ async function loadConversation(sessionId) {
     userInput.focus();
 }
 
+const WELCOME_HTML = `
+    <div class="oracle-message welcome-message" id="welcomeMessage">
+        <div class="oracle-response">
+            Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps.
+            <br><br>
+            Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez.
+        </div>
+    </div>`;
+
 async function deleteConversation(sessionId) {
-    // Supprimer de Supabase
     await fetch(`/api/conversations?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
 
-    // Supprimer du localStorage
     const sessions = getSessions().filter(s => s.id !== sessionId);
     saveSessions(sessions);
 
-    // Si c'était la session active, en démarrer une nouvelle
+    // Si c'était la session active, on en crée une nouvelle
     if (localStorage.getItem(CURRENT_KEY) === sessionId) {
         startNewSession();
         clearResponses();
-        oracleResponses.innerHTML = `
-            <div class="oracle-message welcome-message" id="welcomeMessage">
-                <div class="oracle-response">
-                    Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps.
-                    <br><br>
-                    Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez.
-                </div>
-            </div>`;
+        oracleResponses.innerHTML = WELCOME_HTML;
     }
 
     renderSidebar();
@@ -160,7 +165,8 @@ function clearResponses() {
     isFirstMessage = true;
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────
+// ── Helpers d'affichage ─────────────────────────────────────────────────────
+
 function addUserQuestion(question, fromHistory = false) {
     if (!fromHistory && isFirstMessage) {
         const welcome = document.getElementById('welcomeMessage');
@@ -215,7 +221,6 @@ function addTtsButton(textEl) {
     btn.className = 'tts-btn';
     btn.textContent = '🔊 Écouter';
     btn.addEventListener('click', async () => {
-        // Si déjà en lecture → stop
         if (btn.classList.contains('playing')) {
             stopCurrentAudio();
             btn.classList.remove('playing');
@@ -251,7 +256,8 @@ function addTtsButton(textEl) {
 function showLoading() { loadingIndicator.classList.add('visible'); }
 function hideLoading() { loadingIndicator.classList.remove('visible'); }
 
-// ── Cooldown anti-spam (5 secondes) ──────────────────────────────────────
+// ── Cooldown anti-spam (5s) ─────────────────────────────────────────────────
+
 let _cooldownTimer = null;
 
 function startCooldown() {
@@ -270,7 +276,8 @@ function startCooldown() {
     }, 1000);
 }
 
-// ── Consultation de l'Oracle ──────────────────────────────────────────────
+// ── Consultation de l'Oracle ────────────────────────────────────────────────
+
 async function consultOracle() {
     stopCurrentAudio();
     const question = userInput.value.trim();
@@ -304,7 +311,7 @@ async function consultOracle() {
 
         const contentType = response.headers.get('content-type') || '';
 
-        // ── Réponse bloquée (JSON) ────────────────────────────────────────
+        // Réponse bloquée (JSON classique, pas de stream)
         if (!contentType.includes('text/event-stream')) {
             const data = await response.json();
             hideLoading();
@@ -315,7 +322,7 @@ async function consultOracle() {
             return;
         }
 
-        // ── Réponse streamée (SSE) ────────────────────────────────────────
+        // Réponse streamée (SSE)
         hideLoading();
         const msgEl = createStreamingMessage();
         const reader = response.body.getReader();
@@ -363,17 +370,18 @@ async function consultOracle() {
     }
 }
 
-// ── Mode vocal (STT → RAG → TTS auto) ────────────────────────────────────
-const PTT_KEY     = 'F2';          // Touche push-to-talk (configurable)
-const SILENCE_MS  = 1500;          // Délai silence avant envoi auto (ms)
-const SILENCE_THR = 10;            // Seuil silence (0–255)
+// ── Mode vocal (STT → RAG → TTS auto) ──────────────────────────────────────
+
+const PTT_KEY     = 'F2';    // Touche push-to-talk
+const SILENCE_MS  = 1500;    // Délai silence avant envoi auto (ms)
+const SILENCE_THR = 10;      // Seuil silence (0–255)
 
 let mediaRecorder = null;
 let audioChunks   = [];
 let voiceMode     = false;
 let _vadInterval  = null;
 let _audioCtx     = null;
-let currentAudio  = null;   // lecture TTS en cours
+let currentAudio  = null;
 
 function stopCurrentAudio() {
     if (currentAudio) {
@@ -419,7 +427,7 @@ async function startRecording(pushToTalk = false) {
     };
     mediaRecorder.start();
 
-    // ── Détection de silence (désactivée en push-to-talk) ──────────────────
+    // Détection de silence (désactivée en push-to-talk)
     if (!pushToTalk) {
         _audioCtx = new AudioContext();
         const analyser = _audioCtx.createAnalyser();
@@ -431,7 +439,7 @@ async function startRecording(pushToTalk = false) {
 
         _vadInterval = setInterval(() => {
             recordingMs += 100;
-            if (recordingMs < 800) return;   // laisse au moins 0.8s avant de détecter
+            if (recordingMs < 800) return; // au moins 0.8s avant de détecter le silence
 
             analyser.getByteFrequencyData(buf);
             const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
@@ -465,7 +473,8 @@ async function autoPlayTts(textEl) {
     } catch (_) {}
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Initialisation ──────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', function() {
     checkTermsAcceptance();
     initializeTermsModal();
@@ -478,20 +487,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('newConvButton').addEventListener('click', () => {
         startNewSession();
         clearResponses();
-        oracleResponses.innerHTML = `
-            <div class="oracle-message welcome-message" id="welcomeMessage">
-                <div class="oracle-response">
-                    Salutations, chercheur de vérités cachées. Je suis l'Oracle des Archives, gardien des connaissances perdues dans les méandres du temps.
-                    <br><br>
-                    Posez-moi vos questions, et je consulterai les parchemins mystiques pour vous révéler les secrets que vous cherchez.
-                </div>
-            </div>`;
+        oracleResponses.innerHTML = WELCOME_HTML;
         renderSidebar();
         sidebar.classList.remove('open');
         userInput.focus();
     });
 
-    // Bouton micro — clic = mode silence auto
+    // Micro — clic = mode silence auto
     const micBtn = document.getElementById('micButton');
     micBtn.title = `Clic : silence auto  |  Maintenir ${PTT_KEY} : push-to-talk`;
     micBtn.addEventListener('click', async () => {
@@ -503,7 +505,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Push-to-talk clavier — maintenir PTT_KEY pour parler
+    // Push-to-talk clavier
     document.addEventListener('keydown', async (e) => {
         if (e.key !== PTT_KEY || e.repeat || mediaRecorder?.state === 'recording') return;
         stopCurrentAudio();

@@ -1,6 +1,6 @@
 """
-Enregistre les événements de l'application dans Supabase pour le monitoring.
-Fail-silent : si Supabase est indisponible, l'application continue normalement.
+Monitoring via Supabase : événements, historique de conversation, stats.
+Fail-silent : si Supabase est indisponible, l'app continue normalement.
 """
 import os
 import logging
@@ -22,17 +22,10 @@ def _get_client():
     return _client
 
 
-def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
-    """
-    Enregistre un événement dans Supabase.
+# ── Événements ───────────────────────────────────────────────────────────────
 
-    Types :
-        question         — question posée à l'Oracle
-        injection_regex  — injection bloquée par les règles
-        injection_lakera — injection bloquée par Lakera Guard
-        rate_limit       — limite de débit atteinte
-        error            — erreur serveur
-    """
+def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
+    """Enregistre un événement dans Supabase (question, injection, erreur, etc.)."""
     client = _get_client()
     if not client:
         return
@@ -50,7 +43,7 @@ def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -
 
 
 def _check_injection_spike(client) -> None:
-    """Alerte Sentry si plus de 10 injections détectées en 5 minutes."""
+    """Alerte Sentry si >10 injections en 5 minutes."""
     try:
         five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         result = (
@@ -61,7 +54,7 @@ def _check_injection_spike(client) -> None:
             .execute()
         )
         if (result.count or 0) >= 10:
-            logger.warning("[MONITORING] Spike d'injections : >10 tentatives en 5 minutes.")
+            logger.warning("[MONITORING] Spike d'injections : >10 en 5 minutes.")
             try:
                 import sentry_sdk
                 sentry_sdk.capture_message(
@@ -73,8 +66,10 @@ def _check_injection_spike(client) -> None:
         pass
 
 
+# ── Conversations ────────────────────────────────────────────────────────────
+
 def get_history(session_id: str) -> list:
-    """Récupère les 5 derniers échanges d'une session depuis Supabase."""
+    """Récupère les 5 derniers échanges d'une session."""
     client = _get_client()
     if not client or not session_id:
         return []
@@ -94,7 +89,7 @@ def get_history(session_id: str) -> list:
 
 
 def save_exchange(session_id: str, question: str, answer: str) -> None:
-    """Persiste un échange question/réponse dans Supabase."""
+    """Persiste un échange question/réponse."""
     client = _get_client()
     if not client or not session_id:
         return
@@ -105,11 +100,11 @@ def save_exchange(session_id: str, question: str, answer: str) -> None:
             "answer": answer,
         }).execute()
     except Exception as e:
-        logger.warning(f"[MEMORY] Erreur sauvegarde échange : {e}")
+        logger.warning(f"[MEMORY] Erreur sauvegarde : {e}")
 
 
 def get_conversation(session_id: str) -> list:
-    """Retourne tous les échanges d'une session dans l'ordre chronologique."""
+    """Retourne tous les échanges d'une session (ordre chronologique)."""
     client = _get_client()
     if not client or not session_id:
         return []
@@ -128,18 +123,20 @@ def get_conversation(session_id: str) -> list:
 
 
 def delete_conversation(session_id: str) -> None:
-    """Supprime tous les échanges d'une session dans Supabase."""
+    """Supprime tous les échanges d'une session."""
     client = _get_client()
     if not client or not session_id:
         return
     try:
         client.table("conversations").delete().eq("session_id", session_id).execute()
     except Exception as e:
-        logger.warning(f"[MEMORY] Erreur suppression conversation : {e}")
+        logger.warning(f"[MEMORY] Erreur suppression : {e}")
 
+
+# ── Stats (dashboard monitoring) ─────────────────────────────────────────────
 
 def get_stats() -> dict:
-    """Retourne les statistiques agrégées pour le dashboard de monitoring."""
+    """Retourne les stats agrégées pour le dashboard."""
     client = _get_client()
     if not client:
         return {"error": "Supabase non configuré", "counts": {}, "events": []}
@@ -166,7 +163,7 @@ def get_stats() -> dict:
         latencies = [row["latency_ms"] for row in latency_r.data if row.get("latency_ms")]
         avg_latency = int(sum(latencies) / len(latencies)) if latencies else 0
 
-        # Derniers 50 événements
+        # 50 derniers événements
         recent = (
             client.table("events")
             .select("*")
@@ -175,7 +172,7 @@ def get_stats() -> dict:
             .execute()
         )
 
-        # Détection de spike (5 dernières minutes)
+        # Spike d'injections (5 dernières minutes)
         five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         spike_r = (
             client.table("events")

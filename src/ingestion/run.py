@@ -1,6 +1,6 @@
 """
-Orchestre le pipeline d'indexation des fichiers de lore.
-Détecte les fichiers nouveaux/modifiés/supprimés et met à jour Qdrant en conséquence.
+Pipeline d'indexation des fichiers de lore.
+Détecte les fichiers nouveaux/modifiés/supprimés et met à jour Qdrant.
 """
 import os
 import json
@@ -17,19 +17,12 @@ from src.security.validator import check_patterns
 
 logger = logging.getLogger(__name__)
 
-# Dossier contenant les fichiers à indexer
 DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
-
-# Fichier qui mémorise la date de dernière modification de chaque fichier indexé
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "files_metadata.json")
-
-# Formats de fichiers supportés
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
-
-# Mode du parser : "unstructured" (recommandé) ou "custom" (fallback)
 PARSER_MODE = os.getenv("PARSER", "unstructured")
 
-# LLM pour la vérification hors-sujet (singleton)
+# LLM pour vérifier si un fichier contient bien du lore (singleton)
 _llm_checker = None
 
 
@@ -64,7 +57,7 @@ def save_memory(fichiers: dict) -> None:
 
 
 def list_current_files() -> dict:
-    """Retourne {nom_fichier: date_modification} pour tous les fichiers supportés."""
+    """Retourne {nom_fichier: date_modification} pour les fichiers supportés."""
     if not os.path.exists(DATA_FOLDER):
         return {}
     return {
@@ -77,9 +70,8 @@ def list_current_files() -> dict:
 # ── Validation du contenu ────────────────────────────────────────────────────
 
 def _is_lore_content(texte: str, nom: str) -> bool:
-    """
-    Vérifie via LLM que le fichier contient bien du lore de jeu et pas du contenu hors-sujet.
-    Un seul appel par fichier. Fail-open si le LLM est indisponible.
+    """Vérifie via LLM que le fichier contient du lore et pas du hors-sujet.
+    Fail-open si le LLM est indisponible.
     """
     try:
         llm = _get_llm_checker()
@@ -94,16 +86,15 @@ def _is_lore_content(texte: str, nom: str) -> bool:
         ])
         return "NON" not in response.content.strip().upper()
     except Exception as e:
-        logger.warning(f"Vérification hors-sujet impossible pour '{nom}', accepté par défaut : {e}")
+        logger.warning(f"Vérification impossible pour '{nom}', accepté par défaut : {e}")
         return True
 
 
 # ── Pipeline d'indexation ────────────────────────────────────────────────────
 
 def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
-    """
-    Traite une liste de fichiers et retourne des Documents LangChain prêts à indexer.
-    Pipeline : extraction → vérification hors-sujet → découpage → filtrage anti-injection
+    """Traite les fichiers et retourne des Documents prêts à indexer.
+    Pipeline : extraction → vérif hors-sujet → découpage → filtrage anti-injection
     """
     documents = []
 
@@ -124,12 +115,12 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
             if not texte:
                 continue
 
-            # 2. Vérification hors-sujet (1 appel LLM par fichier)
+            # 2. Vérification hors-sujet
             if not _is_lore_content(texte, nom):
                 logger.warning(f"'{nom}' ignoré : contenu hors-sujet.")
                 continue
 
-            # 3. Découpage en chunks + filtrage des chunks suspects
+            # 3. Découpage + filtrage des chunks suspects
             for chunk in split_into_chunks(texte):
                 if not check_patterns(chunk)["valid"]:
                     logger.warning(f"Chunk suspect ignoré dans '{nom}'.")
@@ -143,10 +134,8 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
 
 
 def index_data(force_reindex: bool = False) -> bool:
-    """
-    Met à jour Qdrant avec les fichiers nouveaux, modifiés ou supprimés.
+    """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés.
     Si force_reindex=True, repart de zéro.
-    Retourne True si des changements ont eu lieu.
     """
     logger.info("Vérification des fichiers de lore...")
     fichiers_actuels = list_current_files()

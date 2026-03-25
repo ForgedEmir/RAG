@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Dépendances système pour unstructured
+# Dépendances système
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     poppler-utils \

@@ -1,6 +1,8 @@
 """
-Extrait et nettoie le texte de tous les formats supportés : .md, .txt, .json, .csv, .xlsx, .xml, .pdf
-Pour les PDF : utilise LlamaParse si LLAMA_CLOUD_API_KEY est défini, sinon Unstructured.
+Extraction et nettoyage de texte pour tous les formats supportés :
+.md, .txt, .json, .csv, .xlsx, .xml, .pdf
+
+PDF : utilise LlamaParse si LLAMA_CLOUD_API_KEY est défini, sinon Unstructured.
 """
 import os
 import re
@@ -15,9 +17,7 @@ _LLAMA_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
 
 
 def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
-    """Parse un PDF complexe via LlamaParse (tableaux, multi-colonnes, OCR).
-    Retourne None si llama-parse n'est pas installé ou si la clé est absente.
-    """
+    """Parse un PDF complexe via LlamaParse. Retourne None si indisponible."""
     if not _LLAMA_API_KEY:
         return None
     try:
@@ -34,32 +34,25 @@ def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
 
 
 def clean_text(raw_text: str) -> str:
-    """
-    Nettoie un texte brut pour le rendre lisible par le LLM :
-    - Supprime les balises HTML
-    - Retire les titres Markdown (#, ##...)
-    - Remplace les variables de jeu (%PLAYER_NAME%, etc.)
-    - Normalise les espaces tout en gardant les sauts de paragraphes
+    """Nettoie un texte brut : supprime HTML, headers Markdown,
+    remplace les variables de jeu, normalise les espaces.
     """
     if not raw_text:
         return ""
 
-    text = re.sub(r'<[^>]+>', '', raw_text)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = text.replace('%PLAYER_NAME%', 'le joueur')
+    text = re.sub(r'<[^>]+>', '', raw_text)                    # HTML
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE) # Titres Markdown
+    text = text.replace('%PLAYER_NAME%', 'le joueur')          # Variables de jeu
     text = re.sub(r'%[A-Z_0-9]+%', lambda m: m.group(0).replace('%', ''), text)
 
-    # Normalise les espaces dans chaque paragraphe sans écraser les sauts de ligne
+    # Normalise les espaces dans chaque paragraphe
     paragraphs = re.split(r'\n\s*\n', text)
     paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
     return "\n\n".join(paragraphs)
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
-    """
-    Lit un fichier selon son extension et retourne son contenu en texte brut.
-    Retourne None si le format n'est pas supporté ou si une erreur survient.
-    """
+    """Lit un fichier selon son extension et retourne son contenu en texte brut."""
     if not os.path.exists(filepath):
         logger.error(f"Fichier introuvable : {filepath}")
         return None
@@ -73,8 +66,7 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
             if text:
                 logger.info(f"PDF parsé via LlamaParse : {filepath}")
                 return text
-            # Fallback Unstructured géré dans document_loader.py
-            logger.info(f"PDF parsé via Unstructured (pas de clé LlamaParse) : {filepath}")
+            logger.info(f"PDF sans clé LlamaParse, fallback Unstructured : {filepath}")
             return None
 
         if ext in ('.txt', '.md'):
@@ -111,7 +103,7 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
 
 
 def _xlsx_to_text(filepath: str) -> str:
-    """Convertit un fichier Excel en texte : 'Colonne: Valeur | Colonne: Valeur'"""
+    """Excel → texte : 'Colonne: Valeur | Colonne: Valeur'"""
     import openpyxl
     classeur = openpyxl.load_workbook(filepath, read_only=True)
     lignes = []
@@ -159,7 +151,7 @@ def _json_to_text(data, niveau: int = 0) -> str:
 
 
 def _xml_to_text(filepath: str) -> str:
-    """Extrait tout le texte d'un fichier XML en ignorant les balises."""
+    """Extrait tout le texte d'un fichier XML (ignore les balises)."""
     import xml.etree.ElementTree as ET
     try:
         root = ET.parse(filepath).getroot()

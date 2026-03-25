@@ -1,10 +1,10 @@
 """
-Interface avec la base vectorielle Qdrant.
-Gère la connexion, l'indexation et la recherche de documents.
+Interface avec Qdrant (base vectorielle).
+Gère connexion, indexation et recherche de documents.
 
-Deux modes selon la configuration .env :
-  - Cloud  : QDRANT_URL + QDRANT_API_KEY → Qdrant Cloud
-  - Local  : stockage dans le dossier qdrant_db/
+Deux modes :
+  - Cloud  : QDRANT_URL + QDRANT_API_KEY
+  - Local  : stockage dans qdrant_db/
 """
 import os
 import logging
@@ -27,7 +27,7 @@ _VECTOR_SIZE     = 384  # paraphrase-multilingual-MiniLM-L12-v2
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
-# Singletons — créés une seule fois, réutilisés sur toutes les requêtes
+# Singletons — créés une seule fois
 _embeddings: Optional[FastEmbedEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
@@ -53,7 +53,7 @@ def _get_client() -> QdrantClient:
 
 
 def _ensure_collection(client: QdrantClient) -> None:
-    """Crée la collection 'lore' si elle n'existe pas encore. Vérifié une seule fois."""
+    """Crée la collection 'lore' si elle n'existe pas encore."""
     global _collection_ready
     if _collection_ready:
         return
@@ -68,9 +68,8 @@ def _ensure_collection(client: QdrantClient) -> None:
 
 
 def get_store(force_reindex: bool = False) -> QdrantVectorStore:
-    """
-    Retourne le vector store Qdrant prêt à l'emploi.
-    Si force_reindex=True, supprime et recrée la collection de zéro.
+    """Retourne le vector store Qdrant.
+    Si force_reindex=True, supprime et recrée la collection.
     """
     global _client, _collection_ready
 
@@ -108,11 +107,11 @@ def add_documents(store: QdrantVectorStore, documents: List[Document]) -> None:
     if not documents:
         return
     store.add_documents(documents)
-    logger.info(f"{len(documents)} documents indexés dans Qdrant.")
+    logger.info(f"{len(documents)} documents indexés.")
 
 
 def remove_files(store: QdrantVectorStore, fichiers: Set[str]) -> None:
-    """Supprime tous les chunks associés à une liste de fichiers en un seul appel."""
+    """Supprime tous les chunks associés à une liste de fichiers."""
     if not fichiers:
         return
     try:

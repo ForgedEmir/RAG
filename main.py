@@ -8,7 +8,7 @@ import logging
 from dotenv import load_dotenv
 load_dotenv()
 
-# Sentry (optionnel — activer via SENTRY_DSN dans .env)
+# Sentry (optionnel — activé via SENTRY_DSN dans .env)
 _sentry_dsn = os.getenv("SENTRY_DSN")
 if _sentry_dsn:
     import sentry_sdk
@@ -17,7 +17,7 @@ if _sentry_dsn:
 
 from collections import deque
 
-# Buffer circulaire des 200 dernières lignes de log (accessible via /api/monitoring/logs)
+# On garde les 200 derniers logs en mémoire pour /api/monitoring/logs
 _log_buffer: deque = deque(maxlen=200)
 
 class _BufferHandler(logging.Handler):
@@ -48,7 +48,7 @@ from src.ingestion.run import index_data
 
 app = Flask(__name__)
 
-# CORS : restreint au domaine configuré en prod, ouvert en local
+# CORS : domaine configuré en prod, ouvert en local
 _allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
 CORS(app, origins=_allowed_origins)
 
@@ -65,7 +65,7 @@ def monitoring_logs():
         return jsonify({"error": "Accès refusé"}), 403
     return jsonify({"logs": list(_log_buffer)})
 
-# Indexation au démarrage (Gunicorn + dev)
+# Indexation au démarrage
 index_data(force_reindex=False)
 
 if __name__ == "__main__":

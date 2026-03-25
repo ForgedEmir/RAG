@@ -1,6 +1,6 @@
 """
-Moteur de recherche sémantique.
-Convertit une question en vecteurs et trouve les passages les plus pertinents dans Qdrant.
+Recherche sémantique : convertit une question en vecteurs
+et trouve les passages les plus pertinents dans Qdrant.
 """
 import logging
 from typing import List, Tuple
@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
-    """
-    Cherche les 5 passages les plus proches de la question dans Qdrant.
+    """Cherche les 5 passages les plus proches dans Qdrant.
     Retourne (textes des passages, noms des fichiers sources).
     """
     store = get_store()

@@ -1,6 +1,6 @@
 """
 Routes de l'API Flask.
-Reçoit les questions des utilisateurs et retourne les réponses de l'Oracle.
+Reçoit les questions, streame les réponses, gère l'admin et le monitoring.
 """
 import json
 import logging
@@ -29,8 +29,8 @@ def _check_monitoring_key() -> bool:
 
 
 def _get_rate_limit_key() -> str:
-    """Clé de rate limit : session_id du body JSON, sinon IP en fallback.
-    Permet à plusieurs utilisateurs sur la même IP (école, VPN) d'avoir des limites indépendantes.
+    """Clé de rate limit : session_id si dispo, sinon IP.
+    Permet à plusieurs users sur la même IP d'avoir des limites indépendantes.
     """
     data = request.get_json(silent=True) or {}
     session_id = data.get("session_id", "").strip()
@@ -60,14 +60,14 @@ def register_routes(app: Flask) -> None:
     def serve_static(path: str):
         return send_from_directory(frontend_dir, path)
 
-    # ── API ───────────────────────────────────────────────────────────────────
+    # ── API principale ───────────────────────────────────────────────────────
 
     @app.route("/api/ask", methods=["POST"])
     @limiter.limit("1 per 5 seconds")
     @limiter.limit("10 per minute")
     @limiter.limit("100 per day")
     def ask():
-        """Reçoit une question et streame la réponse de l'Oracle token par token."""
+        """Reçoit une question et streame la réponse token par token (SSE)."""
         start = time.time()
         try:
             data = request.get_json() or {}
@@ -145,23 +145,27 @@ def register_routes(app: Flask) -> None:
             logger.error(f"Erreur dans /api/ask : {e}")
             return jsonify({"error": str(e)}), 500
 
+    # ── Indexation ───────────────────────────────────────────────────────────
+
     @app.route("/api/reindex", methods=["POST"])
     @limiter.limit("5 per hour")
     def reindex():
-        """Force une réindexation des fichiers sans redémarrer le serveur."""
+        """Force une réindexation des fichiers."""
         try:
             force = (request.get_json(silent=True) or {}).get("force", False)
             resultat = index_data(force_reindex=force)
             msg = "Indexation terminée avec succès." if resultat else "La base est déjà à jour."
-            track("reindex", detail=f"force={force} | {'changements détectés' if resultat else 'aucun changement'}")
+            track("reindex", detail=f"force={force} | {'changements' if resultat else 'aucun changement'}")
             return jsonify({"message": msg})
         except Exception as e:
             logger.error(f"Erreur reindex : {e}")
             return jsonify({"error": str(e)}), 500
 
+    # ── Conversations ────────────────────────────────────────────────────────
+
     @app.route("/api/conversations")
     def conversations():
-        """Retourne les échanges d'une session pour l'historique."""
+        """Retourne les échanges d'une session."""
         session_id = request.args.get("session_id", "")
         if not session_id:
             return jsonify({"error": "session_id requis"}), 400
@@ -169,17 +173,19 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/api/conversations", methods=["DELETE"])
     def delete_conv():
-        """Supprime une conversation de Supabase."""
+        """Supprime une conversation."""
         session_id = request.args.get("session_id", "")
         if not session_id:
             return jsonify({"error": "session_id requis"}), 400
         delete_conversation(session_id)
         return jsonify({"ok": True})
 
+    # ── TTS / STT ────────────────────────────────────────────────────────────
+
     @app.route("/api/tts", methods=["POST"])
     @limiter.limit("30 per minute")
     def tts():
-        """Synthétise un texte en MP3 via Edge TTS (Microsoft Neural voices)."""
+        """Synthèse vocale via Edge TTS."""
         try:
             from src.tts.tts import generer_audio
             text = (request.get_json() or {}).get("text", "")
@@ -195,7 +201,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/api/stt", methods=["POST"])
     @limiter.limit("20 per minute")
     def stt():
-        """Transcrit un fichier audio en texte via Groq Whisper large-v3."""
+        """Transcription audio via Groq Whisper."""
         try:
             audio = request.files.get("audio")
             if not audio:
@@ -216,6 +222,8 @@ def register_routes(app: Flask) -> None:
             logger.error(f"Erreur STT : {e}")
             return jsonify({"error": str(e)}), 500
 
+    # ── Monitoring & Admin ───────────────────────────────────────────────────
+
     @app.route("/api/monitoring/stats")
     def monitoring_stats():
         if not _check_monitoring_key():
@@ -224,7 +232,7 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/api/admin/sources")
     def admin_sources():
-        """Liste les fichiers lore indexés. Protégé par la clé monitoring."""
+        """Liste les fichiers lore indexés."""
         if not _check_monitoring_key():
             return jsonify({"error": "Accès refusé"}), 403
         from src.ingestion.run import list_current_files
@@ -234,7 +242,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/api/admin/upload", methods=["POST"])
     @limiter.limit("20 per hour")
     def admin_upload():
-        """Upload un fichier lore dans data/sample/. Protégé par la clé monitoring."""
+        """Upload un fichier lore."""
         if not _check_monitoring_key():
             return jsonify({"error": "Accès refusé"}), 403
         f = request.files.get("file")
@@ -248,12 +256,12 @@ def register_routes(app: Flask) -> None:
 
         raw = f.read()
 
-        # Vérification taille (max 500 Ko)
+        # Max 500 Ko
         MAX_SIZE = 500 * 1024
         if len(raw) > MAX_SIZE:
-            return jsonify({"error": f"Fichier trop volumineux ({len(raw)//1024} Ko). Maximum : 500 Ko."}), 400
+            return jsonify({"error": f"Fichier trop volumineux ({len(raw)//1024} Ko). Max : 500 Ko."}), 400
 
-        # Vérification du contenu (regex injection) sur début + fin + milieu
+        # Vérification anti-injection sur un échantillon du fichier
         try:
             text = raw.decode("utf-8", errors="ignore")
         except Exception:
@@ -269,7 +277,7 @@ def register_routes(app: Flask) -> None:
         if not check["valid"]:
             logger.warning(f"Upload bloqué [{check['type']}] — '{f.filename}'")
             track("upload_blocked", detail=f"{f.filename} | raison:{check['type']}")
-            return jsonify({"error": "Contenu suspect détecté dans le fichier. Upload refusé."}), 400
+            return jsonify({"error": "Contenu suspect détecté. Upload refusé."}), 400
 
         data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
         os.makedirs(data_dir, exist_ok=True)
@@ -283,7 +291,7 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/api/admin/delete", methods=["DELETE"])
     def admin_delete():
-        """Supprime un fichier lore de data/sample/. Protégé par la clé monitoring."""
+        """Supprime un fichier lore."""
         if not _check_monitoring_key():
             return jsonify({"error": "Accès refusé"}), 403
         filename = (request.get_json(silent=True) or {}).get("filename", "").strip()
@@ -302,6 +310,6 @@ def register_routes(app: Flask) -> None:
     def trop_de_requetes(e):
         track("rate_limit", detail=request.remote_addr)
         return jsonify({
-            "error": "Trop de requêtes. Merci de patienter avant de consulter l'Oracle à nouveau.",
+            "error": "Trop de requêtes. Merci de patienter.",
             "blocked": True, "block_type": "rate_limit",
         }), 429

@@ -1,14 +1,14 @@
 """
 Validation des entrées utilisateur avant envoi au LLM.
 
-Protection en deux couches :
-  1. Regex (instantané, sans API) — bloque les patterns connus
-  2. Lakera Guard (< 50ms) — classifieur spécialisé pour les injections subtiles
+Deux couches de protection :
+  1. Regex (instantané) — bloque les patterns connus
+  2. Lakera Guard (<50ms) — classifieur spécialisé pour les injections subtiles
 
-Variables d'environnement :
-  SECURITY_VALIDATOR  = true | rules | false
-  LAKERA_API_KEY      = clé API Lakera (platform.lakera.ai)
-  LAKERA_PROJECT_ID   = identifiant du projet Lakera (optionnel)
+Config .env :
+  SECURITY_VALIDATOR = true | rules | false
+  LAKERA_API_KEY     = clé API Lakera
+  LAKERA_PROJECT_ID  = projet Lakera (optionnel)
 """
 import os
 import logging
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 _MODE = os.getenv("SECURITY_VALIDATOR", "rules").lower()
 _LAKERA_API_KEY  = os.getenv("LAKERA_API_KEY")
 _LAKERA_URL      = "https://api.lakera.ai/v2/guard"
-_LAKERA_PROJECT  = os.getenv("LAKERA_PROJECT_ID")  # Optionnel — configure le niveau de sensibilité sur platform.lakera.ai
+_LAKERA_PROJECT  = os.getenv("LAKERA_PROJECT_ID")
 
 
 class ValidationResult(TypedDict):
@@ -30,10 +30,10 @@ class ValidationResult(TypedDict):
     reason: str
 
 
-# ── Patterns regex (couche 1) ────────────────────────────────────────────────
-_INJECTION_PATTERNS: list[str] = [
+# ── Patterns regex ───────────────────────────────────────────────────────────
 
-    # ── Hijacking de rôle ─────────────────────────────────────────────────────
+_INJECTION_PATTERNS: list[str] = [
+    # Hijacking de rôle
     r"you\s+are\s+now\s+",
     r"tu\s+es\s+maintenant\s+",
     r"act\s+as\s+(if\s+you\s+are|a\s+)",
@@ -46,7 +46,7 @@ _INJECTION_PATTERNS: list[str] = [
     r"developer\s+mode",
     r"mode\s+sans\s+filtre",
 
-    # ── Override d'instructions ───────────────────────────────────────────────
+    # Override d'instructions
     r"ignore\s+.*instructions?",
     r"oublie\s+.*instructions?",
     r"ignore\s+ce\s+qui\s+précède",
@@ -56,7 +56,7 @@ _INJECTION_PATTERNS: list[str] = [
     r"désormais\s+tu\s+(dois|es|vas)",
     r"constraints?\s+disabled",
 
-    # ── Extraction de prompt système ──────────────────────────────────────────
+    # Extraction de prompt système
     r"system\s+prompt",
     r"prompt\s+injection",
     r"(reveal|print|show)\s+your\s+(prompt|instructions|system)",
@@ -65,7 +65,7 @@ _INJECTION_PATTERNS: list[str] = [
     r"montre\s+(-moi\s+)?(ton\s+|le\s+)?(system\s+)?prompt",
     r"quelles?\s+sont\s+tes\s+(instructions?|contraintes?|règles?)",
 
-    # ── Tokens de contrôle / marqueurs de template ───────────────────────────
+    # Tokens de contrôle / marqueurs de template
     r"(###|---)\s*system",
     r"\b(SYSTEM|ASSISTANT|USER)\s*:",
     r"\[system\]",
@@ -80,7 +80,7 @@ _INJECTION_PATTERNS: list[str] = [
     r"--MODE=",
     r"\[REMOVED\]",
 
-    # ── Injections techniques obfusquées ─────────────────────────────────────
+    # Injections techniques obfusquées
     r"overwrite\s+.{0,40}(filter|check|instruction|memory|opcode)",
     r"disable\s+all\s+(checks?|filters?|rules?|guards?)",
     r"\bNOP\s+opcode\b",
@@ -89,7 +89,7 @@ _INJECTION_PATTERNS: list[str] = [
     r"execution\s+via\s+",
     r"\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2}){3,}",
 
-    # ── Commandes shell ───────────────────────────────────────────────────────
+    # Commandes shell
     r"/bin/(sh|bash|zsh|cmd)",
     r"\bsubprocess\b",
     r"\bchmod\s+[0-9]+",
@@ -105,14 +105,7 @@ _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
 # ── Interface publique ───────────────────────────────────────────────────────
 
 def valider_entree(texte: str) -> ValidationResult:
-    """
-    Point d'entrée principal. Valide un texte avant de l'envoyer à un LLM.
-
-    Returns:
-        {"valid": True,  "type": "ok", ...}              → texte sûr
-        {"valid": False, "type": "prompt_injection", ...} → injection détectée
-        {"valid": False, "type": "jailbreak", ...}        → jailbreak détecté
-    """
+    """Point d'entrée principal : valide un texte avant de l'envoyer au LLM."""
     if _MODE in ("false", "0", "no", "disabled"):
         return {"valid": True, "type": "ok", "reason": "Validation désactivée"}
 
@@ -131,10 +124,7 @@ def valider_entree(texte: str) -> ValidationResult:
 
 
 def check_patterns(texte: str) -> ValidationResult:
-    """
-    Couche 1 — Regex uniquement, zéro dépendance externe.
-    Utilisable seul si vous ne voulez pas Lakera Guard.
-    """
+    """Couche 1 — Regex uniquement, zéro dépendance externe."""
     for pattern in _COMPILED_PATTERNS:
         if pattern.search(texte):
             return {"valid": False, "type": "prompt_injection", "reason": "Motif suspect détecté"}
@@ -144,10 +134,8 @@ def check_patterns(texte: str) -> ValidationResult:
 # ── Lakera Guard (couche 2) ──────────────────────────────────────────────────
 
 def _valider_lakera(texte: str) -> ValidationResult:
-    """
-    Couche 2 — Classifieur Lakera Guard.
-    Détecte les injections subtiles et obfusquées que les regex ne voient pas.
-    Fail-open : si l'API est indisponible, le texte est accepté.
+    """Couche 2 — classifieur Lakera Guard pour les injections subtiles.
+    Fail-open si l'API est indisponible.
     """
     if not _LAKERA_API_KEY:
         logger.warning("[LAKERA] Clé manquante — fail-open.")

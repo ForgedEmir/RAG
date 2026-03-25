@@ -1,6 +1,6 @@
 """
-Synthèse vocale française via Edge TTS (Microsoft Neural voices).
-Voix : Henri (homme, grave) avec pitch abaissé pour un rendu solennel.
+Synthèse vocale via Edge TTS (voix Microsoft Neural).
+Voix : Henri (homme, grave) avec pitch abaissé pour un ton solennel.
 """
 import asyncio
 import io
@@ -24,5 +24,5 @@ async def _generate(text: str) -> bytes:
 
 
 def generer_audio(text: str) -> bytes:
-    """Génère un fichier MP3 en mémoire à partir du texte."""
+    """Génère un MP3 en mémoire à partir du texte (max 2000 chars)."""
     return asyncio.run(_generate(text[:2000]))
