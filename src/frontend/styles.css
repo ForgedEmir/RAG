@@ -301,19 +301,7 @@ body {
     z-index: 20;
 }
 
-.grimoire-subtitle {
-    position: absolute;
-    top: -20px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: 'EB Garamond', serif;
-    font-size: 1.3rem;
-    color: #dcc895;
-    font-style: italic;
-    text-align: center;
-    z-index: 20;
-    text-shadow: 1px 1px 3px rgba(139,69,19,0.6);
-}
+
 
 .left-content {
     height: 100%;
@@ -617,19 +605,7 @@ body {
     }
 }
 
-@keyframes shimmer {
-    0% {
-        background-position: -200% center;
-    }
-    100% {
-        background-position: 200% center;
-    }
-}
 
-input[type="text"]:not(.manuscript-input), 
-textarea:not(.manuscript-input) {
-    display: none !important;
-}
 
 /* ── Sidebar historique ──────────────────────────────────────────────────── */
 
