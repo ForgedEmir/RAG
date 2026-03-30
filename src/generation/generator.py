@@ -1,7 +1,4 @@
-"""
-Génère les réponses de l'Oracle via un LLM (Groq, DeepSeek, etc.).
-Bascule automatiquement sur le LLM de secours en cas d'erreur.
-"""
+"""Génère les réponses via LLM. Langfuse pour le tracing. Fallback automatique."""
 import os
 import logging
 from typing import List, Optional, Iterator
@@ -11,117 +8,157 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
-_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-_primary_model: str = os.getenv("LLM_MODEL", "deepseek-chat")
+_api_key        = os.getenv("OPENAI_API_KEY")
+_primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
+_fallback_key   = os.getenv("FALLBACK_API_KEY")
+_fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
+_CONV_DEPTH     = int(os.getenv("CONVERSATION_DEPTH", "5"))
 
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
     model=_primary_model,
     base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
-    api_key=_api_key,
-    temperature=0.2,
+    api_key=_api_key, temperature=0.2,
 ) if _api_key else None
-
-# LLM de secours (activé si FALLBACK_API_KEY est dans le .env)
-_fallback_api_key: Optional[str] = os.getenv("FALLBACK_API_KEY")
-_fallback_model: str = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 
 _llm_fallback: Optional[ChatOpenAI] = ChatOpenAI(
     model=_fallback_model,
     base_url=os.getenv("FALLBACK_BASE_URL", "https://api.groq.com/openai/v1"),
-    api_key=_fallback_api_key,
-    temperature=0.2,
-) if _fallback_api_key else None
+    api_key=_fallback_key, temperature=0.2,
+) if _fallback_key else None
 
 
-def _build_messages(question: str, passages: List[str], sources: List[str], history: List[dict]) -> list:
-    """Construit la conversation à envoyer au LLM (system + historique + question)."""
-    contexte = "\n\n".join(passages)
+# ── Langfuse (optionnel) ──────────────────────────────────────────────────────
+
+def _langfuse_handler(name: str = "lorekeeper", **meta):
+    """Retourne un callback Langfuse si configuré, sinon None."""
+    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
+        return None
+    try:
+        from langfuse.callback import CallbackHandler
+        return CallbackHandler(
+            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+            trace_name=name,
+            metadata=meta,
+        )
+    except Exception as e:
+        logger.debug(f"Langfuse indisponible : {e}")
+        return None
+
+
+def _callbacks(name: str = "lorekeeper", **meta) -> list:
+    h = _langfuse_handler(name, **meta)
+    return [h] if h else []
+
+
+# ── Messages ──────────────────────────────────────────────────────────────────
+
+def _build_messages(question: str, passages: List[str], sources: List[str],
+                    history: List[dict], user_summary: str = "",
+                    vector_memories: List[str] = None) -> list:
+    contexte      = "\n\n".join(passages)
     liste_sources = ", ".join(sources) if sources else "sources inconnues"
+    system = (
+        "Tu es l'Oracle des Archives, gardien du lore du jeu Aethelgard Online. "
+        "Réponds uniquement en te basant sur le contexte ci-dessous. "
+        "N'invente rien. Si l'information est absente du contexte, dis-le honnêtement. "
+        "Utilise des paragraphes pour narrer et des tirets (-) pour les listes. Évite les astérisques. "
+        f"Sources : {liste_sources}\n\nContexte :\n{contexte}"
+    )
+    if user_summary:
+        system += f"\n\nMémoire utilisateur :\n{user_summary}"
+    if vector_memories:
+        system += "\n\nSouvenirs précis :\n" + "\n".join(vector_memories)
 
-    messages = [
-        SystemMessage(content=(
-            "Tu es l'Oracle des Archives, gardien du lore du jeu Aethelgard Online. "
-            "Réponds uniquement en te basant sur les informations du contexte ci-dessous. "
-            "N'invente rien. Si l'information n'est pas dans le contexte, dis-le honnêtement. "
-            "Rédige des réponses claires et bien structurées : utilise des paragraphes pour narrer, "
-            "et des tirets (-) pour les listes si nécessaire. Évite les astérisques (*). "
-            f"Sources : {liste_sources}\n\nContexte :\n{contexte}"
-        ))
-    ]
-
-    # On injecte les 5 derniers échanges pour la mémoire conversationnelle
-    for exchange in history[-5:]:
-        messages.append(HumanMessage(content=exchange["question"]))
-        messages.append(AIMessage(content=exchange["answer"]))
-
+    messages = [SystemMessage(content=system)]
+    for ex in history[-_CONV_DEPTH:]:
+        messages += [HumanMessage(content=ex["question"]), AIMessage(content=ex["answer"])]
     messages.append(HumanMessage(content=question))
     return messages
 
 
+# ── LLM calls ─────────────────────────────────────────────────────────────────
+
+def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "") -> str:
+    """Met à jour le résumé long-terme (max 150 mots)."""
+    if not _llm or not new_exchanges:
+        return old_summary
+    nouveaux = "\n".join(
+        f"User: {e['question']}\nAssistant: {e['answer'][:200]}" for e in new_exchanges[-5:]
+    )
+    context = (f"Résumé précédent :\n{old_summary}\n\nNouveaux échanges :\n{nouveaux}"
+               if old_summary else f"Échanges :\n{nouveaux}")
+    try:
+        result = _llm.invoke([
+            SystemMessage(content=(
+                "Tu maintiens la mémoire long-terme d'un joueur dans un jeu de rôle. "
+                "Mets à jour le résumé : faits importants, personnages/lieux, préférences, objectifs. "
+                "Règles : n'invente rien, 150 mots max, pas d'introduction."
+            )),
+            HumanMessage(content=context),
+        ], config={"callbacks": _callbacks("résumé-utilisateur")})
+        return result.content.strip()
+    except Exception as e:
+        logger.warning(f"Résumé échoué : {e}")
+        return old_summary
+
+
 def reformuler_question(question: str, history: List[dict]) -> str:
-    """Reformule une question vague en version autonome grâce à l'historique.
-    Ex: "il fait quelle taille ?" → "Quelle est la taille de Lucas le Tranchant ?"
-    """
+    """Reformule une question vague grâce à l'historique."""
     if not history or not _llm:
         return question
-
-    historique = "\n".join(
-        f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-5:]
-    )
-    prompt = [
-        SystemMessage(content=(
-            "Reformule la question de l'utilisateur en une question autonome et précise "
-            "en utilisant le contexte de l'historique si nécessaire. "
-            "Retourne uniquement la question reformulée, sans explication."
-        )),
-        HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
-    ]
+    historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
     try:
-        result = _llm.invoke(prompt)
+        result = _llm.invoke([
+            SystemMessage(content=(
+                "Reformule la question en version autonome et précise grâce à l'historique. "
+                "Retourne uniquement la question reformulée, sans explication."
+            )),
+            HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
+        ], config={"callbacks": _callbacks("reformulation")})
         reformulated = result.content.strip()
-        logger.info(f"Question reformulée : {reformulated!r}")
+        logger.info(f"Reformulée : {reformulated!r}")
         return reformulated
     except Exception as e:
-        logger.warning(f"Reformulation échouée, on garde la question originale : {e}")
+        logger.warning(f"Reformulation échouée : {e}")
         return question
 
 
-def generer_reponse(question: str, passages: List[str], sources: List[str] = None, history: List[dict] = None) -> str:
-    """Génère une réponse complète (non streamée)."""
+def generer_reponse(question: str, passages: List[str], sources: List[str] = None,
+                    history: List[dict] = None, user_summary: str = "",
+                    vector_memories: List[str] = None) -> str:
     if not _llm:
-        raise ValueError("Clé OPENAI_API_KEY manquante dans le fichier .env")
-    messages = _build_messages(question, passages, sources or [], history or [])
-    response = _llm.invoke(messages)
-    return response.content.strip()
+        raise ValueError("OPENAI_API_KEY manquante dans .env")
+    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
+    return _llm.invoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])}).content.strip()
 
 
-def stream_reponse(question: str, passages: List[str], sources: List[str] = None, history: List[dict] = None, model_used: Optional[list] = None) -> Iterator[str]:
-    """Génère la réponse token par token (streaming).
-    Si le LLM principal plante, on bascule sur le fallback.
-    `model_used` : liste mutable pour que l'appelant sache quel modèle a répondu.
-    """
+def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
+                   history: List[dict] = None, model_used: Optional[list] = None,
+                   user_summary: str = "", vector_memories: List[str] = None) -> Iterator[str]:
+    """Streame la réponse token par token. Bascule sur le fallback si erreur."""
     if not _llm:
-        raise ValueError("Clé OPENAI_API_KEY manquante dans le fichier .env")
-    messages = _build_messages(question, passages, sources or [], history or [])
-
+        raise ValueError("OPENAI_API_KEY manquante dans .env")
+    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
+    cb = _callbacks("ask-stream", question=question[:80])
     if model_used is not None:
         model_used.append(_primary_model)
-
     try:
-        for chunk in _llm.stream(messages):
+        for chunk in _llm.stream(messages, config={"callbacks": cb}):
             if chunk.content:
                 yield chunk.content
     except Exception as e:
         if _llm_fallback:
-            logger.warning(f"LLM principal KO ({e}), bascule sur {_fallback_model}")
+            logger.warning(f"LLM KO ({e}), fallback → {_fallback_model}")
             if model_used is not None:
                 model_used[0] = f"{_fallback_model} [fallback]"
             try:
-                from src.monitoring.tracker import track as _track
-                _track("fallback", detail=f"{_primary_model} → {_fallback_model} | {str(e)[:100]}")
+                from src.monitoring.tracker import track
+                track("fallback", detail=f"{_primary_model} → {_fallback_model} | {str(e)[:100]}")
             except Exception:
                 pass
-            for chunk in _llm_fallback.stream(messages):
+            for chunk in _llm_fallback.stream(messages, config={"callbacks": _callbacks("fallback")}):
                 if chunk.content:
                     yield chunk.content
         else:

@@ -1,10 +1,5 @@
-"""
-Interface avec Qdrant (base vectorielle).
-Gère connexion, indexation et recherche de documents.
-
-Deux modes :
-  - Cloud  : QDRANT_URL + QDRANT_API_KEY
-  - Local  : stockage dans qdrant_db/
+"""Interface Qdrant : connexion, indexation, recherche.
+Cloud (QDRANT_URL + QDRANT_API_KEY) ou local (qdrant_db/).
 """
 import os
 import logging

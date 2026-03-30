@@ -122,11 +122,12 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
                 continue
 
             # 3. Découpage + filtrage des chunks suspects
-            for chunk in split_into_chunks(texte):
+            for chunk_idx, chunk in enumerate(split_into_chunks(texte)):
                 if not check_patterns(chunk)["valid"]:
                     logger.warning(f"Chunk suspect ignoré dans '{nom}'.")
                     continue
-                documents.append(Document(page_content=chunk, metadata={"fichier": nom}))
+                chunk_id = f"{nom}_{chunk_idx}"
+                documents.append(Document(page_content=chunk, metadata={"fichier": nom, "chunk_id": chunk_id}))
 
         except Exception as e:
             logger.error(f"Erreur sur '{nom}' : {e}")
@@ -138,12 +139,19 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
     """Sauvegarde les chunks en JSON pour que la hybrid search puisse construire BM25."""
     os.makedirs(os.path.dirname(BM25_CORPUS_FILE), exist_ok=True)
     corpus = [
-        {"text": doc.page_content, "fichier": doc.metadata.get("fichier", "inconnu")}
-        for doc in documents
+        {"id": doc.metadata.get("chunk_id", f"doc_{i}"), "text": doc.page_content, "fichier": doc.metadata.get("fichier", "inconnu")}
+        for i, doc in enumerate(documents)
     ]
     with open(BM25_CORPUS_FILE, "w", encoding="utf-8") as f:
         json.dump(corpus, f, ensure_ascii=False, indent=1)
     logger.info(f"Corpus BM25 sauvegardé ({len(corpus)} chunks).")
+
+    # Invalide le cache en mémoire pour forcer le rechargement au prochain appel
+    try:
+        from src.search.search import invalidate_bm25_cache
+        invalidate_bm25_cache()
+    except Exception as e:
+        logger.warning(f"Impossible d'invalider le cache BM25 : {e}")
 
 
 def index_data(force_reindex: bool = False) -> bool:
@@ -154,16 +162,18 @@ def index_data(force_reindex: bool = False) -> bool:
     fichiers_actuels = list_current_files()
 
     if force_reindex:
+        # Supprime et recrée la collection AVANT de préparer les docs
+        # (même si le dossier data/sample est vide)
+        store = get_store(force_reindex=True)
         docs = prepare_files_for_ai(set(fichiers_actuels.keys()))
         if docs:
-            store = get_store(force_reindex=True)
             add_documents(store, docs)
             _save_bm25_corpus(docs)
             save_memory(fichiers_actuels)
             logger.info("Réindexation complète terminée.")
-            return True
-        logger.warning("Aucun fichier valide trouvé.")
-        return False
+        else:
+            logger.warning("Collection recréée mais aucun fichier valide trouvé dans data/sample.")
+        return True
 
     # Détection des changements
     memoire = load_memory()

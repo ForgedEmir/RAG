@@ -90,9 +90,11 @@ def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists):
     assert len(documents) == 2
     assert isinstance(documents[0], Document)
     assert documents[0].page_content == "Chunk 1"
-    assert documents[0].metadata == {"fichier": "file.md"}
+    assert documents[0].metadata["fichier"] == "file.md"
+    assert documents[0].metadata["chunk_id"] == "file.md_0"
     assert documents[1].page_content == "Chunk 2"
-    assert documents[1].metadata == {"fichier": "file.md"}
+    assert documents[1].metadata["fichier"] == "file.md"
+    assert documents[1].metadata["chunk_id"] == "file.md_1"
 
 
 # ===== TESTS POUR index_data =====
@@ -125,9 +127,13 @@ def test_index_force_reindex(mock_save, mock_add, mock_get_store, mock_prepare, 
 @patch('src.ingestion.run.prepare_files_for_ai')
 @patch('src.ingestion.run.add_documents')
 @patch('src.ingestion.run.save_memory')
-def test_index_nouveaux_fichiers(mock_save, mock_add, mock_prepare,
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
                                 mock_get_store, mock_load, mock_list):
-    """Les nouveaux fichiers sont detectes et indexes."""
+    """Les nouveaux fichiers sont detectes et indexes.
+    prepare_files_for_ai est appelé deux fois : une pour indexer les nouveaux,
+    une pour reconstruire le corpus BM25 complet.
+    """
     mock_list.return_value = {"file1.md": 1000, "file2.txt": 2000}
     mock_load.return_value = {"file1.md": 1000}  # file2.txt est nouveau
     mock_get_store.return_value = Mock()
@@ -138,7 +144,10 @@ def test_index_nouveaux_fichiers(mock_save, mock_add, mock_prepare,
     result = index_data(force_reindex=False)
 
     assert result is True
-    mock_prepare.assert_called_once_with({"file2.txt"})
+    # Premier appel : indexation des nouveaux fichiers seulement
+    assert mock_prepare.call_args_list[0] == (({'file2.txt'},),)
+    # Deuxième appel : reconstruction BM25 sur tous les fichiers actuels
+    assert mock_prepare.call_args_list[1] == (({'file1.md', 'file2.txt'},),)
     mock_add.assert_called_once()
     mock_save.assert_called_once()
 
@@ -150,9 +159,13 @@ def test_index_nouveaux_fichiers(mock_save, mock_add, mock_prepare,
 @patch('src.ingestion.run.prepare_files_for_ai')
 @patch('src.ingestion.run.add_documents')
 @patch('src.ingestion.run.save_memory')
-def test_index_fichiers_modifies(mock_save, mock_add, mock_prepare,
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
                                 mock_remove, mock_get_store, mock_load, mock_list):
-    """Les fichiers modifies sont reindexes (supprimes puis ajoutes)."""
+    """Les fichiers modifies sont reindexes (supprimes puis ajoutes).
+    prepare_files_for_ai est appelé deux fois : une pour les modifiés,
+    une pour reconstruire le corpus BM25 complet.
+    """
     mock_list.return_value = {"file.md": 2000}
     mock_load.return_value = {"file.md": 1000}  # Modifie (timestamp plus recent)
     mock_get_store.return_value = Mock()
@@ -164,5 +177,8 @@ def test_index_fichiers_modifies(mock_save, mock_add, mock_prepare,
 
     assert result is True
     mock_remove.assert_called_once()  # Supprime l'ancienne version
-    mock_prepare.assert_called_once_with({"file.md"})
+    # Premier appel : indexation du fichier modifié
+    assert mock_prepare.call_args_list[0] == (({'file.md'},),)
+    # Deuxième appel : reconstruction BM25 complet
+    assert mock_prepare.call_args_list[1] == (({'file.md'},),)
     mock_add.assert_called_once()  # Ajoute la nouvelle version

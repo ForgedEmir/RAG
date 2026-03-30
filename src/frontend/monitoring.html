@@ -104,6 +104,20 @@
         .card-value.warn { color: #e0a840; }
         .card-value.ok { color: #70c070; }
 
+        /* ── Health chips ── */
+        .health-chip {
+            padding: .4rem .9rem;
+            border-radius: 20px;
+            font-size: .82rem;
+            font-family: 'Cinzel', serif;
+            border: 1px solid #5a3e1b;
+            background: #2a1a08;
+            color: #8a7a6a;
+        }
+        .health-chip.ok   { border-color: #2ecc71; color: #2ecc71; background: rgba(46,204,113,.08); }
+        .health-chip.fail { border-color: #e07070; color: #e07070; background: rgba(224,112,112,.08); }
+        .health-chip.warn { border-color: #e0a840; color: #e0a840; background: rgba(224,168,64,.08); }
+
         /* ── Events table ── */
         h2 { font-family: 'Cinzel', serif; color: #c9a84c; font-size: 1.1rem; margin-bottom: 1rem; }
 
@@ -215,6 +229,76 @@
     <div id="spike-alert">⚠️ Spike d'injections détecté : plus de 10 tentatives en 5 minutes.</div>
     <div id="error-msg"></div>
 
+    <!-- ── Santé du système ── -->
+    <div style="margin-bottom:2rem">
+        <h2>🩺 Santé du système</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:.8rem;margin-top:.8rem" id="health-cards">
+            <div class="health-chip" id="hc-qdrant">Qdrant ···</div>
+            <div class="health-chip" id="hc-supabase">Supabase ···</div>
+            <div class="health-chip" id="hc-llm_key">LLM Key ···</div>
+            <div class="health-chip" id="hc-bm25_corpus">BM25 Corpus ···</div>
+            <div class="health-chip" id="hc-vector_memory">Vector Memory ···</div>
+        </div>
+    </div>
+
+    <!-- ── Pipeline RAG ── -->
+    <div style="margin-bottom:2rem">
+        <h2>⚙ Pipeline RAG</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-top:.8rem" id="pipeline-grid">
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">BGE-M3 / Qdrant</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Vecteurs : <strong id="p-qdrant-vectors" style="color:#c9a84c">—</strong><br>
+                    Dimensions : <strong id="p-qdrant-dims" style="color:#c9a84c">—</strong>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">BM25 (lexical)</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Chunks : <strong id="p-bm25-chunks" style="color:#c9a84c">—</strong><br>
+                    Chargé : <strong id="p-bm25-loaded" style="color:#c9a84c">—</strong>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Cache TTL</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Taux de hit : <strong id="p-cache-rate" style="color:#c9a84c">—</strong><br>
+                    Taille actuelle : <strong id="p-cache-size" style="color:#c9a84c">—</strong>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Router adaptatif</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Simples : <strong id="p-simple" style="color:#2ecc71">—</strong><br>
+                    Complexes : <strong id="p-complex" style="color:#e0a840">—</strong>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Cross-encoder (reranker)</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Appels : <strong id="p-reranker-calls" style="color:#c9a84c">—</strong><br>
+                    Statut : <strong id="p-reranker-status" style="color:#c9a84c">—</strong>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Dernière requête</div>
+                <div style="font-size:.85rem;line-height:1.9;word-break:break-word">
+                    <span id="p-last-query" style="color:#d4b896;font-style:italic">—</span><br>
+                    Mode : <strong id="p-last-mode" style="color:#c9a84c">—</strong>
+                    &nbsp;|&nbsp; Vector : <strong id="p-last-vec" style="color:#87ceeb">—</strong>
+                    &nbsp;BM25 : <strong id="p-last-bm25" style="color:#87ceeb">—</strong>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
     <div class="cards">
         <div class="card">
             <div class="card-label">Questions</div>
@@ -289,7 +373,10 @@
             <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1.2rem">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
                     <div style="font-family:'Cinzel',serif;color:#c9a84c;font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Fichiers indexés</div>
-                    <button onclick="triggerReindex()" style="padding:.3rem .8rem;background:#3a2a10;border:1px solid #c9a84c;color:#f0d9a0;border-radius:5px;font-family:'Cinzel',serif;font-size:.75rem;cursor:pointer">↺ Réindexer</button>
+                    <div style="display:flex;gap:.5rem">
+                        <button onclick="triggerReindex(false)" style="padding:.3rem .8rem;background:#3a2a10;border:1px solid #c9a84c;color:#f0d9a0;border-radius:5px;font-family:'Cinzel',serif;font-size:.75rem;cursor:pointer">↺ Réindexer</button>
+                        <button onclick="triggerReindex(true)" title="Supprime et recrée la collection Qdrant" style="padding:.3rem .8rem;background:#3a1010;border:1px solid #e07070;color:#e07070;border-radius:5px;font-family:'Cinzel',serif;font-size:.75rem;cursor:pointer">⚠ Force</button>
+                    </div>
                 </div>
                 <div id="sources-list" style="font-size:.85rem;color:#a09080;line-height:1.8">Chargement...</div>
                 <div id="reindex-status" style="margin-top:.6rem;font-size:.85rem;min-height:1.2rem"></div>
@@ -344,6 +431,29 @@
         if (e.key === 'Enter') authenticate();
     });
 
+    function fetchHealth() {
+        fetch('/health').then(r => r.json()).then(data => {
+            const labels = {
+                qdrant:        'Qdrant',
+                supabase:      'Supabase',
+                llm_key:       'LLM Key',
+                bm25_corpus:   'BM25 Corpus',
+                vector_memory: 'Vector Memory',
+            };
+            Object.entries(data.checks || {}).forEach(([k, v]) => {
+                const el = document.getElementById('hc-' + k);
+                if (!el) return;
+                if (k === 'vector_memory') {
+                    el.className = 'health-chip ' + (v ? 'ok' : 'warn');
+                    el.textContent = labels[k] + (v ? ' ✓ ON' : ' ○ OFF');
+                } else {
+                    el.className = 'health-chip ' + (v ? 'ok' : 'fail');
+                    el.textContent = labels[k] + (v ? ' ✓' : ' ✗');
+                }
+            });
+        }).catch(() => {});
+    }
+
     function fetchStats(isAuth = false) {
         fetch(`/api/monitoring/stats?key=${encodeURIComponent(monitoringKey)}`)
             .then(r => {
@@ -357,7 +467,11 @@
                     startCountdown();
                     loadSources();
                     fetchLogs();
+                    fetchHealth();
+                    fetchPipeline();
                     logsTimer = setInterval(fetchLogs, 5000);
+                    setInterval(fetchHealth, 30000);
+                    setInterval(fetchPipeline, 30000);
                 }
                 renderStats(data);
             })
@@ -546,18 +660,53 @@
             .catch(() => { status.style.color = '#e07070'; status.textContent = 'Erreur réseau.'; });
     }
 
-    function triggerReindex() {
+    function triggerReindex(force = false) {
+        if (force && !confirm('⚠ Force Reindex : supprime et recrée la collection Qdrant. Continuer ?')) return;
         const status = document.getElementById('reindex-status');
         status.style.color = '#c9a84c';
-        status.textContent = 'Réindexation en cours...';
-        fetch('/api/reindex', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force: false}) })
+        status.textContent = force ? '⚠ Force réindexation en cours...' : 'Réindexation en cours...';
+        fetch('/api/reindex', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force}) })
             .then(r => r.json())
             .then(data => {
-                status.style.color = '#70c070';
-                status.textContent = '✓ ' + (data.message || 'Terminé.');
-                loadSources();
+                if (data.error) {
+                    status.style.color = '#e07070';
+                    status.textContent = '✗ ' + data.error;
+                } else {
+                    status.style.color = '#70c070';
+                    status.textContent = '✓ ' + (data.message || 'Terminé.');
+                    loadSources();
+                    fetchHealth();
+                }
             })
             .catch(() => { status.style.color = '#e07070'; status.textContent = 'Erreur.'; });
+    }
+
+    function fetchPipeline() {
+        fetch(`/api/monitoring/pipeline?key=${encodeURIComponent(monitoringKey)}`)
+            .then(r => r.json())
+            .then(d => {
+                const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+                set('p-qdrant-vectors', d.qdrant_vectors != null ? d.qdrant_vectors : '?');
+                set('p-qdrant-dims',    d.qdrant_dimensions != null ? d.qdrant_dimensions : '?');
+                set('p-bm25-chunks',    d.bm25_chunks ?? '?');
+                set('p-bm25-loaded',    d.bm25_loaded ? '✓ Oui' : '✗ Non');
+                document.getElementById('p-bm25-loaded').style.color = d.bm25_loaded ? '#2ecc71' : '#e07070';
+                set('p-cache-rate',  (d.cache_hit_rate ?? '?') + '%');
+                set('p-cache-size',  d.cache_size ?? '?');
+                set('p-simple',      d.simple_queries ?? '?');
+                set('p-complex',     d.complex_queries ?? '?');
+                set('p-reranker-calls', d.reranker_calls ?? '?');
+                const rrEl = document.getElementById('p-reranker-status');
+                if (rrEl) {
+                    rrEl.textContent = d.reranker_enabled ? '✓ Actif' : '○ Désactivé';
+                    rrEl.style.color = d.reranker_enabled ? '#2ecc71' : '#e0a840';
+                }
+                set('p-last-query', d.last_query ? `"${d.last_query}"` : 'aucune');
+                set('p-last-mode',  d.last_mode ?? '—');
+                set('p-last-vec',   d.last_vector_count ?? '—');
+                set('p-last-bm25',  d.last_bm25_count ?? '—');
+            })
+            .catch(() => {});
     }
 
     function startCountdown() {
@@ -569,6 +718,7 @@
             if (countdownVal <= 0) {
                 countdownVal = 30;
                 fetchStats();
+                fetchPipeline();
             }
         }, 1000);
     }

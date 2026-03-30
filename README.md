@@ -1,103 +1,127 @@
 # Oracle LoreKeeper
 
-> Assistant conversationnel RAG pour le lore du jeu **Aethelgard Online**.
-> Les joueurs posent leurs questions en langage naturel et reçoivent des réponses basées **exclusivement** sur les documents officiels du jeu — rien n'est inventé.
+Assistant conversationnel RAG pour le lore du jeu **Aethelgard Online**.
+Les joueurs posent leurs questions en langage naturel et reçoivent des réponses basées **exclusivement** sur les documents officiels — rien n'est inventé.
 
 ---
 
-## Comment ça fonctionne
+## Pipeline RAG
 
 ```
 Question utilisateur
-        ↓
-  Réécriture de la question (contexte conversationnel)
-        ↓
-  Recherche sémantique dans Qdrant (k=5 passages)
-        ↓
-  Génération LLM (Groq / Llama 3.3 70B)
-        ↓
-  Réponse en streaming SSE → Interface grimoire
+    ↓ Validation sécurité (regex + Lakera)
+    ↓ Reformulation (contexte conversationnel)
+    ↓ Recherche hybride : BGE-M3 (Qdrant) + BM25 → RRF
+    ↓ Reranking cross-encoder (questions complexes)
+    ↓ LLM avec mémoire court-terme + résumé long-terme
+    ↓ Réponse streamée (SSE)
 ```
-
-1. **Sécurité** — Lakera Guard + regex filtrent les injections avant tout traitement
-2. **Mémoire** — Les 5 derniers échanges de la session sont injectés dans le prompt
-3. **Réécriture** — Les questions de suivi ("il fait quelle taille ?") sont reformulées en questions autonomes avant la recherche
-4. **TTS** — Chaque réponse peut être écoutée via Edge TTS (voix Henri, fr-FR)
 
 ---
 
-## Stack technique
+## Stack
 
 | Composant | Technologie |
 |---|---|
 | Backend | Flask 3 · Python 3.11 |
-| LLM | Groq — `llama-3.3-70b-versatile` |
+| LLM principal | Configurable — DeepSeek / Groq Llama 3.3 70B |
+| LLM fallback | Configurable — Groq Llama 3.1 8B |
+| Embeddings | `BAAI/bge-m3` (1024 dim, local) |
 | Base vectorielle | Qdrant Cloud |
-| Embeddings | FastEmbed (`paraphrase-multilingual-MiniLM`) |
-| Parser de documents | Unstructured |
-| Mémoire conversationnelle | Supabase — table `conversations` |
-| Monitoring | Supabase — table `events` · dashboard `/monitoring` |
-| Sécurité | Lakera Guard + validation regex |
+| Recherche lexicale | BM25 (rank-bm25, local) |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` (local) |
+| Mémoire session | Supabase — `conversations` + `messages` |
+| Résumé long-terme | Supabase — `user_memory` |
+| Mémoire vectorielle | Qdrant — `user_memories` (optionnel) |
+| Monitoring | Supabase — `events` + dashboard `/monitoring` |
+| Sécurité | Lakera Guard + regex anti-injection |
+| Rate limiting | Flask-Limiter (Redis en prod, mémoire en dev) |
 | TTS | Edge TTS — `fr-FR-HenriNeural` |
-| Streaming | SSE avec Gunicorn + Gevent |
-| Déploiement | Railway |
+| Déploiement | Railway + Gunicorn |
 
 ---
 
-## Installation locale
+## Installation
 
 ```bash
-git clone <url-du-repo>
+git clone <url>
 cd Oracle-LoreKeeper
 
 python -m venv venv
 venv\Scripts\activate        # Windows
-# source venv/bin/activate   # Linux / macOS
+# source venv/bin/activate   # Linux/macOS
 
 pip install -r requirements.txt
+cp .env.example .env
+# Remplir les variables dans .env
 ```
 
 ---
 
 ## Configuration
 
-Copier le fichier d'exemple et compléter les clés :
-
-```bash
-cp .env.example .env
-```
+### Variables essentielles
 
 | Variable | Description |
 |---|---|
-| `OPENAI_API_KEY` | Clé API Groq (format `gsk_...`) |
-| `LLM_BASE_URL` | `https://api.groq.com/openai/v1` |
-| `LLM_MODEL` | `llama-3.3-70b-versatile` |
-| `QDRANT_URL` | URL du cluster Qdrant Cloud |
+| `OPENAI_API_KEY` | Clé API LLM (Groq : `gsk_...`, DeepSeek, etc.) |
+| `LLM_BASE_URL` | URL de l'API LLM |
+| `LLM_MODEL` | Modèle principal |
+| `QDRANT_URL` | URL cluster Qdrant Cloud (avec `:6333`) |
 | `QDRANT_API_KEY` | Clé Qdrant Cloud |
-| `SUPABASE_URL` | URL du projet Supabase |
-| `SUPABASE_KEY` | Clé anon Supabase |
-| `MONITORING_KEY` | Mot de passe pour accéder au dashboard `/monitoring` |
-| `LAKERA_API_KEY` | Clé Lakera Guard |
-| `LAKERA_PROJECT_ID` | ID projet Lakera _(optionnel)_ |
-| `PARSER` | `unstructured` _(recommandé)_ |
+| `SUPABASE_URL` | URL projet Supabase |
+| `SUPABASE_KEY` | Clé **service_role** Supabase (pas anon) |
+| `MONITORING_KEY` | Mot de passe dashboard `/monitoring` |
 
-### Tables Supabase requises
+### Variables production
 
-Exécuter dans l'éditeur SQL de Supabase :
+| Variable | Description | Défaut |
+|---|---|---|
+| `REDIS_URL` | Redis partagé (multi-workers) | `memory://` (dev) |
+| `ALLOWED_ORIGINS` | CORS origins autorisées | `*` |
+| `SENTRY_DSN` | Sentry error tracking | — |
+
+### Variables optionnelles
+
+| Variable | Description | Défaut |
+|---|---|---|
+| `RERANKER_ENABLED` | Cross-encoder actif | `true` |
+| `VECTOR_MEMORY_ENABLED` | Mémoire vectorielle utilisateur | `false` |
+| `QUERY_EXPANSION_ENABLED` | Génère 2 variantes de requête via LLM | `false` |
+| `CONVERSATION_DEPTH` | Échanges injectés dans le contexte | `5` |
+| `SUMMARY_UPDATE_INTERVAL` | Fréquence MAJ résumé (nb d'échanges) | `5` |
+| `SEARCH_CACHE_TTL` | Durée cache recherche (secondes) | `300` |
+| `LAKERA_API_KEY` | Détection injection IA (Lakera Guard) | — |
+
+---
+
+## Schéma Supabase
+
+Exécuter dans l'éditeur SQL Supabase :
 
 ```sql
--- Historique des conversations (mémoire multi-sessions)
 CREATE TABLE conversations (
     id         bigint generated always as identity primary key,
-    session_id text        not null,
-    question   text        not null,
-    answer     text        not null,
+    session_id uuid        not null,
+    user_id    uuid        not null,
     created_at timestamptz default now()
 );
-ALTER TABLE conversations DISABLE ROW LEVEL SECURITY;
-CREATE INDEX ON conversations (session_id, created_at);
 
--- Événements de monitoring (questions, erreurs, injections, latence)
+CREATE TABLE messages (
+    id              bigint generated always as identity primary key,
+    conversation_id bigint references conversations(id) on delete cascade,
+    user_id         uuid   not null,
+    role            text   not null,   -- 'user' | 'assistant'
+    content         text   not null,
+    created_at      timestamptz default now()
+);
+
+CREATE TABLE user_memory (
+    user_id    uuid primary key,
+    summary    text,
+    updated_at timestamptz default now()
+);
+
 CREATE TABLE events (
     id         bigint generated always as identity primary key,
     type       varchar,
@@ -105,81 +129,103 @@ CREATE TABLE events (
     latency_ms int4,
     created_at timestamptz default now()
 );
-ALTER TABLE events DISABLE ROW LEVEL SECURITY;
+
+-- Désactiver RLS (utiliser la clé service_role)
+ALTER TABLE conversations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE messages      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_memory   DISABLE ROW LEVEL SECURITY;
+ALTER TABLE events        DISABLE ROW LEVEL SECURITY;
+
+-- Index performance
+CREATE INDEX ON conversations (session_id);
+CREATE INDEX ON messages (conversation_id, created_at);
+CREATE INDEX ON messages (user_id, role);
 ```
 
 ---
 
-## Ajouter du contenu lore
+## Lancer l'application
 
-Placer les fichiers dans `data/sample/`.
-Formats supportés : `.md` · `.txt` · `.csv` · `.json` · `.xlsx` · `.xml`
-
-L'indexation dans Qdrant se fait **automatiquement au démarrage**.
-Pour forcer une réindexation complète :
-
-```bash
-curl -X POST http://localhost:5000/api/reindex \
-     -H "Content-Type: application/json" \
-     -d '{"force": true}'
-```
-
----
-
-## Lancement
-
+### Développement
 ```bash
 python main.py
 ```
 
+### Production (Railway / VPS)
+```bash
+# Gunicorn avec gevent pour le streaming SSE
+gunicorn main:app --worker-class gevent --workers 4 --timeout 120 --bind 0.0.0.0:5000
+```
+
+> **Important** : avec plusieurs workers, configurer `REDIS_URL` pour que le rate limiter soit partagé.
+
 | URL | Description |
 |---|---|
 | `http://localhost:5000` | Interface grimoire |
-| `http://localhost:5000/monitoring?key=<MONITORING_KEY>` | Dashboard de monitoring |
-| `http://localhost:5000/health` | Health check |
+| `http://localhost:5000/monitoring` | Dashboard monitoring |
+| `http://localhost:5000/health` | Health check JSON |
+
+---
+
+## Ajouter du lore
+
+Déposer les fichiers dans `data/sample/`.
+Formats : `.md` `.txt` `.csv` `.json` `.xlsx` `.xml`
+
+L'indexation est automatique au démarrage. Pour forcer :
+```bash
+# Via le bouton "Force Reindex" dans le dashboard
+# Ou via API :
+curl -X POST http://localhost:5000/api/reindex -H "Content-Type: application/json" -d '{"force": true}'
+```
 
 ---
 
 ## Tests
 
 ```bash
+source venv/Scripts/activate   # Windows
 pytest src/test-unitaires/ -v
 ```
 
-**77 tests** couvrant : génération, reformulation, recherche, ingestion, sécurité, routes API, monitoring Supabase.
+Couverture : routes API, pipeline RAG, BM25, router, tracker Supabase, génération LLM, indexation.
 
 ---
 
 ## Déploiement Railway
 
 1. Connecter le dépôt Git à Railway
-2. Ajouter toutes les variables d'environnement dans **Settings → Variables**
-3. Railway détecte le `Procfile` et lance automatiquement :
-
+2. Ajouter les variables d'environnement dans **Settings → Variables**
+3. Railway utilise le `Procfile` :
 ```
-gunicorn main:app --worker-class gevent --workers 2 --timeout 120
+web: gunicorn main:app --worker-class gevent --workers 2 --timeout 120
 ```
-
-> Le worker **Gevent** est indispensable pour le streaming SSE — un worker synchronique bloquerait la connexion.
+4. Ajouter un service **Redis** dans Railway et copier la variable `REDIS_URL` automatiquement générée
 
 ---
 
-## Structure du projet
+## Structure
 
 ```
 Oracle-LoreKeeper/
-├── main.py                        # Point d'entrée Flask + CORS + health check
+├── main.py                        # Entrée Flask, health check, logs
 ├── Procfile                       # Config Gunicorn (Railway)
 ├── requirements.txt
+├── Schéma/                        # Diagramme architecture (draw.io)
 ├── data/sample/                   # Fichiers lore sources
 └── src/
-    ├── api/routes.py              # Endpoints REST + SSE
-    ├── frontend/                  # Interface grimoire (HTML/CSS/JS)
-    ├── generation/generator.py    # LLM + reformulation de questions
-    ├── ingestion/                 # Parser + chunker + indexation Qdrant
-    ├── monitoring/tracker.py      # Logging Supabase + dashboard
-    ├── search/search.py           # Recherche sémantique Qdrant
-    ├── security/validator.py      # Lakera Guard + regex
-    ├── tts/tts.py                 # Edge TTS Henri Neural
-    └── test-unitaires/            # 77 tests pytest
+    ├── api/
+    │   ├── routes.py              # Endpoints /api/ask, /api/reindex, /api/conversations
+    │   ├── auth.py                # Vérification clé monitoring
+    │   ├── limiter.py             # Rate limiter (Redis ou mémoire)
+    │   └── blueprints/            # Admin, media, monitoring
+    ├── frontend/                  # Interface HTML/CSS/JS
+    ├── generation/generator.py    # LLM, streaming, résumé, reformulation
+    ├── ingestion/                 # Parser, chunker, indexation Qdrant
+    ├── memory/vector_memory.py    # Mémoire vectorielle utilisateur
+    ├── monitoring/tracker.py      # Supabase : events, conversations, résumé
+    ├── search/search.py           # Pipeline RAG hybride
+    ├── security/validator.py      # Lakera + regex
+    ├── tts/                       # Edge TTS
+    └── test-unitaires/            # Tests pytest
 ```

@@ -1,5 +1,20 @@
 // Oracle des Archives — Script principal
 
+// ── Identité persistante de l'utilisateur ───────────────────────────────────
+// user_id : UUID généré une seule fois, survit aux nouvelles conversations
+// session_id : UUID par conversation (réinitialisé à chaque nouvelle session)
+
+const USER_ID_KEY = 'oracle_user_id';
+
+function getUserId() {
+    let id = localStorage.getItem(USER_ID_KEY);
+    if (!id) {
+        id = generateUUID();
+        localStorage.setItem(USER_ID_KEY, id);
+    }
+    return id;
+}
+
 // ── Sessions (multi-conversations) ─────────────────────────────────────────
 
 const SESSIONS_KEY = 'oracle_sessions';
@@ -216,6 +231,20 @@ function createStreamingMessage() {
     return inner;
 }
 
+async function fetchAndPlayTts(text, onEnd) {
+    stopCurrentAudio();
+    const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error('TTS indisponible');
+    const blob = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
+    currentAudio = new Audio(URL.createObjectURL(blob));
+    currentAudio.onended = () => { currentAudio = null; onEnd?.(); };
+    currentAudio.play();
+}
+
 function addTtsButton(textEl) {
     const btn = document.createElement('button');
     btn.className = 'tts-btn';
@@ -227,25 +256,14 @@ function addTtsButton(textEl) {
             btn.textContent = '🔊 Écouter';
             return;
         }
-        stopCurrentAudio();
         btn.classList.add('playing');
         btn.textContent = '⏹ Arrêter';
         try {
-            const res = await fetch('/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: textEl.textContent }),
-            });
-            if (!res.ok) throw new Error('TTS indisponible');
-            const blob = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
-            currentAudio = new Audio(URL.createObjectURL(blob));
-            currentAudio.onended = () => {
+            await fetchAndPlayTts(textEl.textContent, () => {
                 btn.classList.remove('playing');
                 btn.textContent = '🔊 Écouter';
-                currentAudio = null;
-            };
-            currentAudio.play();
-        } catch (e) {
+            });
+        } catch (_) {
             btn.classList.remove('playing');
             btn.textContent = '🔊 Écouter';
         }
@@ -296,7 +314,7 @@ async function consultOracle() {
         const response = await fetch('/api/ask', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, session_id: sessionId }),
+            body: JSON.stringify({ question, session_id: sessionId, user_id: getUserId() }),
         });
 
         if (!response.ok) {
@@ -458,19 +476,7 @@ function stopRecording() {
 }
 
 async function autoPlayTts(textEl) {
-    stopCurrentAudio();
-    try {
-        const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: textEl.textContent }),
-        });
-        if (!res.ok) return;
-        const blob = new Blob([await res.arrayBuffer()], { type: 'audio/mpeg' });
-        currentAudio = new Audio(URL.createObjectURL(blob));
-        currentAudio.onended = () => { currentAudio = null; };
-        currentAudio.play();
-    } catch (_) {}
+    try { await fetchAndPlayTts(textEl.textContent); } catch (_) {}
 }
 
 // ── Initialisation ──────────────────────────────────────────────────────────

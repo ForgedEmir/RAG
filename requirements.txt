@@ -1,10 +1,11 @@
 # === Framework Web ===
-flask>=3.0.0
-flask-cors>=4.0.0
-gunicorn>=21.2.0
-gevent>=24.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+slowapi>=0.1.9
+redis>=5.0.0
 
-# === LangChain (orchestration + abstraction) ===
+# === LangChain ===
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
 langchain-text-splitters>=0.3.0
@@ -27,21 +28,29 @@ openpyxl>=3.1.0
 python-magic-bin; sys_platform == "win32"
 llama-parse>=0.5.0
 
-# === MCP (Model Context Protocol) ===
+# === MCP ===
 mcp>=1.26.0,<2
+
+# === Observabilité ===
+langfuse>=2.0.0
+sentry-sdk>=2.0.0
+
+# === Auth ===
+python-jose[cryptography]>=3.3.0
+
+# === Monitoring ===
+supabase>=2.0.0
 
 # === Utilitaires ===
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 requests>=2.31.0
-flask-limiter>=3.5.0
-
-# === Monitoring ===
-sentry-sdk[flask]>=2.0.0
-supabase>=2.0.0
+gunicorn>=21.2.0
+gevent>=24.0.0
 
 # === TTS ===
 edge-tts>=7.0.0
 
 # === Tests ===
 pytest>=7.0.0
+httpx>=0.27.0

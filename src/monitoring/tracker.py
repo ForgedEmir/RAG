@@ -1,6 +1,11 @@
-"""
-Monitoring via Supabase : événements, historique de conversation, stats.
+"""Monitoring Supabase : événements, historique de conversation, résumé utilisateur.
 Fail-silent : si Supabase est indisponible, l'app continue normalement.
+
+Schéma :
+  conversations (id, session_id, user_id, created_at)
+  messages      (id, conversation_id, user_id, role, content, created_at)
+  user_memory   (user_id PK, summary, updated_at)
+  events        (id, type, detail, latency_ms, created_at)
 """
 import os
 import logging
@@ -22,10 +27,9 @@ def _get_client():
     return _client
 
 
-# ── Événements ───────────────────────────────────────────────────────────────
+# ── Événements ────────────────────────────────────────────────────────────────
 
 def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
-    """Enregistre un événement dans Supabase (question, injection, erreur, etc.)."""
     client = _get_client()
     if not client:
         return
@@ -34,161 +38,192 @@ def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -
         if latency_ms is not None:
             data["latency_ms"] = latency_ms
         client.table("events").insert(data).execute()
-
         if event_type in ("injection_regex", "injection_lakera"):
             _check_injection_spike(client)
-
     except Exception as e:
-        logger.warning(f"[MONITORING] Erreur Supabase : {e}")
+        logger.warning(f"[MONITORING] Supabase : {e}")
 
 
 def _check_injection_spike(client) -> None:
-    """Alerte Sentry si >10 injections en 5 minutes."""
     try:
-        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        result = (
-            client.table("events")
-            .select("id", count="exact")
-            .in_("type", ["injection_regex", "injection_lakera"])
-            .gte("created_at", five_min_ago)
-            .execute()
-        )
-        if (result.count or 0) >= 10:
+        since = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        r = (client.table("events").select("id", count="exact")
+             .in_("type", ["injection_regex", "injection_lakera"])
+             .gte("created_at", since).execute())
+        if (r.count or 0) >= 10:
             logger.warning("[MONITORING] Spike d'injections : >10 en 5 minutes.")
             try:
                 import sentry_sdk
-                sentry_sdk.capture_message(
-                    "Spike d'injections : >10 tentatives en 5 minutes", level="warning"
-                )
+                sentry_sdk.capture_message("Spike d'injections : >10 en 5 minutes", level="warning")
             except ImportError:
                 pass
     except Exception:
         pass
 
 
-# ── Conversations ────────────────────────────────────────────────────────────
+# ── Conversations ─────────────────────────────────────────────────────────────
+
+def _get_or_create_conversation(client, session_id: str, user_id: str) -> Optional[int]:
+    try:
+        r = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
+        if r.data:
+            return r.data[0]["id"]
+        inserted = client.table("conversations").insert({"session_id": session_id, "user_id": user_id}).execute()
+        return inserted.data[0]["id"] if inserted.data else None
+    except Exception as e:
+        logger.warning(f"[MEMORY] get_or_create_conversation : {e}")
+        return None
+
+
+def _messages_to_history(messages: list) -> list:
+    pairs, i = [], 0
+    while i < len(messages):
+        if messages[i]["role"] == "user":
+            question = messages[i]["content"]
+            answer, step = "", 1
+            if i + 1 < len(messages) and messages[i + 1]["role"] == "assistant":
+                answer, step = messages[i + 1]["content"], 2
+            if answer:
+                pairs.append({"question": question, "answer": answer})
+            i += step
+        else:
+            i += 1
+    return pairs
+
 
 def get_history(session_id: str) -> list:
-    """Récupère les 5 derniers échanges d'une session."""
     client = _get_client()
     if not client or not session_id:
         return []
     try:
-        r = (
-            client.table("conversations")
-            .select("question, answer")
-            .eq("session_id", session_id)
-            .order("created_at", desc=True)
-            .limit(5)
-            .execute()
-        )
-        return list(reversed(r.data))
+        conv = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
+        if not conv.data:
+            return []
+        r = (client.table("messages").select("role, content")
+             .eq("conversation_id", conv.data[0]["id"])
+             .order("created_at", desc=True).limit(10).execute())
+        return _messages_to_history(list(reversed(r.data)))
     except Exception as e:
-        logger.warning(f"[MEMORY] Erreur lecture historique : {e}")
+        logger.warning(f"[MEMORY] get_history : {e}")
         return []
-
-
-def save_exchange(session_id: str, question: str, answer: str) -> None:
-    """Persiste un échange question/réponse."""
-    client = _get_client()
-    if not client or not session_id:
-        return
-    try:
-        client.table("conversations").insert({
-            "session_id": session_id,
-            "question": question,
-            "answer": answer,
-        }).execute()
-    except Exception as e:
-        logger.warning(f"[MEMORY] Erreur sauvegarde : {e}")
 
 
 def get_conversation(session_id: str) -> list:
-    """Retourne tous les échanges d'une session (ordre chronologique)."""
     client = _get_client()
     if not client or not session_id:
         return []
     try:
-        r = (
-            client.table("conversations")
-            .select("question, answer, created_at")
-            .eq("session_id", session_id)
-            .order("created_at")
-            .execute()
-        )
-        return r.data
+        conv = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
+        if not conv.data:
+            return []
+        r = (client.table("messages").select("role, content, created_at")
+             .eq("conversation_id", conv.data[0]["id"]).order("created_at").execute())
+        return _messages_to_history(r.data)
     except Exception as e:
-        logger.warning(f"[MEMORY] Erreur chargement conversation : {e}")
+        logger.warning(f"[MEMORY] get_conversation : {e}")
         return []
 
 
 def delete_conversation(session_id: str) -> None:
-    """Supprime tous les échanges d'une session."""
     client = _get_client()
     if not client or not session_id:
         return
     try:
-        client.table("conversations").delete().eq("session_id", session_id).execute()
+        conv = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
+        if not conv.data:
+            return
+        cid = conv.data[0]["id"]
+        client.table("messages").delete().eq("conversation_id", cid).execute()
+        client.table("conversations").delete().eq("id", cid).execute()
     except Exception as e:
-        logger.warning(f"[MEMORY] Erreur suppression : {e}")
+        logger.warning(f"[MEMORY] delete_conversation : {e}")
 
 
-# ── Stats (dashboard monitoring) ─────────────────────────────────────────────
+def save_exchange(session_id: str, question: str, answer: str, user_id: str = "") -> None:
+    client = _get_client()
+    if not client or not session_id:
+        return
+    try:
+        cid = _get_or_create_conversation(client, session_id, user_id)
+        if not cid:
+            return
+        client.table("messages").insert([
+            {"conversation_id": cid, "role": "user",      "content": question, "user_id": user_id},
+            {"conversation_id": cid, "role": "assistant", "content": answer,   "user_id": user_id},
+        ]).execute()
+    except Exception as e:
+        logger.warning(f"[MEMORY] save_exchange : {e}")
+
+
+# ── Mémoire long-terme utilisateur ───────────────────────────────────────────
+
+def get_user_summary(user_id: str) -> str:
+    client = _get_client()
+    if not client or not user_id:
+        return ""
+    try:
+        r = client.table("user_memory").select("summary").eq("user_id", user_id).limit(1).execute()
+        return r.data[0]["summary"] if r.data else ""
+    except Exception as e:
+        logger.warning(f"[MEMORY] get_user_summary : {e}")
+        return ""
+
+
+def save_user_summary(user_id: str, summary: str) -> None:
+    client = _get_client()
+    if not client or not user_id:
+        return
+    try:
+        client.table("user_memory").upsert({"user_id": user_id, "summary": summary}).execute()
+        logger.info(f"[MEMORY] Résumé mis à jour pour user '{user_id[:8]}…'")
+    except Exception as e:
+        logger.warning(f"[MEMORY] save_user_summary : {e}")
+
+
+def count_user_exchanges(user_id: str) -> int:
+    client = _get_client()
+    if not client or not user_id:
+        return 0
+    try:
+        r = (client.table("messages").select("id", count="exact")
+             .eq("user_id", user_id).eq("role", "user").execute())
+        return r.count or 0
+    except Exception as e:
+        logger.warning(f"[MEMORY] count_user_exchanges : {e}")
+        return 0
+
+
+# ── Stats dashboard ───────────────────────────────────────────────────────────
 
 def get_stats() -> dict:
-    """Retourne les stats agrégées pour le dashboard."""
     client = _get_client()
     if not client:
         return {"error": "Supabase non configuré", "counts": {}, "events": []}
-
     try:
-        # Compteurs par type
-        types = ["question", "injection_regex", "injection_lakera", "rate_limit", "error",
-                 "voice", "tts", "upload", "upload_blocked", "reindex", "fallback"]
+        types = ["question", "injection_regex", "injection_lakera", "rate_limit",
+                 "error", "voice", "tts", "upload", "upload_blocked", "reindex", "fallback"]
         counts = {}
         for t in types:
             r = client.table("events").select("id", count="exact").eq("type", t).execute()
             counts[t] = r.count or 0
 
-        # Latence moyenne (100 dernières questions)
-        latency_r = (
-            client.table("events")
-            .select("latency_ms")
-            .eq("type", "question")
-            .not_.is_("latency_ms", "null")
-            .order("created_at", desc=True)
-            .limit(100)
-            .execute()
-        )
+        latency_r = (client.table("events").select("latency_ms").eq("type", "question")
+                     .not_.is_("latency_ms", "null").order("created_at", desc=True).limit(100).execute())
         latencies = [row["latency_ms"] for row in latency_r.data if row.get("latency_ms")]
         avg_latency = int(sum(latencies) / len(latencies)) if latencies else 0
 
-        # 50 derniers événements
-        recent = (
-            client.table("events")
-            .select("*")
-            .order("created_at", desc=True)
-            .limit(50)
-            .execute()
-        )
+        recent = client.table("events").select("*").order("created_at", desc=True).limit(50).execute()
 
-        # Spike d'injections (5 dernières minutes)
-        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        spike_r = (
-            client.table("events")
-            .select("id", count="exact")
-            .in_("type", ["injection_regex", "injection_lakera"])
-            .gte("created_at", five_min_ago)
-            .execute()
-        )
+        since = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        spike_r = (client.table("events").select("id", count="exact")
+                   .in_("type", ["injection_regex", "injection_lakera"])
+                   .gte("created_at", since).execute())
 
         return {
-            "counts": counts,
-            "avg_latency_ms": avg_latency,
+            "counts": counts, "avg_latency_ms": avg_latency,
             "injection_spike": (spike_r.count or 0) >= 10,
             "events": recent.data,
         }
-
     except Exception as e:
-        logger.error(f"[MONITORING] Erreur get_stats : {e}")
+        logger.error(f"[MONITORING] get_stats : {e}")
         return {"error": str(e), "counts": {}, "events": []}

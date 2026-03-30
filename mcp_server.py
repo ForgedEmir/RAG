@@ -2,18 +2,18 @@
 Serveur MCP (Model Context Protocol) pour Oracle LoreKeeper.
 Expose le RAG d'Aethelgard Online comme outils MCP utilisables par Claude Desktop, Cursor, etc.
 
-Transport : stdio (Claude Desktop local)
+Transports :
+  - stdio  (défaut) : Claude Desktop local
+  - sse             : HTTP/SSE pour connexions distantes (Claude.ai web, Cursor, CI...)
 
-Lancement direct :
+Lancement stdio (Claude Desktop) :
     python mcp_server.py
 
-Via mcp install (enregistrement automatique dans Claude Desktop) :
-    mcp install mcp_server.py --name "Oracle LoreKeeper"
+Lancement SSE (serveur distant, port 8001 par défaut) :
+    MCP_TRANSPORT=sse python mcp_server.py
+    MCP_TRANSPORT=sse MCP_PORT=9000 python mcp_server.py
 
-Via uvx (après publication PyPI) :
-    uvx oracle-lorekeeper-mcp
-
-Configuration manuelle Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.json) :
+Configuration Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.json) :
     {
       "mcpServers": {
         "lorekeeper": {
@@ -23,6 +23,9 @@ Configuration manuelle Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.
         }
       }
     }
+
+Configuration client SSE distant (Claude.ai / Cursor) :
+    URL : http://<votre-serveur>:8001/sse
 """
 import os
 import sys
@@ -168,7 +171,13 @@ def collection_stats() -> str:
 
 
 def main():
-    mcp.run(transport="stdio")
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    if transport == "sse":
+        host = os.getenv("MCP_HOST", "0.0.0.0")
+        port = int(os.getenv("MCP_PORT", "8001"))
+        mcp.run(transport="sse", host=host, port=port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

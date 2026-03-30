@@ -1,8 +1,8 @@
 """
 Tests unitaires pour le module monitoring/tracker.
-Teste get_history, save_exchange et track.
+Teste get_history, save_exchange et track avec le schéma conversations/messages.
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 
 # ===== TESTS POUR get_history =====
@@ -11,41 +11,46 @@ from unittest.mock import patch, MagicMock
 def test_get_history_sans_client(mock_client):
     """Sans client Supabase, retourne une liste vide sans erreur."""
     from src.monitoring.tracker import get_history
-
-    resultat = get_history("session-abc")
-
-    assert resultat == []
+    assert get_history("session-abc") == []
 
 
 def test_get_history_session_vide():
     """Avec un session_id vide, retourne une liste vide sans appel Supabase."""
     from src.monitoring.tracker import get_history
-
-    resultat = get_history("")
-
-    assert resultat == []
+    assert get_history("") == []
 
 
 @patch('src.monitoring.tracker._get_client')
 def test_get_history_retourne_echanges(mock_get_client):
-    """Retourne les echanges dans l'ordre chronologique (inverses depuis Supabase)."""
+    """Retourne les paires {question, answer} dans l'ordre chronologique."""
     from src.monitoring.tracker import get_history
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
 
-    echanges_supabase = [
-        {"question": "Deuxieme question", "answer": "Deuxieme reponse"},
-        {"question": "Premiere question", "answer": "Premiere reponse"},
+    # Premier appel : conversations → retourne l'id
+    conv_result = MagicMock()
+    conv_result.data = [{"id": 42}]
+
+    # Deuxième appel : messages → retourne les messages (desc, puis reversed dans le code)
+    messages_result = MagicMock()
+    messages_result.data = [
+        {"role": "assistant", "content": "Deuxieme reponse"},
+        {"role": "user",      "content": "Deuxieme question"},
+        {"role": "assistant", "content": "Premiere reponse"},
+        {"role": "user",      "content": "Premiere question"},
     ]
-    mock_client.table.return_value.select.return_value \
-        .eq.return_value.order.return_value \
-        .limit.return_value.execute.return_value.data = echanges_supabase
+
+    # On chaîne les mocks selon l'ordre d'appel
+    table_mock = mock_client.table.return_value
+    table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value = conv_result
+    table_mock.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = messages_result
 
     resultat = get_history("session-abc")
 
     assert len(resultat) == 2
     assert resultat[0]["question"] == "Premiere question"
+    assert resultat[0]["answer"] == "Premiere reponse"
     assert resultat[1]["question"] == "Deuxieme question"
 
 
@@ -58,9 +63,7 @@ def test_get_history_erreur_supabase(mock_get_client):
     mock_get_client.return_value = mock_client
     mock_client.table.side_effect = Exception("Connexion refusee")
 
-    resultat = get_history("session-abc")
-
-    assert resultat == []
+    assert get_history("session-abc") == []
 
 
 # ===== TESTS POUR save_exchange =====
@@ -69,32 +72,56 @@ def test_get_history_erreur_supabase(mock_get_client):
 def test_save_exchange_sans_client(mock_client):
     """Sans client Supabase, ne leve pas d'exception."""
     from src.monitoring.tracker import save_exchange
-
-    save_exchange("session-abc", "Question", "Reponse")  # ne doit pas crasher
+    save_exchange("session-abc", "Question", "Reponse")
 
 
 def test_save_exchange_session_vide():
     """Avec un session_id vide, n'insere rien."""
     from src.monitoring.tracker import save_exchange
-
-    save_exchange("", "Question", "Reponse")  # ne doit pas crasher
+    save_exchange("", "Question", "Reponse")
 
 
 @patch('src.monitoring.tracker._get_client')
 def test_save_exchange_insere_correctement(mock_get_client):
-    """Insere l'echange avec les bons champs dans Supabase."""
+    """Insere 2 messages (user + assistant) dans la table messages."""
     from src.monitoring.tracker import save_exchange
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
 
-    save_exchange("session-abc", "Qui est Lucas ?", "Lucas est un guerrier.")
+    # Mock _get_or_create_conversation : conversations.select → pas de résultat → insert
+    conv_select = MagicMock()
+    conv_select.data = []  # conversation n'existe pas encore
+    conv_insert = MagicMock()
+    conv_insert.data = [{"id": 99}]
 
-    mock_client.table.assert_called_once_with("conversations")
-    insert_data = mock_client.table.return_value.insert.call_args[0][0]
-    assert insert_data["session_id"] == "session-abc"
-    assert insert_data["question"] == "Qui est Lucas ?"
-    assert insert_data["answer"] == "Lucas est un guerrier."
+    # On doit gérer les deux appels successifs à table("conversations")
+    conversations_table = MagicMock()
+    conversations_table.select.return_value.eq.return_value.limit.return_value.execute.return_value = conv_select
+    conversations_table.insert.return_value.execute.return_value = conv_insert
+
+    messages_table = MagicMock()
+    messages_table.insert.return_value.execute.return_value = MagicMock()
+
+    def table_router(name):
+        if name == "conversations":
+            return conversations_table
+        if name == "messages":
+            return messages_table
+        return MagicMock()
+
+    mock_client.table.side_effect = table_router
+
+    save_exchange("session-abc", "Qui est Lucas ?", "Lucas est un guerrier.", "user-1")
+
+    # Vérifie que 2 messages ont été insérés
+    insert_call = messages_table.insert.call_args[0][0]
+    assert len(insert_call) == 2
+    assert insert_call[0]["role"] == "user"
+    assert insert_call[0]["content"] == "Qui est Lucas ?"
+    assert insert_call[1]["role"] == "assistant"
+    assert insert_call[1]["content"] == "Lucas est un guerrier."
+    assert insert_call[0]["conversation_id"] == 99
 
 
 # ===== TESTS POUR track =====
@@ -103,8 +130,7 @@ def test_save_exchange_insere_correctement(mock_get_client):
 def test_track_sans_client(mock_client):
     """Sans client Supabase, ne leve pas d'exception."""
     from src.monitoring.tracker import track
-
-    track("question", detail="Test", latency_ms=500)  # ne doit pas crasher
+    track("question", detail="Test", latency_ms=500)
 
 
 @patch('src.monitoring.tracker._get_client')
