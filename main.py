@@ -1,6 +1,7 @@
 """Oracle LoreKeeper — Point d'entrée FastAPI."""
 import os
 import logging
+import threading
 from collections import deque
 from contextlib import asynccontextmanager
 
@@ -47,7 +48,8 @@ from src.ingestion.run import index_data
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    index_data(force_reindex=False)
+    # Indexation en arrière-plan → le serveur répond aux health checks immédiatement
+    threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
     yield
 
 
