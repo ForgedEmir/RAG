@@ -44,10 +44,12 @@ def _get_embeddings() -> HuggingFaceEmbeddings:
 def _get_client() -> QdrantClient:
     global _client
     if _client is None:
-        if _QDRANT_URL and _QDRANT_API_KEY:
-            _client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
+        if _QDRANT_URL:
+            _client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY or None)
+            logger.info(f"Qdrant connecté : {_QDRANT_URL}")
         else:
             _client = QdrantClient(path=_DB_PATH)
+            logger.info("Qdrant local (mode développement)")
     return _client
 
 
@@ -75,8 +77,8 @@ def get_store(force_reindex: bool = False) -> QdrantVectorStore:
     if force_reindex:
         _client = None
         _collection_ready = False
-        if _QDRANT_URL and _QDRANT_API_KEY:
-            temp = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
+        if _QDRANT_URL:
+            temp = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY or None)
             try:
                 temp.delete_collection(_COLLECTION_NAME)
                 logger.info("Collection réinitialisée (cloud).")
