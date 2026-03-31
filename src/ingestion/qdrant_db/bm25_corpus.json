@@ -1,0 +1,162 @@
+[
+ {
+  "id": "pnj.csv_0",
+  "text": "NPC_ID Dialogue_ID Text_Raw Condition CHAR_001 DIAL_ALA_01 Bienvenue dans ma Capitale, le joueur. Mais méfie-toi des traîtres elfiques. Faction: Royaume CHAR_001 DIAL_ALA_02 Ils nous ont abandonnés lors de la Nuit des Larmes. Je n'oublierai jamais. Quest_Active: Nuit_des_Larmes CHAR_002 DIAL_ELA_01 Les humains ne sont pas les bienvenus dans la Clairière d'Argent, le joueur. Faction: Elfes CHAR_002 DIAL_ELA_02 Nous avons dû préserver nos forces pour le Vide. Alaric ne comprend pas. Quest_Active: Conflit_Actuel CHAR_003 DIAL_GRD_01 Les ombres murmurent... La magie devient instable. Level >= 70 CHAR_003 DIAL_GRD_02 Je ne suis ni ami, ni ennemi. Je suis l'observateur. Faction: Confrérie du Vide",
+  "fichier": "pnj.csv"
+ },
+ {
+  "id": "épée.txt_0",
+  "text": "Flamme-Âme — L'Épée d'Lucas le Tranchant\n\nDescription générale Flamme-Âme est une épée longue unique en son genre, forgée dans un alliage de métal rouge et noir dont les origines restent inconnues des forgerons du Royaume. Ses veines internes abritent des boules de feu vivantes, visibles à travers la lame translucide qui pulse d'une lueur orangée en permanence. La chaleur qu'elle dégage est suffisante pour faire fondre une armure standard en moins d'une minute de contact prolongé.\n\nHistoire et origine L'épée a été forgée par le maître forgeron Caldren lors de la troisième année du règne d'Alaric, sur commande expresse du Roi après les exploits d'Lucas lors de la Nuit des Larmes. Caldren aurait passé trois années entières à la perfectionner, utilisant des cristaux de lave des Terres Oubliées pour capturer les flammes à l'intérieur de la lame. Il mourut avant d'avoir pu révéler le secret de sa fabrication, rendant l'arme irremplaçable et unique au monde.",
+  "fichier": "épée.txt"
+ },
+ {
+  "id": "épée.txt_1",
+  "text": "Propriétés magiques - Frappe létale : En combat singulier, la chaleur accumulée dans la lame atteint un pic permettant de percer n'importe quelle défense en un seul coup précis. - Résistance au Vide : La magie de feu contenue dans l'épée repousse naturellement les entités ombreuses liées à la Confrérie du Vide et au Gardien du Vide. - Lien de sang : Seul Lucas peut la manier sans subir de brûlures graves. Quiconque tente de s'en emparer voit sa peau noircir au contact de la poignée.\n\nStatut dans le lore L'épée est répertoriée au Grand Temple de la Lumière sous le registre des Armes Légendaires, entrée numéro 47. Elle figure également dans le Sceptre du Commandement du Roi Alaric comme preuve de la grandeur du Royaume. La Confrérie du Vide cherche activement à la détruire ou à la capturer, estimant qu'elle est l'une des rares armes capables de menacer leur Gardien.\n\nLien avec la quête principale Des prophéties retrouvées dans les ruines des Terres Oubliées suggèrent que Flamme-Âme et l'Épée de Vorpal sont les deux faces d'une même arme originelle, séparées il y a des millénaires. Les réunir pourrait ouvrir un portail vers le cœur du Vide — ou déclencher une catastrophe.",
+  "fichier": "épée.txt"
+ },
+ {
+  "id": "lieux.md_0",
+  "text": "Les Lieux Importants d'Aethelgard Online\n\nLa Capitale Royale\n\nLa Capitale Royale est le centre politique et économique du Royaume d'Aethelgard. Située au cœur des Terres du Nord, c'est une cité fortifiée entourée de hautes murailles de pierre. La ville abrite le Palais Royal où réside le Roi Alaric, ainsi que le Grand Temple de la Lumière. Les rues pavées sont animées par des marchands, des aventuriers et des soldats royaux. La place centrale, appelée la Place de la Couronne, est le lieu des annonces officielles et des exécutions publiques. Sous la ville se trouve un réseau de catacombes interdites où se cachent des cultistes du Vide.\n\nLa Clairière d'Argent\n\nTerritoire secret des Elfes de la Lune, caché dans les profondeurs de la Forêt Éternelle. Accessible uniquement par des portails magiques ou en suivant des sentiers invisibles, c'est ici que Lady Elara dirige son peuple. La clairière brille d'une lumière argentée grâce aux cristaux lunaires qui parsèment le sol. Au centre se trouve le Grand Arbre de Lune, une entité vivante qui canalise la magie lunaire. Les visiteurs humains sont rares et souvent mal accueillis.\n\nLes Terres Oubliées",
+  "fichier": "lieux.md"
+ },
+ {
+  "id": "lieux.md_1",
+  "text": "Les Terres Oubliées\n\nRégion dangereuse et méconnue située à l'est des frontières connues. C'est un désert de pierres noires et de canyons profonds où le temps semble distordu. C'est dans ces terres que Vorpal le Perdu a disparu il y a des siècles. Les rares explorateurs qui y sont retournés rapportent des histoires de créatures aux formes changeantes et de portails vers d'autres dimensions. On dit que l'Épée de Vorpal est cachée quelque part dans ces terres maudites.\n\nLa Forteresse de l'Ombre\n\nBase principale de la Confrérie du Vide, construite dans une montagne creuse à la frontière entre les Terres du Nord et les Terres Oubliées. La forteresse est entourée d'un champ de force qui la rend invisible aux yeux non avertis. À l'intérieur, les membres de la Confrérie étudient les arts interdits et forgent des armes ombreuses. Le Gardien du Vide réside dans une tour centrale où il médite sur les mystères de l'univers.\n\nLe Grand Temple de la Lumière",
+  "fichier": "lieux.md"
+ },
+ {
+  "id": "lieux.md_2",
+  "text": "Le Grand Temple de la Lumière\n\nTemple sacré situé au cœur de la Capitale Royale, dédié à la déesse Aethel. C'est ici que les nouveaux joueurs reçoivent leurs premières bénédictions et leurs premières quêtes. Le temple abrite des autels dédiés à chaque dieu du panthéon, ainsi qu'une bibliothèque contenant des milliers de livres anciens. Les prêtres du temple sont les seuls à pouvoir bénir les armes avec la puissance divine.\n\nLa Forêt Éternelle\n\nForêt primaire qui s'étend sur des centaines de kilomètres à l'ouest. C'est le territoire ancestral des Elfes de la Lune. La forêt est enchantée : les arbres bougent, les sentiers changent et des esprits forestiers rôdent. Seuls les Elfes et ceux qui ont leur confiance peuvent s'y aventurer sans danger. Au cœur de la forêt se trouve le Cœur d'Argent, une source magique qui alimente toute la magie lunaire de la région.\n\nLes Cavernes de Cristal",
+  "fichier": "lieux.md"
+ },
+ {
+  "id": "lieux.md_3",
+  "text": "Les Cavernes de Cristal\n\nSystème de grottes souterraines sous les Montagnes de Lune Noire. Les parois sont couvertes de cristaux qui brillent dans l'obscurité, émettant une lumière bleutée. Ces cavernes abritent des créatures cristallines et des minerais précieux. C'est aussi ici que se trouve l'entrée du Temple Souterrain de Vorpal, un lieu sacré pour ceux qui cherchent l'Épée de Vorpal.\n\nLe Port de Lune Noire\n\nPort commercial situé sur la côte ouest, contrôlé par la Guilde des Marchands. C'est le point de départ des expéditions vers les Terres Oubliées. Le port est animé par des marins, des pirates et des marchands venus de tous les coins du monde. On y trouve des tavernes réputées où les aventuriers échangent des histoires et des rumeurs. Le port est aussi le lieu où les joueurs peuvent acheter des navires pour explorer les mers.",
+  "fichier": "lieux.md"
+ },
+ {
+  "id": "factions.md_0",
+  "text": "Les Factions et Groupes d'Aethelgard\n\nLe Royaume d'Aethelgard\n\nC'est la faction humaine principale, contrôlée par le Roi Alaric. Elle possède les plus grandes villes et les routes commerciales les plus sûres. Rejoindre cette faction offre des avantages en défense et en commerce. Cependant, leur réputation auprès des Elfes de la Lune est négative. Les gardes du royaume attaqueront les joueurs ayant une réputation trop élevée chez les Elfes. C'est la faction de départ pour la majorité des nouveaux joueurs.\n\nLes Elfes de la Lune\n\nUne faction elfique mystique, ils contrôlent la magie arcane et les ressources lunaires. Leur conflit avec le Roi Alaric est un point central du lore depuis l'événement de 2016. Ils offrent des quêtes centrées sur la furtivité et la magie. Pour les rejoindre, un joueur doit souvent trahir une quête mineure du Royaume, ce qui verrouille certaines options diplomatiques avec le Roi.\n\nLa Confrérie du Vide",
+  "fichier": "factions.md"
+ },
+ {
+  "id": "factions.md_1",
+  "text": "La Confrérie du Vide\n\nFaction introduite avec l'extension \"Shadows of the Void\". Ils vénèrent les entités des ombres. Ils sont neutres dans le conflit entre Alaric et les Elfes, mais cherchent à exploiter la faiblesse des deux camps. Leurs quêtes sont considérées comme les plus difficiles du jeu actuel. Ils possèdent des artisans capables de forger des équipements ombreux uniques.\n\nLes 12 Factions Mineures\n\nAu cours des 10 ans d'histoire du jeu, 12 autres factions mineures ont été ajoutées. Cela inclut la Guilde des Marchands, l'Ordre des Paladins, et les Pirates des Mers du Sud. Chaque faction a sa propre réputation. Le système de réputation est complexe : aider une faction peut en offenser une autre.",
+  "fichier": "factions.md"
+ },
+ {
+  "id": "timeline.md_0",
+  "text": "Chronologie Complète d'Aethelgard Online\n\nÈre des Origines (-5000 à -1000)\n\n5000 : Création du monde par les dieux primordiaux. La déesse Aethel donne vie à la première civilisation. -3000 : Les Elfes de la Lune s'installent dans la Forêt Éternelle et développent la magie lunaire. -1500 : Les humains fondent les premiers royaumes dans les Terres du Nord. -1000 : Signature du Pacte Ancien entre les humains et les Elfes de la Lune, établissant une paix fragile.\n\nL'Âge des Héros (-1000 à 0)\n\n800 : Vorpal le Perdu, un héros légendaire, entreprend une expédition dans les Terres Oubliées. -750 : Vorpal disparaît mystérieusement avec son épée légendaire. -500 : Construction du Grand Temple de la Lumière dans la Capitale Royale. -300 : Fondation de la Guilde des Marchands et du Port de Lune Noire. -100 : Premières tensions entre le Royaume et les Elfes de la Lune à cause de différends territoriaux.\n\nL'Ère Moderne (0 à 10 ans)",
+  "fichier": "timeline.md"
+ },
+ {
+  "id": "timeline.md_1",
+  "text": "L'Ère Moderne (0 à 10 ans)\n\n0 : Lancement officiel du jeu Aethelgard Online. Le Roi Alaric est couronné. 1 : Première extension \"Les Terres Sauvages\" ajoute de nouvelles zones et créatures. 2 : Introduction du système de métiers et de craft. 3 : Deuxième extension \"Les Profondeurs\" révèle les Cavernes de Cristal. 4 : Troisième extension \"Les Cieux Étoilés\" introduit la magie céleste. 5 : Quatrième extension \"Les Abysses\" ajoute les Pirates des Mers du Sud. 6 : Cinquième extension \"Les Forges Célestes\" introduit le craft légendaire. 7 : Sixième extension \"Les Ombres Vivantes\" révèle la Confrérie du Vide. 8 : Septième extension \"Les Lames Légendaires\" introduit l'Épée de Vorpal. 9 : Huitième extension \"Les Marées de Lune\" approfondit le lore des Elfes de la Lune. 10 : Neuvième extension \"Les Terres Oubliées\" ouvre les Terres Oubliées au public.\n\nLes Événements Clés",
+  "fichier": "timeline.md"
+ },
+ {
+  "id": "timeline.md_2",
+  "text": "Les Événements Clés\n\n2016 (Année 2 du jeu) : La Nuit des Larmes - Refus d'aide des Elfes, début du conflit. 2018 (Année 4) : Découverte de l'Épée de Vorpal - Quête légendaire épique. 2020 (Année 6) : Rébellion des Pirates - Conflit maritime majeur. 2022 (Année 8) : Apparition du Gardien du Vide - Nouveau personnage mystérieux. 2024 (Année 10) : Mise à jour des 10 Ans - Ouverture des Terres Oubliées, magie instable.\n\nLe Conflit Actuel (Année 10)\n\nLes tensions entre le Royaume et les Elfes atteignent un point de non-retour.\n\nLa Confrérie du Vide manipule les deux camps pour ses propres objectifs.\n\nLe Gardien du Vide observe silencieusement, son rôle encore incertain.\n\nLes créatures cristallines envahissent progressivement les terres.\n\nLes joueurs doivent choisir leur camp et participer à la Guerre des Ombres.\n\nUne bataille finale approche qui déterminera l'avenir d'Aethelgard.",
+  "fichier": "timeline.md"
+ },
+ {
+  "id": "emir.txt_0",
+  "text": "Emir fait 1m75 et a 20 ans il cherche a finir son projet RAG",
+  "fichier": "emir.txt"
+ },
+ {
+  "id": "artefacts.txt_0",
+  "text": "Les Artefacts Légendaires d'Aethelgard Online\n\nL'Épée de Vorpal : L'arme la plus légendaire d'Aethelgard, autrefois portée par Vorpal le Perdu. Cette épée à deux mains est forgée dans un métal inconnu qui semble absorber la lumière. Elle possède la capacité unique de trancher à travers n'importe quelle matière, mais son pouvoir corrompt l'esprit de son porteur s'il n'est pas assez fort mentalement. L'épée a été perdue lorsque Vorpal a disparu dans les Terres Oubliées. Pour la récupérer, les joueurs doivent compléter la quête légendaire \"La Quête de Vorpal\", qui nécessite de rassembler 7 fragments de l'âme de Vorpal dispersés dans tout Aethelgard. Chaque fragment est gardé par un boss puissant dans des donjons de niveau 50+.",
+  "fichier": "artefacts.txt"
+ },
+ {
+  "id": "artefacts.txt_1",
+  "text": "Le Sceptre du Roi Alaric : Symbole du pouvoir royal, ce sceptre est passé de main en main depuis la fondation du Royaume. Il est incrusté de pierres précieuses qui brillent d'une lueur dorée. Le sceptre amplifie les capacités de commandement de son porteur, lui permettant de rallier les troupes plus efficacement en bataille. Il est dit que le sceptre contient un fragment de l'âme du premier roi d'Aethelgard. Seul le souverain légitime peut le manier sans subir de dommages. Les joueurs peuvent l'obtenir en accomplissant la quête \"L'Héritier du Trône\" après avoir atteint la réputation Exaltée avec le Royaume.\n\nLe Cristal de Lune : Un artefact sacré des Elfes de la Lune, créé à partir de la lumière de la pleine lune. Il permet de canaliser la magie lunaire avec une précision accrue. Lady Elara en possède un, et il est dit qu'il est la source de son pouvoir. Les joueurs Elfes peuvent obtenir une version moins puissante en accomplissant la quête \"Bénédiction Lunaire\" après avoir atteint la réputation Honored avec le Cercle de la Lune.",
+  "fichier": "artefacts.txt"
+ },
+ {
+  "id": "artefacts.txt_2",
+  "text": "L'Armure du Gardien du Vide : L'ensemble d'armure porté par le Gardien du Vide, faite d'ombres solidifiées. Elle offre une protection contre les dégâts physiques et magiques, mais corrompt lentement l'esprit de celui qui la porte. L'armure est fragmentée en plusieurs parties dispersées dans les Terres Oubliées. Rassembler toutes les pièces permet de créer une réplique jouable, mais seulement les joueurs ayant atteint le niveau 70 et la réputation Exaltée avec la Confrérie du Vide peuvent tenter de l'obtenir.\n\nLe Livre des Ombres : Un grimoire ancien contenant des sorts interdits et des rituels dangereux. Il est le livre sacré de la Confrérie du Vide. On dit qu'il contient la clé pour comprendre la magie instable qui affecte Aethelgard. Le livre est gardé dans la Forteresse de l'Ombre et ne peut être consulté que par les membres les plus fidèles de la Confrérie. Les joueurs peuvent obtenir des pages déchirées en accomplissant des quêtes secrètes, mais le livre complet est inaccessible aux non-initiés.",
+  "fichier": "artefacts.txt"
+ },
+ {
+  "id": "artefacts.txt_3",
+  "text": "Le Cœur d'Argent : Source magique située au cœur de la Forêt Éternelle, alimentant toute la magie lunaire des Elfes de la Lune. C'est un cristal géant qui pulse d'une lumière argentée. Il est protégé par des gardiens spirituels et ne peut être approché que par les Elfes de la Lune de haut rang ou ceux qui ont prouvé leur valeur. Détruire le Cœur d'Argent affaiblirait considérablement la magie des Elfes, mais cela pourrait aussi détruire la Forêt Éternelle.\n\nLe Journal de Vorpal : Le journal personnel de Vorpal le Perdu, trouvé dans les ruines de son campement dans les Terres Oubliées. Il contient des indices sur l'emplacement de l'Épée de Vorpal et des révélations sur les dangers des Terres Oubliées. Le journal est un objet de quête rare qui se drop dans les donjons de niveau 50+. Lire le journal permet aux joueurs de débloquer des quêtes secrètes liées à Vorpal.",
+  "fichier": "artefacts.txt"
+ },
+ {
+  "id": "items.json_0",
+  "text": "Item_ID: 20401 Name: Sceptre du Commandement Type: Objet_Royauté Description: Or massif veiné d'électrum. À la main du Roi Alaric, il ne s'agit pas seulement d'un symbole de pouvoir, mais d'une pulsation magique qui vibre de haine envers les 'étrangers'. et aussi montre la possession de l'épée de Lucas Source: Palais Royal - Coffre Roi Tags: Lore --- Arme_Royale --- Humeur:Agressive --- Recipe_Unlock: False Rarity: Légendaire --- Item_ID: 10204 Name: Épée de Vorpal Type: Arme_De_Légende Description: Un métal noir dur comme l'acier, tombé des cieux des Terres Oubliées. Il murmure de noms oubliés. Sa poignée est en os de dragon oublié. Source: Temple Souterrain de Vorpal - Drop Rare Lore_Context: Appartenue à Vorpal le Perdu, disparu en -750. Elle est considérée maudite ou bénie selon les quêteurs. Tags: Quest_Item --- Terres_Oubliées --- Lore_Complice --- Rarity: Unique --- Item_ID: 55501 Name: Critère de Lune d'Elara Type: Accessoire_Magie Description: Un cristal incandescent qui change de couleur selon l'humeur de l'usage. Les elfes l'utilisent pour contrôler les marées des tunnels cachés",
+  "fichier": "items.json"
+ },
+ {
+  "id": "items.json_1",
+  "text": ". Les elfes l'utilisent pour contrôler les marées des tunnels cachés. Source: Clairière d'Argent - Coffre Elara Tags: Lore --- Elfe --- Magie_Lunaire --- Rarity: Épique --- Item_ID: 80120 Name: Clé des Ombres Type: Clé_Ruine Description: Une plaque de métal noir froid. Lorsqu'on la touche, on ressent une présence observer. Permet d'ouvrir les coffres de la Forteresse de l'Ombre. Source: Confrérie du Vide - Quête \"Les Ombres Savent\" Tags: Lore --- Shadows_of_Void --- Négatif --- Rarity: Rareté_Mortelle --- Item_ID: 40200 Name: Potion de Mana (Standard) Type: Consommable Description: Une liqueur bleue rafraîchissante. Échelle de puissance +10. Stat_Int: +10 Rarity: Commune ---",
+  "fichier": "items.json"
+ },
+ {
+  "id": "personnages.md_0",
+  "text": "Personnages Principaux d'Aethelgard Online\n\nLe Roi Alaric\n\nAlaric est le souverain incontesté du Royaume Humain d'Aethelgard depuis le lancement du jeu il y a 10 ans. Bien qu'il soit initialement apparu comme un dirigeant bienveillant lors de la sortie originale, sa personnalité a évolué au fil des extensions. Il est connu pour sa méfiance accrue envers les races non-humaines. Sa relation avec les Elfes de la Lune est particulièrement tendue, une hostilité qui trouve sa racine dans les événements tragiques de 2016. Alaric porte l'armure royale dorée et manie le sceptre de commandement. Les joueurs le rencontrent souvent dans la Capitale Royale pour des quêtes de haut niveau.\n\nLady Elara, Chef des Elfes de la Lune\n\nElara est la dirigeante spirituelle et politique des Elfes de la Lune. Elle réside dans la Clairière d'Argent, cachée aux yeux des humains. Autrefois alliée du Roi Alaric, elle est devenue son opposante numéro un après l'incident de 2016. Elle possède des pouvoirs de magie lunaire capables de manipuler les marées et les esprits. Les joueurs qui choisissent la faction elfique doivent souvent accomplir des missions pour elle afin de contrer les décrets du Roi.",
+  "fichier": "personnages.md"
+ },
+ {
+  "id": "personnages.md_1",
+  "text": "Le Gardien du Vide\n\nNouveau personnage introduit avec l'extension \"Shadows of the Void\". C'est une entité mystérieuse qui semble provenir d'une dimension parallèle. On ne sait pas encore s'il est un ami ou un ennemi pour le Roi Alaric. Il porte une armure noire faite d'ombres solidifiées. Les rumeurs disent qu'il détient la clé pour comprendre pourquoi la magie devient instable dans le jeu depuis la mise à jour des 10 ans.\n\nVorpal le Perdu\n\nBien que ce ne soit pas un PNJ vivant, Vorpal est un héros légendaire mentionné dans de nombreux livres du jeu. C'est l'ancien propriétaire de l'Épée de Vorpal. Son histoire est tragique : il a disparu lors d'une expédition dans les Terres Oubliées. Les joueurs cherchent souvent sa tombe pour obtenir des indices sur l'emplacement de son arme légendaire. Son journal de bord est un objet de quête rare qui se drop dans les donjons de niveau 50.",
+  "fichier": "personnages.md"
+ },
+ {
+  "id": "evenements.md_0",
+  "text": "Les Événements Majeurs d'Aethelgard Online\n\nL'Événement de 2016 : La Nuit des Larmes\n\nCet événement tragique a profondément changé la relation entre le Roi Alaric et les Elfes de la Lune. Lors d'une nuit de pleine lune, une horde de démons a attaqué la Capitale Royale. Le Roi Alaric, blessé, a demandé l'aide des Elfes de la Lune conformément au Pacte Ancien. Lady Elara, croyant que les Elfes devaient préserver leurs forces pour une menace plus grande (le Vide), a refusé d'intervenir. En conséquence, la Capitale a été presque détruite et des milliers de civils ont péri. Depuis ce jour, le Roi voue une haine farouche aux Elfes et a déclaré la guerre à leur faction. Les joueurs qui participent à cet événement reçoivent le titre \"Survivant de la Nuit des Larmes\".\n\nLa Découverte de l'Épée de Vorpal (2018)",
+  "fichier": "evenements.md"
+ },
+ {
+  "id": "evenements.md_1",
+  "text": "La Découverte de l'Épée de Vorpal (2018)\n\nLors de l'extension \"Lames Légendaires\", les joueurs ont découvert que l'Épée de Vorpal, une arme mythique, était cachée quelque part dans les Terres Oubliées. Une quête épique a été lancée, nécessitant aux joueurs de rassembler des indices dispersés à travers tout Aethelgard. L'épée a finalement été trouvée dans le Temple Souterrain de Vorpal, mais son pouvoir a corrompu temporairement celui qui l'a brandie. L'événement a introduit le système de quêtes légendaires et a augmenté le niveau maximum à 60.\n\nL'Apparition du Gardien du Vide (2022)\n\nAvec l'extension \"Ombres et Ténèbres\", un nouveau personnage mystérieux est apparu : le Gardien du Vide. Cette entité, vêtue d'une armure noire, semble observer silencieusement les conflits entre le Royaume et les Elfes. Personne ne sait s'il est un allié ou un ennemi. Certains pensent qu'il est lié à la magie instable qui affecte le jeu depuis la mise à jour des 10 ans. Le Gardien du Vide donne des quêtes secrètes aux joueurs qui atteignent le niveau 70.\n\nLa Rébellion des Pirates (2023)",
+  "fichier": "evenements.md"
+ },
+ {
+  "id": "evenements.md_2",
+  "text": "La Rébellion des Pirates (2023)\n\nLes Pirates des Mers du Sud, une faction mineure longtemps ignorée, ont lancé une rébellion contre le Royaume après que le Roi Alaric a augmenté les taxes maritimes. Ils ont pris le contrôle de plusieurs ports et attaquent maintenant les navires marchands. Les joueurs peuvent choisir de soutenir les pirates pour obtenir des récompenses uniques ou de défendre le Royaume pour gagner la faveur d'Alaric. Cet événement a introduit le système de réputation avec les factions mineures.\n\nL'Invasion des Créatures Cristallines (2024)\n\nRécemment, des créatures faites de cristal vivant ont émergé des Cavernes de Cristal et attaquent les villages environnants. Ces créatures semblent être contrôlées par une entité inconnue et laissent derrière elles des cristaux magiques instables. Les Elfes de la Lune affirment que c'est une punition divine pour la trahison du Roi, alors que le Royaume pense que c'est une nouvelle arme des Elfes. Les joueurs doivent enquêter sur cette menace dans une nouvelle série de quêtes.\n\nLa Mise à Jour des 10 Ans (2024)",
+  "fichier": "evenements.md"
+ },
+ {
+  "id": "evenements.md_3",
+  "text": "La Mise à Jour des 10 Ans (2024)\n\nPour célébrer le 10ème anniversaire du jeu, une mise à jour majeure a été déployée. Elle inclut : - Un nouveau continent : les Terres Oubliées sont maintenant accessibles - Un nouveau système de magie instable qui affecte aléatoirement les sorts - Des quêtes spéciales pour les vétérans qui revisitent des lieux emblématiques - La possibilité de recruter des PNJ légendaires comme compagnons - Un événement mondial où tous les joueurs doivent coopérer pour empêcher la destruction d'Aethelgard par le Vide\n\nLe Conflit Actuel : La Guerre des Ombres\n\nDepuis la mise à jour des 10 ans, une guerre ouverte fait rage entre le Royaume d'Alaric et les Elfes de la Lune. La Confrérie du Vide manipule les deux camps pour servir ses propres fins. Les joueurs doivent choisir leur camp et participer à des batailles épiques. L'issue de cette guerre déterminera l'avenir d'Aethelgard. Les développeurs ont annoncé que l'événement culminera dans une bataille finale qui changera le visage du jeu à jamais.",
+  "fichier": "evenements.md"
+ },
+ {
+  "id": "Ediz.txt_0",
+  "text": "Ediz est une petit bonhomme 1M73 on sais pas grand chose sur lui",
+  "fichier": "Ediz.txt"
+ },
+ {
+  "id": "test_donjon.xml_0",
+  "text": "La Crypte d'Lucas\n\nSous les fondations de la Capitale Royale, accessible depuis les catacombes interdites par une porte scellée avec le sang d'un Chevalier de la Flamme.\n\nLa Crypte d'Lucas est un donjon souterrain d'une dizaine de salles creusées dans la roche noire des Terres du Nord. Construite à l'origine comme sépulture royale à l'époque des Premières Guerres, elle fut progressivement abandonnée puis réinvestie par des entités ombreuses après la Nuit des Larmes.\n\nLes murs sont couverts de runes gravées dans une langue morte que seuls les prêtres du Grand Temple peuvent déchiffrer partiellement. Une chaleur oppressante règne dans les couloirs inférieurs, source inconnue mais liée, selon certains érudits, à la présence passée de Flamme-Âme dans ces lieux.\n\nLe Roi Squelette qui y règne est décrit dans les archives du Temple comme étant l'âme d'un général royal corrompu par le Vide lors d'une tentative d'exorcisme ratée en l'an 6 du règne d'Alaric.",
+  "fichier": "test_donjon.xml"
+ },
+ {
+  "id": "test_donjon.xml_1",
+  "text": "Le Roi Squelette qui y règne est décrit dans les archives du Temple comme étant l'âme d'un général royal corrompu par le Vide lors d'une tentative d'exorcisme ratée en l'an 6 du règne d'Alaric.\n\nDes tablettes trouvées à l'entrée de la crypte mentionnent qu'Lucas lui-même a exploré ces couloirs après la Nuit des Larmes, à la recherche de survivors. Il n'a jamais parlé de ce qu'il y a trouvé. La crypte fut scellée sur son ordre direct, avec l'approbation discrète du Roi.\n\nChauve-souris géante des abysses\n\nCréature aveugle aux ailes membraneuses de deux mètres d'envergure. Sensible au bruit, elle attaque en meute. Résistante à la magie lunaire, vulnérable au feu.\n\nMembrane d'abysses, Croc venimeux\n\nGargouille gardienne de pierre-ombre\n\nStatue animée par la magie du Vide. Protège les couloirs menant au trône du Roi Squelette. Ne peut être détruite que par une arme légendaire ou une bénédiction du Grand Temple.\n\nÉclat de pierre-ombre, Fragment de rune ancienne\n\nRoi Squelette — Général Maudit Vareth",
+  "fichier": "test_donjon.xml"
+ },
+ {
+  "id": "test_donjon.xml_2",
+  "text": "Éclat de pierre-ombre, Fragment de rune ancienne\n\nRoi Squelette — Général Maudit Vareth\n\nAnciennement le Général Vareth, commandant en second de l'armée d'Alaric. Corrompu par le Vide lors de l'exorcisme raté de l'an 6. Porte encore les restes de son armure royale dorée, noircie par la corruption. Il reconnaît Lucas le Tranchant et entre dans une rage incontrôlable à sa présence ou à la vue de Flamme-Âme.\n\nCouronne de Vareth le Corrompu, Parchemin des Runes Interdites, Clé de la Chambre Profonde\n\nLes Secrets de la Crypte\n\nTitre \"Briseur de Malédiction\" + 5000 XP\n\nAnneau de Vareth — augmente la résistance au Vide de 15%\n\nAccès à la Chambre Profonde et à la quête \"Les Secrets de la Crypte\"",
+  "fichier": "test_donjon.xml"
+ },
+ {
+  "id": "Lore-Lucas.txt_0",
+  "text": "Lucas le Tranchant — Héros Légendaire d'Aethelgard\n\nLucas est un guerrier d'élite au service du Royaume d'Aethelgard, reconnaissable à sa silhouette compacte d'1m30 et à sa lame ardente qui ne quitte jamais son flanc. Malgré sa stature modeste, il est universellement redouté : en combat singulier, aucun ennemi ne lui a survécu plus d'un échange de coups. Les soldats royaux l'appellent \"le Tranchant\", les Elfes de la Lune \"la Flamme Courte\", et la Confrérie du Vide a mis sa tête à prix après qu'il eut décimé trois de leurs avant-postes en une seule nuit.\n\nOrigines Né dans un village de forgerons des Terres du Nord, Lucas a appris à manier l'acier avant de savoir lire. Il rejoint l'armée royale à l'âge de quinze ans et gravit les rangs en un temps record. C'est lors de la Nuit des Larmes qu'il se révèle au monde : alors que la Capitale brûlait et que les soldats fuyaient, Lucas tint seul la Porte du Nord pendant six heures, permettant à des centaines de civils de s'échapper. Le Roi Alaric lui remit personnellement le titre de Chevalier de la Flamme.",
+  "fichier": "Lore-Lucas.txt"
+ },
+ {
+  "id": "Lore-Lucas.txt_1",
+  "text": "Équipement L'arme de prédilection d'Lucas est son épée personnelle, forgée dans un métal rouge et noir dont les veines internes contiennent des boules de feu encapsulées. L'arme est unique en son genre : personne d'autre n'a pu la manier sans se brûler les mains. Elle est décrite dans le Registre des Armes Légendaires du Grand Temple sous l'entrée \"Flamme-Âme\". En un seul coup, Lucas est capable de tuer n'importe quel ennemi, quelle que soit son armure.\n\nIl porte également une armure légère en écailles de drake, sacrifiant la protection maximale pour conserver sa mobilité et sa vitesse de frappe.\n\nPersonnalité et relations Lucas est taciturne, direct, et d'une loyauté absolue envers ses alliés. Il méprise la politique et les jeux de cour, préférant l'action à la diplomatie. Sa relation avec le Roi Alaric est de respect mutuel sans réelle affection. Avec Lady Elara, la tension est palpable : il lui reproche d'avoir refusé d'aider lors de la Nuit des Larmes, mais reconnaît en privé que sa magie est la seule capable de rivaliser avec le Vide.",
+  "fichier": "Lore-Lucas.txt"
+ },
+ {
+  "id": "Lore-Lucas.txt_2",
+  "text": "Il est en bons termes avec la Guilde des Marchands, qui lui fournit renseignements et équipement en échange de sa protection lors des convois risqués.\n\nRôle dans la Guerre des Ombres Depuis l'apparition du Gardien du Vide et la déstabilisation de la magie, Lucas est convaincu qu'une menace d'une ampleur inédite se prépare. Il cherche activement les fragments de l'âme de Vorpal, persuadé que l'Épée de Vorpal est la seule arme pouvant sceller le Vide. Les joueurs qui atteignent la réputation \"Exalté\" avec le Royaume peuvent le recruter comme compagnon et débloquer la quête secrète \"La Flamme et l'Ombre\".",
+  "fichier": "Lore-Lucas.txt"
+ }
+]

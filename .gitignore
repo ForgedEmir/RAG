@@ -9,8 +9,9 @@ __pycache__/
 # Binaires
 *.bin
 
-# Qdrant (base vectorielle locale)
+# Qdrant (base vectorielle locale) — sauf le corpus BM25 (nécessaire en prod)
 qdrant_db/
+!src/ingestion/qdrant_db/bm25_corpus.json
 
 # ChromaDB (ancien, plus utilise)
 chroma_db/
