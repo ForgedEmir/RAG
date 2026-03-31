@@ -139,7 +139,6 @@ async def ask(request: Request, body: AskBody, user_id: str = Depends(get_option
         return JSONResponse({"reponse": msg, "sources": [], "passages": [],
                              "blocked": True, "block_type": bt})
 
-    index_data(force_reindex=False)
     history         = get_history(session_id)
     user_summary    = get_user_summary(user_id)
     vector_memories = search_user_memories(user_id, question)

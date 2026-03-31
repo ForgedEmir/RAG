@@ -149,9 +149,8 @@ def _load_bm25() -> None:
     global _bm25_index, _bm25_corpus, _bm25_loaded
     path = os.path.normpath(_BM25_CORPUS_FILE)
     if not os.path.exists(path):
-        logger.warning("Corpus BM25 introuvable — vector-only.")
-        _bm25_loaded = True
-        return
+        logger.warning("Corpus BM25 introuvable — vector-only (retry au prochain appel).")
+        return  # Ne pas marquer comme chargé → retry automatique
     with open(path, "r", encoding="utf-8") as f:
         _bm25_corpus = json.load(f)
     if _bm25_corpus:
