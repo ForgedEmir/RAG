@@ -18,9 +18,10 @@ from src.security.validator import check_patterns
 logger = logging.getLogger(__name__)
 
 DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "files_metadata.json")
-BM25_CORPUS_FILE = os.path.join(os.path.dirname(__file__), "qdrant_db", "bm25_corpus.json")
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".json", ".xlsx", ".xml")
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "qdrant_db")
+MEMORY_FILE = os.path.join(_DATA_DIR, "files_metadata.json")
+BM25_CORPUS_FILE = os.path.join(_DATA_DIR, "bm25_corpus.json")
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".xlsx", ".xml", ".pdf")
 PARSER_MODE = os.getenv("PARSER", "unstructured")
 
 # LLM pour vérifier si un fichier contient bien du lore (singleton)
@@ -186,6 +187,11 @@ def index_data(force_reindex: bool = False) -> bool:
 
     if not (supprimes or nouveaux or modifies):
         logger.info("Aucun changement détecté.")
+        # Reconstruire le corpus BM25 si le fichier est absent (nouveau conteneur)
+        if not os.path.exists(BM25_CORPUS_FILE):
+            logger.info("Corpus BM25 absent — reconstruction depuis les fichiers actuels.")
+            all_docs = prepare_files_for_ai(actuels)
+            _save_bm25_corpus(all_docs)
         return False
 
     store = get_store(force_reindex=False)
