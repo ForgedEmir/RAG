@@ -1,35 +1,211 @@
 // Oracle des Archives — Script principal
 
-// ── Identité persistante de l'utilisateur ───────────────────────────────────
-// user_id : UUID généré une seule fois, survit aux nouvelles conversations
-// session_id : UUID par conversation (réinitialisé à chaque nouvelle session)
+// ── Authentification Supabase ───────────────────────────────────────────────
 
-const USER_ID_KEY = 'oracle_user_id';
+let supabaseClient = null;
+let currentUser = null;
 
-function getUserId() {
-    let id = localStorage.getItem(USER_ID_KEY);
-    if (!id) {
-        id = generateUUID();
-        localStorage.setItem(USER_ID_KEY, id);
-    }
-    return id;
+function _authModal() { return document.getElementById('authModal'); }
+function _authStatus() { return document.getElementById('authStatus'); }
+
+async function loadAuthConfig() {
+    const res = await fetch('/api/auth/config');
+    if (!res.ok) throw new Error('Configuration auth indisponible');
+    return res.json();
 }
 
-// ── Sessions (multi-conversations) ─────────────────────────────────────────
+async function getAuthToken() {
+    if (!supabaseClient) return '';
+    const { data } = await supabaseClient.auth.getSession();
+    return data?.session?.access_token || '';
+}
 
-const SESSIONS_KEY = 'oracle_sessions';
-const CURRENT_KEY  = 'oracle_current_session';
+async function authHeaders(extra = {}) {
+    const token = await getAuthToken();
+    if (token) {
+        return { ...extra, Authorization: `Bearer ${token}` };
+    }
+    const guestId = currentUser?.id || '';
+    if (guestId.startsWith('guest_')) {
+        return { ...extra, 'x-local-guest-id': guestId };
+    }
+    return extra;
+}
+
+function setAuthStateUI() {
+    const pill = document.getElementById('authPill');
+    const emailEl = document.getElementById('authUserEmail');
+    if (!pill || !emailEl) return;
+    if (!currentUser) {
+        pill.style.display = 'none';
+        _authModal().style.display = 'flex';
+        return;
+    }
+        let displayText = currentUser.email || 'Utilisateur connecté';
+        if (currentUser.id && currentUser.id.startsWith('guest_')) {
+            displayText = '👤 Invité (données locales uniquement)';
+        }
+        emailEl.textContent = displayText;
+    pill.style.display = 'flex';
+    _authModal().style.display = 'none';
+}
+
+async function initAuth() {
+    // Vérifier si l'utilisateur était en mode guest
+    const guestId = localStorage.getItem('oracleGuestId');
+    if (guestId) {
+        currentUser = { id: guestId, email: 'Invité' };
+        setAuthStateUI();
+        return; // Ne pas initialiser Supabase pour les guests
+    }
+
+    const cfg = await loadAuthConfig();
+
+    if (!cfg.supabase_url || !cfg.supabase_anon_key) {
+        throw new Error('SUPABASE_URL ou SUPABASE_ANON_KEY manquant(s) côté serveur');
+    }
+    if (!window.supabase?.createClient) {
+        throw new Error('SDK Supabase non chargé');
+    }
+
+    supabaseClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+    const { data } = await supabaseClient.auth.getSession();
+    currentUser = data?.session?.user || null;
+    setAuthStateUI();
+
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+        currentUser = session?.user || null;
+        setAuthStateUI();
+    });
+}
+
+async function loginWithEmail() {
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    _authStatus().textContent = '';
+    if (!email || !password) {
+        _authStatus().textContent = 'Email et mot de passe requis.';
+        return;
+    }
+
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    _authStatus().textContent = error ? error.message : '';
+}
+
+async function signupWithEmail() {
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    _authStatus().textContent = '';
+    if (!email || !password) {
+        _authStatus().textContent = 'Email et mot de passe requis.';
+        return;
+    }
+
+    const { error } = await supabaseClient.auth.signUp({ email, password });
+    _authStatus().textContent = error
+        ? error.message
+        : 'Compte créé. Vérifie ta boîte mail si confirmation activée.';
+}
+
+async function loginWithGithub() {
+    _authStatus().textContent = '';
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'github',
+        options: { redirectTo },
+    });
+    if (error) {
+        _authStatus().textContent = error.message;
+    }
+}
+
+async function logout() {
+    // Nettoyer le mode guest s'il existe
+    localStorage.removeItem('oracleGuestId');
+    currentUser = null;
+    setAuthStateUI();
+    
+    // Logout Supabase s'il est initialisé
+    if (supabaseClient) {
+        await supabaseClient.auth.signOut();
+    }
+}
+
+async function continueAsGuest() {
+    _authStatus().textContent = '';
+
+    // Option recommandée : vrai compte invité Supabase (JWT valide, scalable)
+    try {
+        if (!supabaseClient) {
+            const cfg = await loadAuthConfig();
+            if (cfg.supabase_url && cfg.supabase_anon_key && window.supabase?.createClient) {
+                supabaseClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+            }
+        }
+
+        if (supabaseClient?.auth?.signInAnonymously) {
+            const { data, error } = await supabaseClient.auth.signInAnonymously();
+            if (!error && data?.user) {
+                localStorage.removeItem('oracleGuestId');
+                currentUser = data.user;
+                setAuthStateUI();
+                document.getElementById('userInput').focus();
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('Anonymous auth indisponible, fallback local:', e);
+    }
+
+    // Fallback local : usage démo/local uniquement (pas recommandé pour la prod)
+    const guestId = 'guest_' + generateUUID();
+    localStorage.setItem('oracleGuestId', guestId);
+    currentUser = { id: guestId, email: 'Invité' };
+    setAuthStateUI();
+    _authStatus().textContent = 'Mode invité local actif (données locales uniquement).';
+    document.getElementById('userInput').focus();
+}
+function _sessionsKey() {
+    return `oracle_sessions_${currentUser?.id || 'guest'}`;
+}
+
+function _currentKey() {
+    return `oracle_current_session_${currentUser?.id || 'guest'}`;
+}
+
+function _historyKey(sessionId) {
+    return `oracle_history_${currentUser?.id || 'guest'}_${sessionId}`;
+}
+
+function getLocalExchanges(sessionId) {
+    try {
+        return JSON.parse(localStorage.getItem(_historyKey(sessionId)) || '[]');
+    } catch (_) {
+        return [];
+    }
+}
+
+function appendLocalExchange(sessionId, question, answer) {
+    const exchanges = getLocalExchanges(sessionId);
+    exchanges.push({ question, answer });
+    localStorage.setItem(_historyKey(sessionId), JSON.stringify(exchanges));
+}
 
 function getSessions() {
-    return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return JSON.parse(localStorage.getItem(_sessionsKey()) || '[]');
 }
 
 function saveSessions(sessions) {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(_sessionsKey(), JSON.stringify(sessions));
+}
+
+function removeSessionLocally(sessionId) {
+    const sessions = getSessions().filter(s => s.id !== sessionId);
+    saveSessions(sessions);
 }
 
 function getSessionId() {
-    let id = localStorage.getItem(CURRENT_KEY);
+    let id = localStorage.getItem(_currentKey());
     if (!id) id = startNewSession();
     return id;
 }
@@ -46,7 +222,7 @@ function startNewSession() {
     const id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
         ? crypto.randomUUID()
         : generateUUID();
-    localStorage.setItem(CURRENT_KEY, id);
+    localStorage.setItem(_currentKey(), id);
     return id;
 }
 
@@ -102,7 +278,7 @@ let isFirstMessage = true;
 
 function renderSidebar() {
     const sessions = getSessions();
-    const currentId = localStorage.getItem(CURRENT_KEY);
+    const currentId = localStorage.getItem(_currentKey());
     convList.innerHTML = '';
 
     if (sessions.length === 0) {
@@ -128,12 +304,23 @@ function renderSidebar() {
 }
 
 async function loadConversation(sessionId) {
-    localStorage.setItem(CURRENT_KEY, sessionId);
+    localStorage.setItem(_currentKey(), sessionId);
     renderSidebar();
     clearResponses();
 
     try {
-        const res = await fetch(`/api/conversations?session_id=${sessionId}`);
+        const res = await fetch(`/api/conversations?session_id=${sessionId}`, {
+            headers: await authHeaders(),
+        });
+
+        if (!res.ok) {
+            if (res.status === 403 || res.status === 404) {
+                removeSessionLocally(sessionId);
+                renderSidebar();
+            }
+            throw new Error(`HTTP ${res.status}`);
+        }
+
         const data = await res.json();
         if (data.exchanges && data.exchanges.length > 0) {
             isFirstMessage = false;
@@ -141,9 +328,24 @@ async function loadConversation(sessionId) {
                 addUserQuestion(ex.question, true);
                 addOracleResponse(ex.answer, true);
             });
+            localStorage.setItem(_historyKey(sessionId), JSON.stringify(data.exchanges));
+            sidebar.classList.remove('open');
+            userInput.focus();
+            return;
         }
     } catch (e) {
         console.error('Erreur chargement conversation:', e);
+    }
+
+    const localExchanges = getLocalExchanges(sessionId);
+    if (localExchanges.length > 0) {
+        isFirstMessage = false;
+        localExchanges.forEach(ex => {
+            addUserQuestion(ex.question, true);
+            addOracleResponse(ex.answer, true);
+        });
+    } else {
+        oracleResponses.innerHTML = WELCOME_HTML;
     }
 
     sidebar.classList.remove('open');
@@ -160,13 +362,16 @@ const WELCOME_HTML = `
     </div>`;
 
 async function deleteConversation(sessionId) {
-    await fetch(`/api/conversations?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
+    await fetch(`/api/conversations?session_id=${sessionId}`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+    }).catch(() => {});
 
     const sessions = getSessions().filter(s => s.id !== sessionId);
     saveSessions(sessions);
 
     // Si c'était la session active, on en crée une nouvelle
-    if (localStorage.getItem(CURRENT_KEY) === sessionId) {
+    if (localStorage.getItem(_currentKey()) === sessionId) {
         startNewSession();
         clearResponses();
         oracleResponses.innerHTML = WELCOME_HTML;
@@ -235,7 +440,7 @@ async function fetchAndPlayTts(text, onEnd) {
     stopCurrentAudio();
     const res = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ text }),
     });
     if (!res.ok) throw new Error('TTS indisponible');
@@ -313,8 +518,8 @@ async function consultOracle() {
     try {
         const response = await fetch('/api/ask', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, session_id: sessionId, user_id: getUserId() }),
+            headers: await authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ question, session_id: sessionId }),
         });
 
         if (!response.ok) {
@@ -334,8 +539,15 @@ async function consultOracle() {
             const data = await response.json();
             hideLoading();
             setTimeout(() => {
-                if (data.blocked) addBlockedMessage(data.reponse, data.block_type);
-                else addOracleResponse(data.reponse);
+                if (data.blocked) {
+                    addBlockedMessage(data.reponse, data.block_type);
+                } else {
+                    addOracleResponse(data.reponse);
+                    if (getSessions().find(s => s.id === sessionId) === undefined) {
+                        registerSession(sessionId, question);
+                    }
+                    appendLocalExchange(sessionId, question, data.reponse || '');
+                }
             }, 500);
             return;
         }
@@ -371,6 +583,7 @@ async function consultOracle() {
                     } else if (event.type === 'done') {
                         msgEl.innerHTML = marked.parse(fullText);
                         if (isFirstQuestion) registerSession(sessionId, question);
+                        appendLocalExchange(sessionId, question, fullText);
                         addTtsButton(msgEl);
                         if (voiceMode) { voiceMode = false; autoPlayTts(msgEl); }
                     }
@@ -429,7 +642,11 @@ async function startRecording(pushToTalk = false) {
         const form = new FormData();
         form.append('audio', blob, 'audio.webm');
         try {
-            const res  = await fetch('/api/stt', { method: 'POST', body: form });
+            const res  = await fetch('/api/stt', {
+                method: 'POST',
+                headers: await authHeaders(),
+                body: form,
+            });
             const data = await res.json();
             if (data.text?.trim()) {
                 userInput.value = data.text.trim();
@@ -484,7 +701,24 @@ async function autoPlayTts(textEl) {
 document.addEventListener('DOMContentLoaded', function() {
     checkTermsAcceptance();
     initializeTermsModal();
-    renderSidebar();
+
+    initAuth().then(() => {
+        renderSidebar();
+    }).catch((err) => {
+        console.error('Auth init error:', err);
+        _authStatus().textContent = err.message;
+        _authModal().style.display = 'flex';
+    });
+
+    document.getElementById('authLoginButton').addEventListener('click', loginWithEmail);
+    document.getElementById('authSignupButton').addEventListener('click', signupWithEmail);
+    document.getElementById('authGithubButton').addEventListener('click', loginWithGithub);
+    document.getElementById('logoutButton').addEventListener('click', logout);
+
+    document.getElementById('authGuestButton').addEventListener('click', continueAsGuest);
+    document.getElementById('authPassword').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loginWithEmail();
+    });
 
     document.getElementById('sidebarToggle').addEventListener('click', () => {
         sidebar.classList.toggle('open');

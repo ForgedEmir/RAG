@@ -76,18 +76,30 @@ def _get_or_create_conversation(client, session_id: str, user_id: str) -> Option
 
 
 def _messages_to_history(messages: list) -> list:
-    pairs, i = [], 0
-    while i < len(messages):
-        if messages[i]["role"] == "user":
-            question = messages[i]["content"]
-            answer, step = "", 1
-            if i + 1 < len(messages) and messages[i + 1]["role"] == "assistant":
-                answer, step = messages[i + 1]["content"], 2
-            if answer:
-                pairs.append({"question": question, "answer": answer})
-            i += step
-        else:
-            i += 1
+    # Supabase peut renvoyer un ordre non déterministe quand created_at est identique.
+    # On stabilise localement (created_at -> id -> role) si ces champs sont présents.
+    has_order_fields = any((m.get("created_at") is not None) or (m.get("id") is not None) for m in messages)
+    normalized = messages
+    if has_order_fields:
+        normalized = sorted(
+            messages,
+            key=lambda m: (
+                str(m.get("created_at", "")),
+                int(m.get("id", 0) or 0),
+                0 if m.get("role") == "user" else 1,
+            ),
+        )
+
+    pairs: list = []
+    pending_question: str = ""
+    for msg in normalized:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "user":
+            pending_question = content
+        elif role == "assistant" and pending_question:
+            pairs.append({"question": pending_question, "answer": content})
+            pending_question = ""
     return pairs
 
 
@@ -99,10 +111,11 @@ def get_history(session_id: str) -> list:
         conv = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
         if not conv.data:
             return []
-        r = (client.table("messages").select("role, content")
+        r = (client.table("messages").select("id, role, content, created_at")
              .eq("conversation_id", conv.data[0]["id"])
-             .order("created_at", desc=True).limit(10).execute())
-        return _messages_to_history(list(reversed(r.data)))
+             .order("created_at", desc=True)
+             .limit(10).execute())
+        return _messages_to_history(list(reversed(r.data or [])))
     except Exception as e:
         logger.warning(f"[MEMORY] get_history : {e}")
         return []
@@ -116,12 +129,43 @@ def get_conversation(session_id: str) -> list:
         conv = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
         if not conv.data:
             return []
-        r = (client.table("messages").select("role, content, created_at")
-             .eq("conversation_id", conv.data[0]["id"]).order("created_at").execute())
-        return _messages_to_history(r.data)
+        r = (client.table("messages").select("id, role, content, created_at")
+             .eq("conversation_id", conv.data[0]["id"])
+             .order("created_at")
+             .execute())
+        return _messages_to_history(r.data or [])
     except Exception as e:
         logger.warning(f"[MEMORY] get_conversation : {e}")
         return []
+
+
+def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
+    client = _get_client()
+    if not client or not session_id or not user_id:
+        return False
+    try:
+        r = (client.table("conversations").select("id")
+             .eq("session_id", session_id)
+             .eq("user_id", user_id)
+             .limit(1).execute())
+        return bool(r.data)
+    except Exception as e:
+        logger.warning(f"[MEMORY] conversation_belongs_to_user : {e}")
+        return False
+
+
+def get_conversation_owner(session_id: str) -> str:
+    client = _get_client()
+    if not client or not session_id:
+        return ""
+    try:
+        r = (client.table("conversations").select("user_id")
+             .eq("session_id", session_id)
+             .limit(1).execute())
+        return r.data[0].get("user_id", "") if r.data else ""
+    except Exception as e:
+        logger.warning(f"[MEMORY] get_conversation_owner : {e}")
+        return ""
 
 
 def delete_conversation(session_id: str) -> None:

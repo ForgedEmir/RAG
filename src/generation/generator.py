@@ -1,6 +1,7 @@
 """Génère les réponses via LLM. Langfuse pour le tracing. Fallback automatique."""
 import os
 import logging
+import importlib
 from typing import List, Optional, Iterator
 
 from langchain_openai import ChatOpenAI
@@ -13,6 +14,7 @@ _primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
 _fallback_key   = os.getenv("FALLBACK_API_KEY")
 _fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 _CONV_DEPTH     = int(os.getenv("CONVERSATION_DEPTH", "5"))
+_REFORMULATION_ENABLED = os.getenv("REFORMULATION_ENABLED", "true").lower() != "false"
 
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
     model=_primary_model,
@@ -26,24 +28,71 @@ _llm_fallback: Optional[ChatOpenAI] = ChatOpenAI(
     api_key=_fallback_key, temperature=0.2,
 ) if _fallback_key else None
 
+_LANGFUSE_LOGGED = False
+_langfuse_client = None
+
+
+def get_reformulation_enabled() -> bool:
+    return _REFORMULATION_ENABLED
+
+
+def set_reformulation_enabled(enabled: bool) -> bool:
+    global _REFORMULATION_ENABLED
+    _REFORMULATION_ENABLED = bool(enabled)
+    logger.info("Reformulation %s", "activée" if _REFORMULATION_ENABLED else "désactivée")
+    return _REFORMULATION_ENABLED
+
 
 # ── Langfuse (optionnel) ──────────────────────────────────────────────────────
 
 def _langfuse_handler(name: str = "lorekeeper", **meta):
     """Retourne un callback Langfuse si configuré, sinon None."""
-    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
+    global _LANGFUSE_LOGGED
+
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+
+    if not public_key or not secret_key:
+        if not _LANGFUSE_LOGGED:
+            logger.info("Langfuse désactivé (LANGFUSE_PUBLIC_KEY/SECRET_KEY manquantes).")
+            _LANGFUSE_LOGGED = True
         return None
+
     try:
-        from langfuse.callback import CallbackHandler
-        return CallbackHandler(
-            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-            trace_name=name,
-            metadata=meta,
-        )
+        global _langfuse_client
+        try:
+            # Langfuse v2 (legacy path)
+            CallbackHandler = importlib.import_module("langfuse.callback").CallbackHandler
+            handler = CallbackHandler(
+                public_key=public_key,
+                secret_key=secret_key,
+                host=host,
+                trace_name=name,
+                metadata=meta,
+            )
+        except Exception:
+            # Langfuse récent (langchain integration)
+            from langfuse import Langfuse
+            from langfuse.langchain import CallbackHandler
+            if _langfuse_client is None:
+                _langfuse_client = Langfuse(
+                    public_key=public_key,
+                    secret_key=secret_key,
+                    host=host,
+                )
+            # Cette version lit LANGFUSE_SECRET_KEY/HOST depuis l'environnement.
+            # Elle ne supporte pas trace_name/metadata au constructeur.
+            handler = CallbackHandler(public_key=public_key)
+
+        if not _LANGFUSE_LOGGED:
+            logger.info(f"Langfuse activé sur {host}")
+            _LANGFUSE_LOGGED = True
+        return handler
     except Exception as e:
-        logger.debug(f"Langfuse indisponible : {e}")
+        logger.warning(
+            "Langfuse indisponible : %s. Vérifie `pip install langfuse langchain` et les clés LANGFUSE_*." % e
+        )
         return None
 
 
@@ -106,6 +155,8 @@ def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "")
 
 def reformuler_question(question: str, history: List[dict]) -> str:
     """Reformule une question vague grâce à l'historique."""
+    if not _REFORMULATION_ENABLED:
+        return question
     if not history or not _llm:
         return question
     historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])

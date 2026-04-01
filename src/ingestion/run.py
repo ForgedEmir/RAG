@@ -5,6 +5,7 @@ Détecte les fichiers nouveaux/modifiés/supprimés et met à jour Qdrant.
 import os
 import json
 import logging
+import tempfile
 from typing import List, Set
 
 from langchain_core.documents import Document
@@ -21,7 +22,7 @@ DATA_FOLDER = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "qdrant_db")
 MEMORY_FILE = os.path.join(_DATA_DIR, "files_metadata.json")
 BM25_CORPUS_FILE = os.path.join(_DATA_DIR, "bm25_corpus.json")
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".csv", ".xlsx", ".xml", ".pdf")
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".json", ".csv", ".xlsx", ".xml", ".pdf")
 PARSER_MODE = os.getenv("PARSER", "unstructured")
 
 # LLM pour vérifier si un fichier contient bien du lore (singleton)
@@ -46,8 +47,24 @@ def _get_llm_checker() -> ChatOpenAI:
 def load_memory() -> dict:
     """Lit le fichier de suivi des dates de modification."""
     if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            logger.warning("Mémoire fichiers invalide (type inattendu), reset.")
+        except json.JSONDecodeError as e:
+            # Certains fichiers peuvent contenir un BOM UTF-8 ; on réessaie.
+            try:
+                with open(MEMORY_FILE, 'r', encoding='utf-8-sig') as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+            logger.warning(f"Mémoire fichiers JSON corrompue, reset : {e}")
+        except Exception as e:
+            logger.warning(f"Impossible de lire la mémoire fichiers, reset : {e}")
     return {}
 
 
@@ -107,7 +124,8 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
 
         try:
             # 1. Extraction du texte
-            if PARSER_MODE == "unstructured":
+            ext = os.path.splitext(nom)[1].lower()
+            if PARSER_MODE == "unstructured" and ext != ".json":
                 from src.ingestion.document_loader import extract_text_with_unstructured
                 texte = extract_text_with_unstructured(chemin)
             else:
@@ -143,8 +161,15 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
         {"id": doc.metadata.get("chunk_id", f"doc_{i}"), "text": doc.page_content, "fichier": doc.metadata.get("fichier", "inconnu")}
         for i, doc in enumerate(documents)
     ]
-    with open(BM25_CORPUS_FILE, "w", encoding="utf-8") as f:
-        json.dump(corpus, f, ensure_ascii=False, indent=1)
+    dirpath = os.path.dirname(BM25_CORPUS_FILE)
+    fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(corpus, f, ensure_ascii=False, indent=1)
+        os.replace(tmp_path, BM25_CORPUS_FILE)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
     logger.info(f"Corpus BM25 sauvegardé ({len(corpus)} chunks).")
 
     # Invalide le cache en mémoire pour forcer le rechargement au prochain appel

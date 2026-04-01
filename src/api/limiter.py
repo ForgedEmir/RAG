@@ -1,9 +1,12 @@
 """Rate limiter SlowAPI (FastAPI). Redis si REDIS_URL défini, sinon mémoire locale."""
 import os
+import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+logger = logging.getLogger(__name__)
 
 
 def _get_key(request: Request) -> str:
@@ -20,9 +23,26 @@ def _get_key(request: Request) -> str:
     return get_remote_address(request)
 
 
+def _resolve_storage_uri() -> str:
+    """Utilise Redis si joignable, sinon fallback mémoire."""
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return "memory://"
+
+    try:
+        import redis
+        client = redis.Redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+        client.ping()
+        logger.info("Rate limit storage: Redis")
+        return redis_url
+    except Exception as exc:
+        logger.warning(f"Redis indisponible pour rate limiting, fallback mémoire: {exc}")
+        return "memory://"
+
+
 limiter = Limiter(
     key_func=_get_key,
-    storage_uri=os.getenv("REDIS_URL", "memory://"),
+    storage_uri=_resolve_storage_uri(),
 )
 
 

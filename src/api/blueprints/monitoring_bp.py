@@ -1,11 +1,16 @@
 """Router monitoring — /api/monitoring/*"""
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from src.api.auth import require_monitoring
 from src.monitoring.tracker import get_stats
 
 monitoring_router = APIRouter()
+
+
+class ReformulationToggleBody(BaseModel):
+    enabled: bool
 
 
 @monitoring_router.get("/api/monitoring/stats")
@@ -38,3 +43,18 @@ async def monitoring_pipeline(request: Request):
         return stats
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@monitoring_router.get("/api/monitoring/reformulation")
+async def monitoring_reformulation(request: Request):
+    require_monitoring(request)
+    from src.generation.generator import get_reformulation_enabled
+    return {"enabled": get_reformulation_enabled()}
+
+
+@monitoring_router.post("/api/monitoring/reformulation")
+async def monitoring_set_reformulation(body: ReformulationToggleBody, request: Request):
+    require_monitoring(request)
+    from src.generation.generator import set_reformulation_enabled
+    enabled = set_reformulation_enabled(body.enabled)
+    return {"ok": True, "enabled": enabled}

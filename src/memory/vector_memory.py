@@ -17,7 +17,6 @@ from src.ingestion.vector_store import _get_client, _get_embeddings
 logger = logging.getLogger(__name__)
 
 _COLLECTION      = "user_memories"
-_VECTOR_SIZE     = 1024  # BGE-M3
 _ENABLED         = os.getenv("VECTOR_MEMORY_ENABLED", "false").lower() != "false"
 _MAX_MEMORIES    = int(os.getenv("MAX_USER_MEMORIES", "500"))
 _ready           = False
@@ -29,9 +28,10 @@ def _ensure_collection() -> None:
         return
     client = _get_client()
     if _COLLECTION not in [c.name for c in client.get_collections().collections]:
+        vector_size = len(_get_embeddings().embed_query("dimension probe"))
         client.create_collection(
             collection_name=_COLLECTION,
-            vectors_config=VectorParams(size=_VECTOR_SIZE, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
         logger.info(f"Collection '{_COLLECTION}' créée.")
     _ready = True

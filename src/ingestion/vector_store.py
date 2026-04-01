@@ -10,14 +10,21 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, FilterSelector, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    FilterSelector,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    PayloadSchemaType,
+)
 
 logger = logging.getLogger(__name__)
 
 _BASE_DIR        = os.path.dirname(__file__)
 _DB_PATH         = os.path.join(_BASE_DIR, "qdrant_db")
 _COLLECTION_NAME = "lore"
-_VECTOR_SIZE     = 1024  # BAAI/bge-m3
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
@@ -26,6 +33,7 @@ _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 _embeddings: Optional[HuggingFaceEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
+_vector_size: Optional[int] = None
 
 
 def _get_embeddings() -> HuggingFaceEmbeddings:
@@ -39,6 +47,14 @@ def _get_embeddings() -> HuggingFaceEmbeddings:
         )
         logger.info(f"Modèle d'embeddings chargé : {model}")
     return _embeddings
+
+
+def _get_vector_size() -> int:
+    global _vector_size
+    if _vector_size is None:
+        probe = _get_embeddings().embed_query("dimension probe")
+        _vector_size = len(probe)
+    return _vector_size
 
 
 def _get_client() -> QdrantClient:
@@ -62,9 +78,20 @@ def _ensure_collection(client: QdrantClient) -> None:
     if _COLLECTION_NAME not in existing:
         client.create_collection(
             collection_name=_COLLECTION_NAME,
-            vectors_config=VectorParams(size=_VECTOR_SIZE, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=_get_vector_size(), distance=Distance.COSINE),
         )
         logger.info(f"Collection '{_COLLECTION_NAME}' créée.")
+
+    # Requis pour les filtres de suppression sur metadata.fichier.
+    try:
+        client.create_payload_index(
+            collection_name=_COLLECTION_NAME,
+            field_name="metadata.fichier",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    except Exception as e:
+        logger.debug(f"Index payload metadata.fichier déjà présent ou non créé: {e}")
+
     _collection_ready = True
 
 

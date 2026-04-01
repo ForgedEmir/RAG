@@ -23,6 +23,7 @@ _search_cache: dict = {}
 _RERANKER_ENABLED        = os.getenv("RERANKER_ENABLED",        "true").lower()  != "false"
 _QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "false").lower() != "false"
 _RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+_MIN_VECTOR_BEFORE_BM25  = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", "3")))
 
 _COMPLEX_SIGNALS = {
     "comment", "pourquoi", "différence", "difference", "compare", "comparer",
@@ -151,12 +152,18 @@ def _load_bm25() -> None:
     if not os.path.exists(path):
         logger.warning("Corpus BM25 introuvable — vector-only (retry au prochain appel).")
         return  # Ne pas marquer comme chargé → retry automatique
-    with open(path, "r", encoding="utf-8") as f:
-        _bm25_corpus = json.load(f)
-    if _bm25_corpus:
-        _bm25_index = BM25Okapi([d["text"].lower().split() for d in _bm25_corpus])
-        logger.info(f"BM25 chargé ({len(_bm25_corpus)} chunks).")
-    _bm25_loaded = True
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        _bm25_corpus = data if isinstance(data, list) else []
+        if _bm25_corpus:
+            _bm25_index = BM25Okapi([d["text"].lower().split() for d in _bm25_corpus if "text" in d])
+            logger.info(f"BM25 chargé ({len(_bm25_corpus)} chunks).")
+        _bm25_loaded = True
+    except json.JSONDecodeError as e:
+        logger.warning(f"Corpus BM25 corrompu ({e}) — vector-only.")
+    except Exception as e:
+        logger.warning(f"Chargement BM25 impossible ({e}) — vector-only.")
 
 def invalidate_bm25_cache() -> None:
     global _bm25_loaded
@@ -168,7 +175,7 @@ def invalidate_bm25_cache() -> None:
 
 def _rrf(vector: List[dict], bm25: List[dict], k: int = 60) -> List[dict]:
     scores, doc_map = {}, {}
-    for rank, doc in enumerate(vector + bm25 if False else vector):
+    for rank, doc in enumerate(vector):
         doc_map[doc["id"]] = doc
         scores[doc["id"]] = scores.get(doc["id"], 0) + 1 / (k + rank)
     for rank, doc in enumerate(bm25):
@@ -210,7 +217,8 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
         _load_bm25()
 
     bm25_results: List[dict] = []
-    if _bm25_index and _bm25_corpus:
+    should_use_bm25 = len(vector_results) < _MIN_VECTOR_BEFORE_BM25
+    if should_use_bm25 and _bm25_index and _bm25_corpus:
         scores = _bm25_index.get_scores(question.lower().split())
         top    = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:5]
         bm25_results = [_bm25_corpus[i] for i in top if scores[i] > 0]

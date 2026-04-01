@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
 
 from src.api.routes import register_routes
-from src.api.auth import get_optional_user
+from src.api.auth import get_current_user
 from src.api.limiter import limiter, rate_limit_handler
 
 
@@ -18,7 +18,7 @@ def create_client(user_id: str = "user_test") -> TestClient:
     app = FastAPI()
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
-    app.dependency_overrides[get_optional_user] = lambda: user_id
+    app.dependency_overrides[get_current_user] = lambda: user_id
     register_routes(app, deque(maxlen=100))
     return TestClient(app)
 
@@ -62,7 +62,6 @@ def test_ask_question_valide(mock_stream, mock_rechercher, mock_index):
     assert meta["sources"] == ["source1.md", "source2.md"]
 
     mock_rechercher.assert_called_once_with("Qui est le héros?")
-    mock_index.assert_called_once_with(force_reindex=False)
 
 
 @patch("src.api.routes.index_data")
@@ -157,25 +156,28 @@ def test_ask_sans_historique_pas_de_reformulation(mock_stream, mock_rechercher, 
 # ===== TESTS POUR /api/reindex =====
 
 @patch("src.api.routes.index_data")
+@patch("src.api.auth._MONITORING_KEY", "test_key")
 def test_reindex_sans_force(mock_index):
     mock_index.return_value = True
-    response = create_client().post("/api/reindex", json={})
+    response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
     assert "terminée" in response.json()["message"]
     mock_index.assert_called_once_with(force_reindex=False)
 
 
 @patch("src.api.routes.index_data")
+@patch("src.api.auth._MONITORING_KEY", "test_key")
 def test_reindex_avec_force(mock_index):
     mock_index.return_value = True
-    response = create_client().post("/api/reindex", json={"force": True})
+    response = create_client().post("/api/reindex", json={"force": True}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
     mock_index.assert_called_once_with(force_reindex=True)
 
 
 @patch("src.api.routes.index_data")
+@patch("src.api.auth._MONITORING_KEY", "test_key")
 def test_reindex_erreur(mock_index):
     mock_index.side_effect = Exception("Erreur d'indexation")
-    response = create_client().post("/api/reindex", json={})
+    response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 500
     assert "Erreur d'indexation" in response.json()["error"]

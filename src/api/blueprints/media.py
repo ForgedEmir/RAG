@@ -10,6 +10,10 @@ from src.monitoring.tracker import track
 
 logger = logging.getLogger(__name__)
 media_router = APIRouter()
+_MAX_STT_UPLOAD_BYTES = int(os.getenv("MAX_STT_UPLOAD_MB", "10")) * 1024 * 1024
+_ALLOWED_STT_TYPES = {
+    "audio/webm", "audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/mp4", "audio/x-m4a"
+}
 
 
 @media_router.post("/api/tts")
@@ -33,12 +37,18 @@ async def tts(request: Request):
 @limiter.limit("20/minute")
 async def stt(request: Request, audio: UploadFile = File(...)):
     try:
+        if audio.content_type and audio.content_type.lower() not in _ALLOWED_STT_TYPES:
+            return JSONResponse({"error": "Format audio non supporté"}, status_code=400)
+
         from openai import OpenAI
         client = OpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url="https://api.groq.com/openai/v1",
         )
         content = await audio.read()
+        if len(content) > _MAX_STT_UPLOAD_BYTES:
+            return JSONResponse({"error": f"Audio trop volumineux. Max: {_MAX_STT_UPLOAD_BYTES // (1024 * 1024)} MB"}, status_code=400)
+
         transcription = client.audio.transcriptions.create(
             model="whisper-large-v3",
             file=(audio.filename or "audio.webm", content),

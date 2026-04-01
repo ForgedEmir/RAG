@@ -6,7 +6,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 # Sentry (optionnel)
 if dsn := os.getenv("SENTRY_DSN"):
@@ -58,9 +58,14 @@ app = FastAPI(title="Oracle LoreKeeper", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
+_allowed_origins = [o.strip() for o in os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8080,http://127.0.0.1:8080"
+).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

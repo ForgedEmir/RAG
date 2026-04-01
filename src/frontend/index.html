@@ -51,6 +51,34 @@
         </div>
     </div>
 
+    <!-- Modal d'authentification Supabase -->
+    <div id="authModal" class="terms-modal" style="display:none;">
+        <div class="terms-content" style="max-width:560px;">
+            <div class="terms-header">
+                <h2>Connexion au Grimoire</h2>
+            </div>
+            <div class="terms-body">
+                <p>Connectez-vous pour accéder à vos conversations et à la mémoire de l'Oracle.</p>
+                <div class="terms-section">
+                    <h3>Identifiants</h3>
+                    <input id="authEmail" type="email" placeholder="email@example.com" class="auth-input" />
+                    <input id="authPassword" type="password" placeholder="Mot de passe" class="auth-input" />
+                </div>
+                <p id="authStatus" class="auth-status"></p>
+            </div>
+            <div class="terms-footer">
+                <div class="auth-actions">
+                    <button id="authLoginButton" class="terms-button">Se connecter</button>
+                    <button id="authSignupButton" class="terms-button">Créer un compte</button>
+                </div>
+                <div class="auth-separator">ou</div>
+                <button id="authGithubButton" class="auth-github-button">Continuer avec GitHub</button>
+                           <div class="auth-separator">ou</div>
+                           <button id="authGuestButton" class="auth-guest-button">Continuer en tant qu'invité</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sidebar historique des consultations -->
     <button id="sidebarToggle" class="sidebar-toggle" title="Historique des consultations">☰</button>
 
@@ -64,6 +92,10 @@
 
     <div class="grimoire-container">
         <div class="grimoire-title">LoreKeeper</div>
+        <div class="auth-pill" id="authPill" style="display:none;">
+            <span id="authUserEmail"></span>
+            <button id="logoutButton" class="auth-logout">Déconnexion</button>
+        </div>
         
         <div class="book">
             <div class="pages-container">
@@ -116,6 +148,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"></script>
     <script>if (typeof marked === 'undefined') { window.marked = { parse: t => t }; }</script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
 
     <a href="/monitoring.html" title="Accès Monitoring" class="monitoring-link">⚙</a>

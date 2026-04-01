@@ -1,5 +1,8 @@
 .env
 
+# Local tooling
+.claude/
+
 # Python
 *.pyc
 __pycache__/
@@ -9,9 +12,8 @@ __pycache__/
 # Binaires
 *.bin
 
-# Qdrant (base vectorielle locale) — sauf le corpus BM25 (nécessaire en prod)
-qdrant_db/
-!src/ingestion/qdrant_db/bm25_corpus.json
+# Qdrant (artefacts locaux d'ingestion)
+src/ingestion/qdrant_db/
 
 # ChromaDB (ancien, plus utilise)
 chroma_db/

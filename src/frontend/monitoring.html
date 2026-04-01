@@ -287,6 +287,14 @@
             </div>
 
             <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
+                <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Reformulation LLM</div>
+                <div style="font-size:.9rem;line-height:1.9">
+                    Statut : <strong id="p-reformulation-status" style="color:#c9a84c">—</strong><br>
+                    <button id="toggle-reformulation-btn" onclick="toggleReformulation()" style="margin-top:.35rem;padding:.3rem .8rem;background:#3a2a10;border:1px solid #c9a84c;color:#f0d9a0;border-radius:5px;font-family:'Cinzel',serif;font-size:.75rem;cursor:pointer">Basculer</button>
+                </div>
+            </div>
+
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:1rem">
                 <div style="font-family:'Cinzel',serif;color:#8a7a6a;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">Dernière requête</div>
                 <div style="font-size:.85rem;line-height:1.9;word-break:break-word">
                     <span id="p-last-query" style="color:#d4b896;font-style:italic">—</span><br>
@@ -455,7 +463,9 @@
     }
 
     function fetchStats(isAuth = false) {
-        fetch(`/api/monitoring/stats?key=${encodeURIComponent(monitoringKey)}`)
+        fetch(`/api/monitoring/stats`, {
+            headers: {'X-Monitoring-Key': monitoringKey}
+        })
             .then(r => {
                 if (r.status === 403) throw new Error('Clé invalide');
                 return r.json();
@@ -469,9 +479,11 @@
                     fetchLogs();
                     fetchHealth();
                     fetchPipeline();
+                    fetchReformulationStatus();
                     logsTimer = setInterval(fetchLogs, 5000);
                     setInterval(fetchHealth, 30000);
                     setInterval(fetchPipeline, 30000);
+                    setInterval(fetchReformulationStatus, 30000);
                 }
                 renderStats(data);
             })
@@ -556,7 +568,9 @@
     }
 
     function fetchLogs() {
-        fetch(`/api/monitoring/logs?key=${encodeURIComponent(monitoringKey)}`)
+        fetch(`/api/monitoring/logs`, {
+            headers: {'X-Monitoring-Key': monitoringKey}
+        })
             .then(r => r.json())
             .then(data => {
                 if (!data.logs) return;
@@ -589,7 +603,9 @@
     });
 
     function loadSources() {
-        fetch(`/api/admin/sources?key=${encodeURIComponent(monitoringKey)}`)
+        fetch(`/api/admin/sources`, {
+            headers: {'X-Monitoring-Key': monitoringKey}
+        })
             .then(r => r.json())
             .then(data => {
                 const el = document.getElementById('sources-list');
@@ -614,7 +630,11 @@
         status.textContent = `Envoi de "${file.name}"...`;
         const form = new FormData();
         form.append('file', file);
-        fetch(`/api/admin/upload?key=${encodeURIComponent(monitoringKey)}`, { method: 'POST', body: form })
+        fetch(`/api/admin/upload`, {
+            method: 'POST',
+            headers: {'X-Monitoring-Key': monitoringKey},
+            body: form
+        })
             .then(r => r.json())
             .then(data => {
                 if (data.error) {
@@ -641,9 +661,12 @@
         const status = document.getElementById('reindex-status');
         status.style.color = '#c9a84c';
         status.textContent = `Suppression de "${filename}"...`;
-        fetch(`/api/admin/delete?key=${encodeURIComponent(monitoringKey)}`, {
+        fetch(`/api/admin/delete`, {
             method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Monitoring-Key': monitoringKey,
+            },
             body: JSON.stringify({filename})
         })
             .then(r => r.json())
@@ -665,7 +688,14 @@
         const status = document.getElementById('reindex-status');
         status.style.color = '#c9a84c';
         status.textContent = force ? '⚠ Force réindexation en cours...' : 'Réindexation en cours...';
-        fetch('/api/reindex', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force}) })
+        fetch('/api/reindex', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Monitoring-Key': monitoringKey,
+            },
+            body: JSON.stringify({force})
+        })
             .then(r => r.json())
             .then(data => {
                 if (data.error) {
@@ -682,7 +712,9 @@
     }
 
     function fetchPipeline() {
-        fetch(`/api/monitoring/pipeline?key=${encodeURIComponent(monitoringKey)}`)
+        fetch(`/api/monitoring/pipeline`, {
+            headers: {'X-Monitoring-Key': monitoringKey}
+        })
             .then(r => r.json())
             .then(d => {
                 const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -707,6 +739,58 @@
                 set('p-last-bm25',  d.last_bm25_count ?? '—');
             })
             .catch(() => {});
+    }
+
+    function fetchReformulationStatus() {
+        fetch('/api/monitoring/reformulation', {
+            headers: {'X-Monitoring-Key': monitoringKey}
+        })
+            .then(r => r.json())
+            .then(d => {
+                const el = document.getElementById('p-reformulation-status');
+                const btn = document.getElementById('toggle-reformulation-btn');
+                if (!el || !btn || typeof d.enabled !== 'boolean') return;
+                el.textContent = d.enabled ? '✓ Activée' : '○ Désactivée';
+                el.style.color = d.enabled ? '#2ecc71' : '#e0a840';
+                btn.textContent = d.enabled ? 'Désactiver' : 'Activer';
+            })
+            .catch(() => {});
+    }
+
+    function toggleReformulation() {
+        const el = document.getElementById('p-reformulation-status');
+        const currentlyEnabled = !!(el && el.textContent.includes('Activée'));
+        fetch('/api/monitoring/reformulation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Monitoring-Key': monitoringKey,
+            },
+            body: JSON.stringify({ enabled: !currentlyEnabled }),
+        })
+            .then(r => r.json())
+            .then(data => {
+                const status = document.getElementById('reindex-status');
+                if (data.error) {
+                    if (status) {
+                        status.style.color = '#e07070';
+                        status.textContent = '✗ ' + data.error;
+                    }
+                    return;
+                }
+                fetchReformulationStatus();
+                if (status) {
+                    status.style.color = '#70c070';
+                    status.textContent = `✓ Reformulation ${!currentlyEnabled ? 'activée' : 'désactivée'}.`;
+                }
+            })
+            .catch(() => {
+                const status = document.getElementById('reindex-status');
+                if (status) {
+                    status.style.color = '#e07070';
+                    status.textContent = '✗ Impossible de basculer la reformulation.';
+                }
+            });
     }
 
     function startCountdown() {

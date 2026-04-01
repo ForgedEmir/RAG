@@ -22,6 +22,7 @@ _MODE = os.getenv("SECURITY_VALIDATOR", "rules").lower()
 _LAKERA_API_KEY  = os.getenv("LAKERA_API_KEY")
 _LAKERA_URL      = "https://api.lakera.ai/v2/guard"
 _LAKERA_PROJECT  = os.getenv("LAKERA_PROJECT_ID")
+_HTTP_SESSION = requests.Session()
 
 
 class ValidationResult(TypedDict):
@@ -158,7 +159,7 @@ def _valider_lakera(texte: str) -> ValidationResult:
         if _LAKERA_PROJECT:
             payload["project_id"] = _LAKERA_PROJECT
 
-        response = requests.post(
+        response = _HTTP_SESSION.post(
             _LAKERA_URL,
             headers={"Authorization": f"Bearer {_LAKERA_API_KEY}"},
             json=payload,
