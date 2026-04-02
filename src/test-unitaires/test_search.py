@@ -21,7 +21,7 @@ def test_router_question_simple_courte():
 def test_router_question_longue_complexe():
     """Une question longue (≥ 6 mots) → mode complexe."""
     plan = _route("Quels sont les pouvoirs magiques des elfes anciens ?")
-    assert plan.use_reranker  is True
+    assert plan.use_reranker  is False
     assert plan.k_candidates  == 10
 
 
@@ -34,7 +34,7 @@ def test_router_mot_cle_complexe_declenche_mode_complexe():
         "compare les deux royaumes",
     ]:
         plan = _route(question)
-        assert plan.use_reranker is True, f"Devrait être complexe : '{question}'"
+        assert plan.use_reranker is False, f"Le reranker est désactivé par défaut : '{question}'"
         assert plan.k_candidates == 10
 
 
@@ -42,7 +42,7 @@ def test_router_expansion_desactivee_par_defaut():
     """Query expansion désactivée par défaut même sur requête complexe."""
     plan = _route("Comment fonctionne le système de magie dans Aethelgard ?")
     assert plan.use_expansion is False   # QUERY_EXPANSION_ENABLED=false par défaut
-    assert plan.use_reranker  is True    # reranker actif (RERANKER_ENABLED=true par défaut)
+    assert plan.use_reranker  is False   # reranker désactivé par défaut
 
 
 def test_router_expansion_activee_si_flag():
@@ -57,11 +57,11 @@ def test_router_expansion_activee_si_flag():
         assert plan.use_expansion is False
 
 
-def test_router_reranker_desactivable():
-    """RERANKER_ENABLED=false désactive le reranker même sur requête complexe."""
-    with patch("src.search.search._RERANKER_ENABLED", False):
+def test_router_reranker_activable_si_flag():
+    """RERANKER_ENABLED=true réactive le reranker sur requête complexe."""
+    with patch("src.search.search._RERANKER_ENABLED", True):
         plan = _route("Comment fonctionne la magie dans ce monde ?")
-        assert plan.use_reranker is False
+        assert plan.use_reranker is True
 
 
 # ===== TESTS POUR rechercher_passages =====
