@@ -20,7 +20,7 @@ _CACHE_TTL  = int(os.getenv("SEARCH_CACHE_TTL",  "300"))
 _CACHE_SIZE = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
 _search_cache: dict = {}
 
-_RERANKER_ENABLED        = os.getenv("RERANKER_ENABLED",        "true").lower()  != "false"
+_RERANKER_ENABLED        = os.getenv("RERANKER_ENABLED",        "false").lower() != "false"
 _QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "false").lower() != "false"
 _RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 _MIN_VECTOR_BEFORE_BM25  = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", "3")))

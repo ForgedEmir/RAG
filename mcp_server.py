@@ -38,6 +38,12 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 
+# Mode rapide pour MCP local: évite les composants les plus lents au premier appel.
+_MCP_FAST_MODE = os.getenv("MCP_FAST_MODE", "true").lower() != "false"
+if _MCP_FAST_MODE:
+    os.environ.setdefault("RERANKER_ENABLED", "false")
+    os.environ.setdefault("QUERY_EXPANSION_ENABLED", "false")
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 from mcp.server.fastmcp import FastMCP, Context
@@ -98,7 +104,7 @@ async def ask_lore(question: str, ctx: Context) -> str:
     await ctx.info(f"Recherche dans les archives pour : {question!r}")
     try:
         from src.search.search import rechercher_passages
-        from src.generation.generator import generer_reponse
+        from src.generation.generator import stream_reponse
 
         await ctx.report_progress(progress=0.3, total=1.0, message="Recherche vectorielle...")
         passages, sources = rechercher_passages(question)
@@ -107,7 +113,11 @@ async def ask_lore(question: str, ctx: Context) -> str:
             return "Je n'ai trouvé aucun passage pertinent dans les archives pour cette question."
 
         await ctx.report_progress(progress=0.7, total=1.0, message="Génération de la réponse...")
-        reponse = generer_reponse(question, passages, sources, history=[])
+        # stream_reponse intègre déjà le fallback LLM en cas de 429/erreur provider.
+        chunks: list[str] = []
+        for chunk in stream_reponse(question, passages, sources=sources, history=[]):
+            chunks.append(chunk)
+        reponse = "".join(chunks).strip()
 
         sources_str = ", ".join(sources) if sources else "sources inconnues"
         await ctx.report_progress(progress=1.0, total=1.0, message="Terminé.")
@@ -175,7 +185,10 @@ def main():
     if transport == "sse":
         host = os.getenv("MCP_HOST", "0.0.0.0")
         port = int(os.getenv("MCP_PORT", "8001"))
-        mcp.run(transport="sse", host=host, port=port)
+        # MCP 1.26.x: host/port are configured via settings, not run() kwargs.
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="sse")
     else:
         mcp.run(transport="stdio")
 

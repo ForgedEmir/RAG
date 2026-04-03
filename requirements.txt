@@ -18,7 +18,6 @@ qdrant-client>=1.7.0
 
 # === Embeddings ===
 fastembed>=0.2.0
-sentence-transformers>=2.2.0
 
 # === Search ===
 rank-bm25>=0.2.2
