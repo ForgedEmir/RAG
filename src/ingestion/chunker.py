@@ -1,24 +1,17 @@
-"""
-Découpe un texte long en morceaux (chunks) pour l'indexation.
-Respecte paragraphes et phrases pour garder le sens intact.
-"""
 from typing import List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+CHUNK_SIZE = 1200
+CHUNK_OVERLAP = 200
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
-
-# Splitter par défaut, réutilisé partout
-_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200, separators=_SEPARATORS)
+_DEFAULT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP, separators=_SEPARATORS)
 
 
-def split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) -> List[str]:
-    """Découpe le texte avec chevauchement pour garder le contexte entre chunks."""
-    if not text:
+def split_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+    if not isinstance(text, str) or not text.strip():
         return []
-    if chunk_size == 1200 and overlap == 200:
-        return _SPLITTER.split_text(text)
-    return RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=min(overlap, chunk_size // 5) if overlap >= chunk_size else overlap,
-        separators=_SEPARATORS,
-    ).split_text(text)
+    if chunk_size == CHUNK_SIZE and overlap == CHUNK_OVERLAP:
+        return _DEFAULT_SPLITTER.split_text(text)
+    # Prevents processing errors by capping overlap at 20% of chunk size
+    safe_overlap = min(overlap, chunk_size // 5) if overlap >= chunk_size else overlap
+    return RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=safe_overlap, separators=_SEPARATORS).split_text(text)

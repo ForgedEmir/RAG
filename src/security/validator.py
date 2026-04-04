@@ -100,7 +100,8 @@ _INJECTION_PATTERNS: list[str] = [
     r"/dev/(mem|null|zero|urandom)",
 ]
 
-_COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
+# Single compiled pattern is O(1) vs iterating a list — faster on every request
+_COMPILED_PATTERN = re.compile("|".join(_INJECTION_PATTERNS), re.IGNORECASE)
 
 
 # ── Interface publique ───────────────────────────────────────────────────────
@@ -126,9 +127,8 @@ def valider_entree(texte: str) -> ValidationResult:
 
 def check_patterns(texte: str) -> ValidationResult:
     """Couche 1 — Regex uniquement, zéro dépendance externe."""
-    for pattern in _COMPILED_PATTERNS:
-        if pattern.search(texte):
-            return {"valid": False, "type": "prompt_injection", "reason": "Motif suspect détecté"}
+    if _COMPILED_PATTERN.search(texte):
+        return {"valid": False, "type": "prompt_injection", "reason": "Motif suspect détecté"}
     return {"valid": True, "type": "ok", "reason": "Aucun pattern suspect"}
 
 
