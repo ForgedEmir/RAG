@@ -7,7 +7,7 @@ import shutil
 from typing import List, Set, Optional
 
 from langchain_qdrant import QdrantVectorStore
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -30,22 +30,19 @@ _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 # Singletons — créés une seule fois
-_embeddings: Optional[HuggingFaceEmbeddings] = None
+_embeddings: Optional[FastEmbedEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
 _vector_size: Optional[int] = None
 
 
-def _get_embeddings() -> HuggingFaceEmbeddings:
+def _get_embeddings() -> FastEmbedEmbeddings:
     global _embeddings
     if _embeddings is None:
-        model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
-        _embeddings = HuggingFaceEmbeddings(
-            model_name=model,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
-        logger.info(f"Modèle d'embeddings chargé : {model}")
+        model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+        # FastEmbed uses ONNX — no PyTorch/GPU required, starts in ~3s
+        _embeddings = FastEmbedEmbeddings(model_name=model)
+        logger.info(f"FastEmbed embeddings chargé : {model}")
     return _embeddings
 
 
