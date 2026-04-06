@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
-  Trash2, LogOut, Sparkles, FileText, ClipboardCopy,
+  Trash2, LogOut, Sparkles, FileText,
   Check, ArrowUp, Square, Menu, ArrowUpRight,
   ThumbsUp, ThumbsDown, Volume2, VolumeX, Mic, MicOff, Settings
 } from 'lucide-react';
@@ -55,19 +55,8 @@ const styles = `
 // ============================================================================
 
 const CodeBlock = ({ lang, code }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
   return (
     <div className="relative bg-white/5 rounded-xl p-4 mt-3 mb-4 group">
-      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={handleCopy} className="p-1.5 rounded-md bg-black/40 hover:bg-black/60 text-white/50 hover:text-white transition-colors">
-          {copied ? <Check size={14} className="text-[#5ed29c]" /> : <ClipboardCopy size={14} />}
-        </button>
-      </div>
       {lang && <div className="absolute top-0 right-0 px-3 py-1 bg-black/40 rounded-bl-xl rounded-tr-xl text-[9px] text-white/30 uppercase tracking-widest">{lang}</div>}
       <pre className="font-mono text-xs text-white/80 overflow-x-auto hide-scrollbar whitespace-pre-wrap leading-relaxed">{code.trim()}</pre>
     </div>
@@ -262,16 +251,9 @@ function useTTS() {
 }
 
 const MessageBubble = ({ msg, sessionId }) => {
-  const [copied, setCopied] = useState(false);
   const [vote, setVote] = useState(null); // 'up' | 'down' | null
   const { speak, stop, speaking } = useTTS();
   const [ttsActive, setTtsActive] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(msg.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
   const handleVote = async (direction) => {
     const newVote = vote === direction ? null : direction;
@@ -360,7 +342,7 @@ const MessageBubble = ({ msg, sessionId }) => {
           </div>
         )}
 
-        {/* Actions : TTS, Like, Dislike, Copier — toujours visibles après la réponse */}
+        {/* Actions : TTS, Like, Dislike — toujours visibles après la réponse */}
         {!msg.streaming && msg.content && (
           <div className="flex items-center gap-1.5 mt-4">
             <button
@@ -398,14 +380,6 @@ const MessageBubble = ({ msg, sessionId }) => {
             >
               <ThumbsDown size={11} />
               <span>Pas utile</span>
-            </button>
-            <button
-              onClick={handleCopy}
-              title="Copier"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border border-white/[0.06] text-white/30 hover:text-white/70 hover:border-white/20 hover:bg-white/[0.04] transition-all"
-            >
-              {copied ? <Check size={11} className="text-[#5ed29c]" /> : <ClipboardCopy size={11} />}
-              <span>{copied ? 'Copié !' : 'Copier'}</span>
             </button>
           </div>
         )}
