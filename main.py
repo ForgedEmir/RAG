@@ -51,12 +51,17 @@ from src.ingestion.run import index_data
 from src.ingestion.watcher import start_watchdog, stop_watchdog
 
 
+_startup_done = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
-    threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
-    # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
-    start_watchdog()
+    global _startup_done
+    if not _startup_done:
+        _startup_done = True
+        # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
+        threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
+        # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
+        start_watchdog()
     yield
     stop_watchdog()
 
