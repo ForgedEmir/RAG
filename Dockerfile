@@ -1,4 +1,4 @@
-FROM node:20-slim AS frontend
+FROM node:20 AS frontend
 WORKDIR /build
 COPY src/frontend-react/package.json src/frontend-react/package-lock.json ./
 RUN npm ci
