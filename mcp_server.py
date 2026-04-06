@@ -91,7 +91,7 @@ async def ask_lore(question: str, ctx: Context) -> str:
         from src.generation.generator import generer_reponse
 
         await ctx.report_progress(progress=0.3, total=1.0, message="Recherche vectorielle...")
-        passages, sources = rechercher_passages(question)
+        passages, sources, _ = rechercher_passages(question)
 
         if not passages:
             return "Je n'ai trouvé aucun passage pertinent dans les archives pour cette question."
@@ -118,7 +118,7 @@ async def search_lore(query: str, ctx: Context) -> SearchResult:
     """
     await ctx.info(f"Recherche brute : {query!r}")
     try:
-        passages, sources = rechercher_passages(query)
+        passages, sources, scores = rechercher_passages(query)
         return SearchResult(passages=passages, sources=sources, total=len(passages))
     except Exception as e:
         return SearchResult(passages=[f"Erreur : {e}"], sources=[], total=0)
