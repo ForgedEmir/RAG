@@ -23,8 +23,10 @@ services:
       - .env
     environment:
       REDIS_URL: redis://redis:6379
+      ENV: development
     volumes:
       - ./data:/app/data
+      - lorekeeper_data:/app/data
     depends_on:
       redis:
         condition: service_healthy
@@ -32,3 +34,4 @@ services:
 
 volumes:
   redis_data:
+  lorekeeper_data:

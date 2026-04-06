@@ -157,7 +157,11 @@ def test_reformuler_avec_historique(mock_llm):
 
     mock_llm.invoke.return_value = AIMessage(content="Quelle est la taille de Lucas le Tranchant ?")
 
-    history = [{"question": "Qui est Lucas ?", "answer": "Lucas est un guerrier d'1m30."}]
+    # Historique avec 2 échanges pour dépasser le seuil de skip (≤1 échange + ≤5 mots)
+    history = [
+        {"question": "Qui est Lucas ?", "answer": "Lucas est un guerrier d'1m30."},
+        {"question": "Où vit-il ?", "answer": "Dans la capitale."},
+    ]
     resultat = reformuler_question("il fait quelle taille ?", history)
 
     assert resultat == "Quelle est la taille de Lucas le Tranchant ?"

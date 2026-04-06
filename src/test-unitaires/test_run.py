@@ -146,8 +146,8 @@ def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
     assert result is True
     # Premier appel : indexation des nouveaux fichiers seulement
     assert mock_prepare.call_args_list[0] == (({'file2.txt'},),)
-    # Deuxième appel : reconstruction BM25 sur tous les fichiers actuels
-    assert mock_prepare.call_args_list[1] == (({'file1.md', 'file2.txt'},),)
+    # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (file1.md)
+    assert mock_prepare.call_args_list[1] == (({'file1.md'},),)
     mock_add.assert_called_once()
     mock_save.assert_called_once()
 
@@ -179,6 +179,6 @@ def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
     mock_remove.assert_called_once()  # Supprime l'ancienne version
     # Premier appel : indexation du fichier modifié
     assert mock_prepare.call_args_list[0] == (({'file.md'},),)
-    # Deuxième appel : reconstruction BM25 complet
-    assert mock_prepare.call_args_list[1] == (({'file.md'},),)
+    # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (aucun ici)
+    assert mock_prepare.call_args_list[1] == ((set(),),)
     mock_add.assert_called_once()  # Ajoute la nouvelle version

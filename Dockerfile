@@ -11,14 +11,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
+RUN chmod +x start.sh
+
+# Port 8000 : API + frontend web
+# Port 8001 : MCP SSE (Claude Desktop, Cursor, etc.)
+EXPOSE 8000 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["gunicorn", "main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "--workers", "2", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--log-level", "info"]
+CMD ["./start.sh"]
