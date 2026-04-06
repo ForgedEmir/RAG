@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
-  Trash2, LogOut, Sparkles, FileText, Activity, ClipboardCopy,
+  Trash2, LogOut, Sparkles, FileText, ClipboardCopy,
   Check, ArrowUp, Square, Menu, ArrowUpRight,
   ThumbsUp, ThumbsDown, Volume2, VolumeX, Mic, MicOff, Settings
 } from 'lucide-react';
@@ -421,15 +421,6 @@ const MessageBubble = ({ msg, sessionId }) => {
                   </div>
                 ))}
 
-                {msg.confidence != null && (
-                  <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 border text-[10px] ml-auto ${
-                    msg.confidence >= 80 ? 'border-[#5ed29c]/30 text-[#5ed29c] bg-[#5ed29c]/5' :
-                    msg.confidence >= 50 ? 'border-[#fb923c]/30 text-[#fb923c] bg-[#fb923c]/5' :
-                    'border-[#f87171]/30 text-[#f87171] bg-[#f87171]/5'
-                  }`}>
-                    <Activity size={10} /> {msg.confidence}% fiabilité
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
