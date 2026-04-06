@@ -116,9 +116,17 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+        elif path.startswith("/assets/"):
+            # Prod : évite les assets obsolètes derrière certains reverse proxies/CDN.
+            # On pourra assouplir plus tard quand le déploiement sera stabilisé.
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         elif path.endswith(".html") or path == "/":
             # Prod : HTML non mis en cache (pour détecter les nouvelles versions)
-            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
 
 app.add_middleware(NoCacheStaticMiddleware)
