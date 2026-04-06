@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -61,11 +62,24 @@ def _check_injection_spike(client) -> None:
         pass
 
 def _get_conv_id(client, session_id: str) -> Optional[int]:
+    if not _is_valid_uuid(session_id):
+        return None
     r = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
     return r.data[0]["id"] if r.data else None
 
+def _is_valid_uuid(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        uuid.UUID(str(value))
+        return True
+    except Exception:
+        return False
+
 def _get_or_create_conversation(client, session_id: str, user_id: str) -> Optional[int]:
     try:
+        if not _is_valid_uuid(session_id):
+            return None
         cid = _get_conv_id(client, session_id)
         if cid:
             return cid

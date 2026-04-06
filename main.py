@@ -2,6 +2,7 @@
 import os
 import logging
 import threading
+import warnings
 from collections import deque
 from contextlib import asynccontextmanager
 
@@ -13,8 +14,9 @@ if dsn := os.getenv("SENTRY_DSN"):
     import sentry_sdk
     sentry_sdk.init(dsn=dsn, traces_sample_rate=0.2)
 
-# ── Buffer de logs en mémoire (200 dernières lignes) ─────────────────────────
-_log_buffer: deque = deque(maxlen=200)
+# ── Buffer de logs en mémoire ─────────────────────────────────────────
+_LOG_BUFFER_SIZE = max(100, int(os.getenv("LOG_BUFFER_SIZE", "1000")))
+_log_buffer: deque = deque(maxlen=_LOG_BUFFER_SIZE)
 
 class _BufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
@@ -30,6 +32,19 @@ _buf_handler.setFormatter(logging.Formatter())
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S")
 logging.getLogger().addHandler(_buf_handler)
+# Capture warnings.warn(...) into the standard logging pipeline.
+logging.captureWarnings(True)
+warnings.simplefilter("default")
+
+def _attach_buffer_handler_to_logger(logger_name: str) -> None:
+    lg = logging.getLogger(logger_name)
+    if not any(h is _buf_handler for h in lg.handlers):
+        lg.addHandler(_buf_handler)
+
+# Include web server logs in /api/monitoring/logs when available.
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "gunicorn", "gunicorn.error", "gunicorn.access", "py.warnings"):
+    _attach_buffer_handler_to_logger(_name)
+
 # Silencer les logs HTTP externes (Supabase, Qdrant, OpenRouter) — trop verbeux en prod
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
