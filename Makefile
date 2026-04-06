@@ -12,8 +12,8 @@ help:
 	@echo "  ─────────────────────────────────────────"
 	@echo "  make setup       Premier lancement complet (install + .env + index)"
 	@echo "  make install     Installer les dépendances Python"
-	@echo "  make run         Lancer l'app en local (http://localhost:5000)"
-	@echo "  make docker-up   Lancer via Docker (app + Qdrant)"
+	@echo "  make run         Lancer l'app en local (http://localhost:8000)"
+	@echo "  make docker-up   Lancer via Docker (app + Redis)"
 	@echo "  make docker-down Arrêter Docker"
 	@echo "  make index       Réindexer tous les fichiers lore"
 	@echo "  make test        Lancer les tests unitaires"
@@ -53,8 +53,8 @@ docker-up:
 	fi
 	docker compose up --build -d
 	@echo ""
-	@echo "  App disponible sur : http://localhost:5000"
-	@echo "  Qdrant dashboard  : http://localhost:6333/dashboard"
+	@echo "  App disponible sur : http://localhost:8000"
+	@echo "  Redis (interne)   : redis://redis:6379"
 	@echo ""
 
 docker-down:

@@ -37,6 +37,7 @@ src/frontend/*
 
 # Rapports de tests
 rapport_tests_*.txt
+test-output/
 
 # Documents de schema locaux (PDF exclus, draw.io inclus)
 Schéma/*.pdf
