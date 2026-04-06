@@ -391,72 +391,54 @@
     </mxGraphModel>
   </diagram>
   <diagram name="Features" id="features">
-    <mxGraphModel dx="1665" dy="919" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1665" dy="919" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1150" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="ftitle" parent="1" style="text;html=1;fontSize=20;fontStyle=1;align=center;fillColor=none;strokeColor=none;fontColor=#1a1a2e;" value="Architecture des features du projet" vertex="1">
-          <mxGeometry height="32" width="800" x="400" y="18" as="geometry" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=22;fontStyle=1;align=center;fillColor=none;strokeColor=none;fontColor=#1a1a2e;" value="LoreKeeper — Schéma des features" vertex="1">
+          <mxGeometry height="34" width="820" x="440" y="16" as="geometry" />
         </mxCell>
-        <mxCell id="fsub" parent="1" style="text;html=1;fontSize=10;fontStyle=2;align=center;fillColor=none;strokeColor=none;fontColor=#888888;" value="Vue synthétique des modules ajoutés et de leur rôle dans l'application" vertex="1">
-          <mxGeometry height="18" width="900" x="350" y="48" as="geometry" />
-        </mxCell>
-        <mxCell id="center" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" value="HELMo Oracle / LoreKeeper" vertex="1">
-          <mxGeometry height="60" width="260" x="670" y="120" as="geometry" />
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=11;fontStyle=2;align=center;fillColor=none;strokeColor=none;fontColor=#777777;" value="Les briques principales du produit, regroupées par domaine pour une présentation simple" vertex="1">
+          <mxGeometry height="18" width="980" x="350" y="46" as="geometry" />
         </mxCell>
 
-        <mxCell id="chat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" value="Chat RAG&#xa;• Recherche hybride&#xa;• Cache sémantique&#xa;• Streaming SSE" vertex="1">
-          <mxGeometry height="85" width="220" x="120" y="230" as="geometry" />
-        </mxCell>
-        <mxCell id="sec" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;" value="Sécurité&#xa;• Regex anti-injection&#xa;• Lakera Guard&#xa;• PII masking" vertex="1">
-          <mxGeometry height="85" width="220" x="390" y="230" as="geometry" />
-        </mxCell>
-        <mxCell id="mon" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" value="Monitoring&#xa;• Dashboard /monitoring&#xa;• Logs temps réel&#xa;• Reindexation" vertex="1">
-          <mxGeometry height="85" width="220" x="660" y="230" as="geometry" />
-        </mxCell>
-        <mxCell id="ing" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" value="Ingestion&#xa;• Parsing multi-format&#xa;• Chunking&#xa;• Watchdog auto-reindex" vertex="1">
-          <mxGeometry height="85" width="220" x="930" y="230" as="geometry" />
-        </mxCell>
-        <mxCell id="auth" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontStyle=1;" value="Authentification&#xa;• Supabase Auth&#xa;• GitHub / Google OAuth&#xa;• Guest mode" vertex="1">
-          <mxGeometry height="85" width="220" x="120" y="380" as="geometry" />
-        </mxCell>
-        <mxCell id="audio" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" value="Audio&#xa;• Edge TTS&#xa;• Whisper STT" vertex="1">
-          <mxGeometry height="85" width="220" x="390" y="380" as="geometry" />
-        </mxCell>
-        <mxCell id="mcp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="MCP&#xa;• ask_lore&#xa;• search_lore&#xa;• Ressources lore://" vertex="1">
-          <mxGeometry height="85" width="220" x="660" y="380" as="geometry" />
-        </mxCell>
-        <mxCell id="deploy" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;" value="Déploiement&#xa;• Docker + Gunicorn&#xa;• Coolify&#xa;• Redis + Qdrant" vertex="1">
-          <mxGeometry height="85" width="220" x="930" y="380" as="geometry" />
+        <mxCell id="center" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;" value="HELMo Oracle / LoreKeeper" vertex="1">
+          <mxGeometry height="70" width="280" x="690" y="120" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_center_chat" edge="1" parent="1" source="center" target="chat" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_sec" edge="1" parent="1" source="center" target="sec" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_mon" edge="1" parent="1" source="center" target="mon" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_ing" edge="1" parent="1" source="center" target="ing" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_auth" edge="1" parent="1" source="center" target="auth" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#999999;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_audio" edge="1" parent="1" source="center" target="audio" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_mcp" edge="1" parent="1" source="center" target="mcp" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_center_deploy" edge="1" parent="1" source="center" target="deploy" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" value="">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="search_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Recherche &amp; génération&#xa;• Hybrid Search (BM25 + Vector + RRF)&#xa;• Cross-encoder Reranker ONNX&#xa;• Router adaptatif simple/complexe&#xa;• HyDE fallback&#xa;• Semantic Cache Redis&#xa;• LLM Fallback 4 tiers" vertex="1">
+          <mxGeometry height="165" width="320" x="80" y="230" as="geometry" />
         </mxCell>
 
-        <mxCell id="foot" parent="1" style="text;html=0;fontSize=11;fillColor=#f5f5f5;strokeColor=#aaaaaa;rounded=1;align=left;spacingLeft=10;spacingTop=6;" value="Ce schéma résume les features à présenter : un bloc produit, un bloc sécurité et les briques d'exploitation." vertex="1">
-          <mxGeometry height="45" width="650" x="470" y="540" as="geometry" />
+        <mxCell id="security_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Sécurité&#xa;• 3 couches (regex + Lakera + validateur)&#xa;• PII masking&#xa;• Rate limiting&#xa;• HITL + LLM-as-a-Judge" vertex="1">
+          <mxGeometry height="165" width="320" x="470" y="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ops_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Exploitation&#xa;• Monitoring + observabilité&#xa;• File watcher auto-reindex&#xa;• MCP Server&#xa;• Tests 49/49&#xa;• Zero PyTorch / ONNX only" vertex="1">
+          <mxGeometry height="165" width="320" x="860" y="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="product_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Produit &amp; interface&#xa;• Memory 3 niveaux&#xa;• TTS / STT&#xa;• ReAct Agent&#xa;• Frontend React Vite SPA&#xa;• Late chunking + chunk dedup hash (TODO)" vertex="1">
+          <mxGeometry height="165" width="320" x="1250" y="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="infra_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Stockage &amp; infra&#xa;• Qdrant (Vector DB)&#xa;• Supabase (sessions / events / mémoire)&#xa;• Docker + Gunicorn + Coolify&#xa;• ~1.5 Go image / poids estimé" vertex="1">
+          <mxGeometry height="145" width="430" x="470" y="460" as="geometry" />
+        </mxCell>
+
+        <mxCell id="flow_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;" value="Flux simplifié&#xa;Question → sécurité → cache → recherche → génération → SSE → sauvegarde" vertex="1">
+          <mxGeometry height="145" width="560" x="950" y="460" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_center_search" edge="1" parent="1" source="center" target="search_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" value=""/>
+        <mxCell id="e_center_security" edge="1" parent="1" source="center" target="security_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" value=""/>
+        <mxCell id="e_center_ops" edge="1" parent="1" source="center" target="ops_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;" value=""/>
+        <mxCell id="e_center_product" edge="1" parent="1" source="center" target="product_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" value=""/>
+        <mxCell id="e_center_infra" edge="1" parent="1" source="center" target="infra_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#999999;strokeWidth=2;" value=""/>
+        <mxCell id="e_center_flow" edge="1" parent="1" source="center" target="flow_box" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" value=""/>
+
+        <mxCell id="legend" parent="1" style="text;html=0;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;align=left;spacingLeft=10;spacingTop=6;" value="Ce schéma sert pour la présentation orale : un centre, 5 blocs d'info, et une ligne de flux de requête." vertex="1">
+          <mxGeometry height="45" width="760" x="470" y="645" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
