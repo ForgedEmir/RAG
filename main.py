@@ -51,19 +51,33 @@ from src.ingestion.run import index_data
 from src.ingestion.watcher import start_watchdog, stop_watchdog
 
 
-_startup_done = False
+_LOCK_FILE = os.path.join(os.path.dirname(__file__), ".startup.lock")
+
+def _is_first_worker() -> bool:
+    """Utilise un fichier lock pour qu'un seul worker Gunicorn lance l'indexation."""
+    try:
+        fd = os.open(_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _startup_done
-    if not _startup_done:
-        _startup_done = True
+    first = _is_first_worker()
+    if first:
         # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
         threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
         # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
         start_watchdog()
     yield
-    stop_watchdog()
+    if first:
+        stop_watchdog()
+        try:
+            os.remove(_LOCK_FILE)
+        except OSError:
+            pass
 
 
 app = FastAPI(title="Oracle LoreKeeper", lifespan=lifespan)

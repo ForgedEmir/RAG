@@ -43,3 +43,6 @@ Schéma/*.pdf
 
 # Kilo
 .kilo/
+
+# Startup lock (Gunicorn multi-worker)
+.startup.lock

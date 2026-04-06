@@ -14,3 +14,4 @@ __pycache__/
 src/ingestion/qdrant_db/
 src/test-unitaires/
 Schéma/*.pdf
+.startup.lock
