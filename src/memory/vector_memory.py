@@ -10,7 +10,7 @@ from typing import List
 from qdrant_client.models import (
     Distance, VectorParams,
     Filter, FieldCondition, MatchValue,
-    PointStruct, PointIdsList,
+    PointStruct, PointIdsList, PayloadSchemaType,
 )
 from src.ingestion.vector_store import _get_client, _get_embeddings
 
@@ -27,13 +27,36 @@ def _ensure_collection() -> None:
     if _ready:
         return
     client = _get_client()
-    if _COLLECTION not in [c.name for c in client.get_collections().collections]:
-        vector_size = len(_get_embeddings().embed_query("dimension probe"))
+    vector_size = len(_get_embeddings().embed_query("dimension probe"))
+    existing = [c.name for c in client.get_collections().collections]
+
+    if _COLLECTION in existing:
+        # Vérifier la dimension existante — recréer si mismatch
+        info = client.get_collection(_COLLECTION)
+        existing_dim = info.config.params.vectors.size
+        if existing_dim != vector_size:
+            logger.warning(
+                f"Collection '{_COLLECTION}' : dimension mismatch "
+                f"(existant={existing_dim}, modèle={vector_size}). Recréation."
+            )
+            client.delete_collection(_COLLECTION)
+            existing = []  # Force recréation ci-dessous
+
+    if _COLLECTION not in existing:
         client.create_collection(
             collection_name=_COLLECTION,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        logger.info(f"Collection '{_COLLECTION}' créée.")
+        logger.info(f"Collection '{_COLLECTION}' créée ({vector_size} dims).")
+
+    try:
+        client.create_payload_index(
+            collection_name=_COLLECTION,
+            field_name="user_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    except Exception:
+        pass
     _ready = True
 
 
@@ -92,11 +115,11 @@ def search_user_memories(user_id: str, query: str, k: int = 3) -> List[str]:
     try:
         _ensure_collection()
         vector = _get_embeddings().embed_query(query)
-        results = _get_client().search(
-            collection_name=_COLLECTION, query_vector=vector,
+        response = _get_client().query_points(
+            collection_name=_COLLECTION, query=vector,
             query_filter=_user_filter(user_id), limit=k, score_threshold=0.5,
         )
-        return [f"- {h.payload.get('question','')} → {h.payload.get('answer','')[:200]}" for h in results]
+        return [f"- {h.payload.get('question','')} → {h.payload.get('answer','')[:200]}" for h in response.points]
     except Exception as e:
         logger.warning(f"search_user_memories échoué : {e}")
         return []

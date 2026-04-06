@@ -307,6 +307,81 @@
         </div>
     </div>
 
+    <!-- ── Statut des Features ── -->
+    <div style="margin-bottom:2rem">
+        <h2>🧩 Statut des Features</h2>
+        <div id="features-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin-top:.8rem">
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🔍 Vector Search (Qdrant)</span>
+                <span id="feat-vector" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">📚 BM25 Hybrid</span>
+                <span id="feat-bm25" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🎯 Cross-Encoder Reranker</span>
+                <span id="feat-reranker" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">📖 Contextual Retrieval</span>
+                <span id="feat-contextual" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🔄 Reformulation LLM</span>
+                <span id="feat-reformulation" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🛡 PII Masking</span>
+                <span id="feat-pii" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">⚖ LLM-as-Judge</span>
+                <span id="feat-judge" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">👍 Feedback Human</span>
+                <span id="feat-feedback" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">📡 Scores de confiance</span>
+                <span id="feat-confidence" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">👁 Watchdog auto-reindex</span>
+                <span id="feat-watchdog" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🧠 Vector Memory</span>
+                <span id="feat-memory" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🗣 TTS / STT</span>
+                <span id="feat-tts" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+            <div style="background:#2a1a08;border:1px solid #5a3e1b;border-radius:10px;padding:.9rem 1rem;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:.9rem;color:#d4b896">🔀 Multi-LLM Fallback</span>
+                <span id="feat-fallback" style="font-size:.85rem;font-weight:700">···</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── User Memory ── -->
+    <div style="margin-bottom:2rem">
+        <h2>🧠 Résumés utilisateurs (Vector Memory)</h2>
+        <div id="memory-list" style="margin-top:.8rem;font-size:.85rem;color:#d4b896;background:#1a0e04;border:1px solid #3a2a10;border-radius:8px;padding:.8rem;min-height:2.5rem;max-height:300px;overflow-y:auto">
+            <span style="color:#5a4a3a">Chargement…</span>
+        </div>
+    </div>
+
+    <!-- ── PII Events ── -->
+    <div style="margin-bottom:2rem">
+        <h2>🛡 Événements PII détectés</h2>
+        <div id="pii-list" style="margin-top:.8rem;font-size:.85rem;color:#d4b896;font-family:monospace;background:#1a0e04;border:1px solid #3a2a10;border-radius:8px;padding:.8rem;min-height:2.5rem;max-height:200px;overflow-y:auto">
+            <span style="color:#5a4a3a">Aucun événement PII depuis le démarrage.</span>
+        </div>
+    </div>
+
     <div class="cards">
         <div class="card">
             <div class="card-label">Questions</div>
@@ -480,6 +555,11 @@
                     fetchHealth();
                     fetchPipeline();
                     fetchReformulationStatus();
+                    fetchFeatures();
+                    fetchUserMemories();
+                    fetchPii();
+                    setInterval(fetchPii, 15000);
+                    setInterval(fetchUserMemories, 30000);
                     logsTimer = setInterval(fetchLogs, 5000);
                     setInterval(fetchHealth, 30000);
                     setInterval(fetchPipeline, 30000);
@@ -793,6 +873,74 @@
             });
     }
 
+    function fetchFeatures() {
+        fetch('/api/monitoring/features', { headers: {'X-Monitoring-Key': monitoringKey} })
+            .then(r => r.json())
+            .then(d => {
+                const map = {
+                    vector: 'feat-vector', bm25: 'feat-bm25', reranker: 'feat-reranker',
+                    contextual: 'feat-contextual', reformulation: 'feat-reformulation',
+                    pii: 'feat-pii', judge: 'feat-judge', feedback: 'feat-feedback',
+                    confidence: 'feat-confidence', watchdog: 'feat-watchdog',
+                    memory: 'feat-memory', tts: 'feat-tts', fallback: 'feat-fallback',
+                };
+                Object.entries(map).forEach(([key, elId]) => {
+                    const el = document.getElementById(elId);
+                    if (!el || !d[key]) return;
+                    const { ok, detail } = d[key];
+                    el.textContent = ok ? '✅ OK' : '❌ KO';
+                    el.style.color = ok ? '#2ecc71' : '#e07070';
+                    el.title = detail || '';
+                });
+            })
+            .catch(() => {});
+    }
+
+    function fetchUserMemories() {
+        fetch('/api/monitoring/user-memories', { headers: {'X-Monitoring-Key': monitoringKey} })
+            .then(r => r.json())
+            .then(d => {
+                const box = document.getElementById('memory-list');
+                if (!box) return;
+                if (!d.memories || d.memories.length === 0) {
+                    box.innerHTML = '<span style="color:#5a4a3a">Aucun résumé utilisateur.</span>';
+                    return;
+                }
+                box.innerHTML = d.memories.map(m => {
+                    const uid = m.user_id ? m.user_id.substring(0, 8) + '…' : '?';
+                    const summary = (m.summary || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const date = m.updated_at ? new Date(m.updated_at).toLocaleString('fr-FR') : '';
+                    return `<div style="margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid #3a2a10">
+                        <div style="margin-bottom:.3rem">
+                            <span style="color:#c9a84c;font-weight:700">User ${uid}</span>
+                            <span style="color:#5a4a3a;font-size:.75rem;margin-left:.8rem">${date}</span>
+                        </div>
+                        <div style="color:#d4b896;white-space:pre-wrap;font-family:inherit">${summary}</div>
+                    </div>`;
+                }).join('');
+            })
+            .catch(() => {});
+    }
+
+    function fetchPii() {
+        fetch('/api/monitoring/pii', { headers: {'X-Monitoring-Key': monitoringKey} })
+            .then(r => r.json())
+            .then(d => {
+                const box = document.getElementById('pii-list');
+                if (!box) return;
+                if (!d.history || d.history.length === 0) {
+                    box.innerHTML = '<span style="color:#5a4a3a">Aucun événement PII depuis le démarrage.</span>';
+                    return;
+                }
+                box.innerHTML = [...d.history].reverse().map(e =>
+                    `<div style="margin-bottom:.3rem"><span style="color:#8a7a6a">${e.time}</span> `+
+                    `<span style="color:#e07070;font-weight:700">[${e.types.join(', ')}]</span> `+
+                    `<span style="color:#c9a84c">${e.masked_text}</span></div>`
+                ).join('');
+            })
+            .catch(() => {});
+    }
+
     function startCountdown() {
         if (countdownTimer) clearInterval(countdownTimer);
         countdownVal = 30;
@@ -803,6 +951,7 @@
                 countdownVal = 30;
                 fetchStats();
                 fetchPipeline();
+                fetchFeatures();
             }
         }, 1000);
     }

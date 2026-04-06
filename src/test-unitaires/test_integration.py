@@ -45,6 +45,7 @@ def parse_sse(content: bytes) -> list:
 @patch("src.api.routes.rechercher_passages", return_value=(
     ["Elarion est un elfe ancien gardien des forêts."],
     ["personnages.md"],
+    [0.9],
 ))
 @patch("src.api.routes.stream_reponse")
 @patch("src.api.routes.save_exchange")
@@ -86,7 +87,7 @@ def test_pipeline_complet_question_valide(
 @patch("src.api.routes.index_data", return_value=False)
 @patch("src.api.routes.get_history", return_value=[])
 @patch("src.api.routes.reformuler_question", return_value="question reformulée")
-@patch("src.api.routes.rechercher_passages", return_value=([], []))
+@patch("src.api.routes.rechercher_passages", return_value=([], [], []))
 def test_pipeline_aucun_passage(
     mock_rechercher, mock_reformuler, mock_history, mock_index, mock_valider,
 ):
@@ -148,7 +149,7 @@ def test_pipeline_reformulation_avec_historique(
     mock_reformuler, mock_history, mock_index, mock_valider,
 ):
     """La question reformulée (et non l'originale) doit être passée à la recherche."""
-    mock_rechercher.return_value = (["Elarion mesure 2 mètres."], ["personnages.md"])
+    mock_rechercher.return_value = (["Elarion mesure 2 mètres."], ["personnages.md"], [0.9])
 
     create_client().post("/api/ask", json={
         "question": "il fait quelle taille ?",
@@ -164,7 +165,7 @@ def test_pipeline_reformulation_avec_historique(
 @patch("src.api.routes.index_data", return_value=False)
 @patch("src.api.routes.get_history", return_value=[])
 @patch("src.api.routes.reformuler_question", return_value="question")
-@patch("src.api.routes.rechercher_passages", return_value=(["passage"], ["source.md"]))
+@patch("src.api.routes.rechercher_passages", return_value=(["passage"], ["source.md"], [0.8]))
 @patch("src.api.routes.stream_reponse", return_value=iter(["réponse complète"]))
 @patch("src.api.routes.save_exchange")
 @patch("src.api.routes.track")

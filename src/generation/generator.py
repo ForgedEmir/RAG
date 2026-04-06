@@ -2,6 +2,7 @@
 import os
 import logging
 import importlib
+import threading
 from typing import List, Optional, Iterator
 
 from langchain_openai import ChatOpenAI
@@ -9,16 +10,26 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
-_api_key        = os.getenv("OPENAI_API_KEY")
+_api_key        = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 _primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
 _fallback_key   = os.getenv("FALLBACK_API_KEY")
 _fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 _CONV_DEPTH     = int(os.getenv("CONVERSATION_DEPTH", "5"))
 _REFORMULATION_ENABLED = os.getenv("REFORMULATION_ENABLED", "true").lower() != "false"
 
+# Dedicated Groq fallback (GROQ_API_KEY takes precedence over the generic
+# FALLBACK_API_KEY so projects can use separate credentials for each tier).
+_groq_api_key   = os.getenv("GROQ_API_KEY")
+_groq_model     = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+# Hardcoded free tier: OpenRouter's free mixtral route (no key needed for
+# low-volume usage; requests that fail here raise normally).
+_FREE_FALLBACK_BASE_URL = "https://openrouter.ai/api/v1"
+_FREE_FALLBACK_MODEL    = "mistralai/mistral-7b-instruct:free"
+
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
     model=_primary_model,
-    base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
+    base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
     api_key=_api_key, temperature=0.2,
 ) if _api_key else None
 
@@ -28,12 +39,34 @@ _llm_fallback: Optional[ChatOpenAI] = ChatOpenAI(
     api_key=_fallback_key, temperature=0.2,
 ) if _fallback_key else None
 
-_LANGFUSE_LOGGED = False
-_langfuse_client = None
+# Groq-specific fallback (second tier — used when both primary and
+# _llm_fallback fail, or when GROQ_API_KEY is set independently).
+_llm_groq: Optional[ChatOpenAI] = ChatOpenAI(
+    model=_groq_model,
+    base_url="https://api.groq.com/openai/v1",
+    api_key=_groq_api_key, temperature=0.2,
+) if _groq_api_key else None
 
+# Third-tier free fallback via OpenRouter (no auth required for free models).
+_llm_free: Optional[ChatOpenAI] = ChatOpenAI(
+    model=_FREE_FALLBACK_MODEL,
+    base_url=_FREE_FALLBACK_BASE_URL,
+    api_key="no-key",  # OpenRouter accepts a placeholder for free models
+    temperature=0.2,
+)
+
+_LANGFUSE_LOGGED    = False
+_langfuse_client    = None
+_langfuse_lock      = threading.Lock()
+
+
+_reformulation_history: list = []  # [(original, reformulated)]
 
 def get_reformulation_enabled() -> bool:
     return _REFORMULATION_ENABLED
+
+def get_reformulation_history() -> list:
+    return list(_reformulation_history[-20:])
 
 
 def set_reformulation_enabled(enabled: bool) -> bool:
@@ -61,29 +94,28 @@ def _langfuse_handler(name: str = "lorekeeper", **meta):
 
     try:
         global _langfuse_client
-        try:
-            # Langfuse v2 (legacy path)
-            CallbackHandler = importlib.import_module("langfuse.callback").CallbackHandler
-            handler = CallbackHandler(
-                public_key=public_key,
-                secret_key=secret_key,
-                host=host,
-                trace_name=name,
-                metadata=meta,
-            )
-        except Exception:
-            # Langfuse récent (langchain integration)
-            from langfuse import Langfuse
-            from langfuse.langchain import CallbackHandler
-            if _langfuse_client is None:
-                _langfuse_client = Langfuse(
+        with _langfuse_lock:
+            try:
+                # Langfuse v2 (legacy path)
+                CallbackHandler = importlib.import_module("langfuse.callback").CallbackHandler
+                handler = CallbackHandler(
                     public_key=public_key,
                     secret_key=secret_key,
                     host=host,
+                    trace_name=name,
+                    metadata=meta,
                 )
-            # Cette version lit LANGFUSE_SECRET_KEY/HOST depuis l'environnement.
-            # Elle ne supporte pas trace_name/metadata au constructeur.
-            handler = CallbackHandler(public_key=public_key)
+            except Exception:
+                # Langfuse récent (langchain integration)
+                from langfuse import Langfuse
+                from langfuse.langchain import CallbackHandler
+                if _langfuse_client is None:
+                    _langfuse_client = Langfuse(
+                        public_key=public_key,
+                        secret_key=secret_key,
+                        host=host,
+                    )
+                handler = CallbackHandler(public_key=public_key)
 
         if not _LANGFUSE_LOGGED:
             logger.info(f"Langfuse activé sur {host}")
@@ -159,6 +191,9 @@ def reformuler_question(question: str, history: List[dict]) -> str:
         return question
     if not history or not _llm:
         return question
+    # Skip reformulation pour questions courtes sans historique pertinent — économise un appel LLM
+    if len(question.split()) <= 5 and len(history) <= 1:
+        return question
     historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
     try:
         result = _llm.invoke([
@@ -170,6 +205,9 @@ def reformuler_question(question: str, history: List[dict]) -> str:
         ], config={"callbacks": _callbacks("reformulation")})
         reformulated = result.content.strip()
         logger.info(f"Reformulée : {reformulated!r}")
+        _reformulation_history.append({"original": question, "reformulated": reformulated})
+        if len(_reformulation_history) > 50:
+            _reformulation_history.pop(0)
         return reformulated
     except Exception as e:
         logger.warning(f"Reformulation échouée : {e}")
@@ -182,7 +220,22 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
-    return _llm.invoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])}).content.strip()
+    _sync_chain = [
+        (_llm,          _primary_model,       "ask"),
+        (_llm_fallback, _fallback_model,       "fallback"),
+        (_llm_groq,     _groq_model,           "groq-fallback"),
+        (_llm_free,     _FREE_FALLBACK_MODEL,  "free-fallback"),
+    ]
+    last_err: Exception = ValueError("No LLM available")
+    for fb_llm, fb_model, fb_label in _sync_chain:
+        if fb_llm is None:
+            continue
+        try:
+            return fb_llm.invoke(messages, config={"callbacks": _callbacks(fb_label, question=question[:80])}).content.strip()
+        except Exception as e:
+            logger.warning(f"generer_reponse: {fb_label} ({fb_model}) failed — {e}")
+            last_err = e
+    raise last_err
 
 
 def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
@@ -195,22 +248,40 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
     cb = _callbacks("ask-stream", question=question[:80])
     if model_used is not None:
         model_used.append(_primary_model)
+    def _track_fallback(from_model: str, to_model: str, err: Exception) -> None:
+        try:
+            from src.monitoring.tracker import track
+            track("fallback", detail=f"{from_model} → {to_model} | {str(err)[:100]}")
+        except Exception:
+            pass
+
+    # Build ordered fallback chain: primary is already tried above;
+    # remaining tiers: OpenRouter fallback → Groq → free OpenRouter model.
+    _fallback_chain = [
+        (_llm_fallback, _fallback_model, "fallback"),
+        (_llm_groq,     _groq_model,     "groq-fallback"),
+        (_llm_free,     _FREE_FALLBACK_MODEL, "free-fallback"),
+    ]
+
     try:
         for chunk in _llm.stream(messages, config={"callbacks": cb}):
             if chunk.content:
                 yield chunk.content
-    except Exception as e:
-        if _llm_fallback:
-            logger.warning(f"LLM KO ({e}), fallback → {_fallback_model}")
+    except Exception as primary_err:
+        last_err = primary_err
+        for fb_llm, fb_model, fb_label in _fallback_chain:
+            if fb_llm is None:
+                continue
+            logger.warning(f"LLM KO ({last_err}), trying {fb_label} → {fb_model}")
             if model_used is not None:
-                model_used[0] = f"{_fallback_model} [fallback]"
+                model_used[0] = f"{fb_model} [{fb_label}]"
+            _track_fallback(_primary_model, fb_model, last_err)
             try:
-                from src.monitoring.tracker import track
-                track("fallback", detail=f"{_primary_model} → {_fallback_model} | {str(e)[:100]}")
-            except Exception:
-                pass
-            for chunk in _llm_fallback.stream(messages, config={"callbacks": _callbacks("fallback")}):
-                if chunk.content:
-                    yield chunk.content
-        else:
-            raise
+                for chunk in fb_llm.stream(messages, config={"callbacks": _callbacks(fb_label)}):
+                    if chunk.content:
+                        yield chunk.content
+                return  # success — stop iterating the chain
+            except Exception as fb_err:
+                last_err = fb_err
+                logger.warning(f"{fb_label} also failed: {fb_err}")
+        raise last_err

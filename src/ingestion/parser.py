@@ -57,49 +57,37 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         logger.error(f"Fichier introuvable : {filepath}")
         return None
 
-    _, ext = os.path.splitext(filepath)
-    ext = ext.lower()
+    if not isinstance(filepath, str):
+        return None
 
+    ext = os.path.splitext(filepath)[1].lower()
+    loaders = {
+        '.txt': lambda p: open(p, 'r', encoding='utf-8').read(),
+        '.md':  lambda p: open(p, 'r', encoding='utf-8').read(),
+        '.json': lambda p: _json_to_text(json.load(open(p, 'r', encoding='utf-8'))),
+        '.csv': _read_csv,
+        '.xlsx': _xlsx_to_text,
+        '.xml': _xml_to_text,
+        '.pdf': _parse_pdf_llamaparse,
+    }
+    loader = loaders.get(ext)
+    if not loader:
+        logger.warning(f"Format non supporté : {ext}")
+        return None
     try:
-        if ext == '.pdf':
-            text = _parse_pdf_llamaparse(filepath)
-            if text:
-                logger.info(f"PDF parsé via LlamaParse : {filepath}")
-                return text
-            logger.info(f"PDF sans clé LlamaParse, fallback Unstructured : {filepath}")
-            return None
-
-        if ext in ('.txt', '.md'):
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return f.read()
-
-        elif ext == '.json':
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return _json_to_text(json.load(f))
-
-        elif ext == '.csv':
-            with open(filepath, 'r', encoding='utf-8') as f:
-                dialect = csv.Sniffer().sniff(f.read(8192))
-                f.seek(0)
-                lignes = [
-                    " ".join(cell for cell in row if cell.strip())
-                    for row in csv.reader(f, dialect)
-                ]
-                return "\n".join(l for l in lignes if l)
-
-        elif ext == '.xlsx':
-            return _xlsx_to_text(filepath)
-
-        elif ext == '.xml':
-            return _xml_to_text(filepath)
-
-        else:
-            logger.warning(f"Format non supporté : {ext}")
-            return None
-
+        return loader(filepath)
     except Exception as e:
         logger.error(f"Erreur en lisant {filepath} : {e}")
         return None
+
+
+def _read_csv(filepath: str) -> str:
+    with open(filepath, 'r', encoding='utf-8') as f:
+        sample = f.read(8192)
+        f.seek(0)
+        dialect = csv.Sniffer().sniff(sample)
+        lines = [" ".join(c for c in row if c.strip()) for row in csv.reader(f, dialect)]
+        return "\n".join(l for l in lines if l)
 
 
 def _xlsx_to_text(filepath: str) -> str:

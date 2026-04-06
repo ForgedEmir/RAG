@@ -68,3 +68,25 @@ CREATE POLICY "messages_policy" ON messages FOR ALL
 
 CREATE POLICY "user_memory_policy" ON user_memory FOR ALL
     USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- =========================
+-- FEEDBACK (Human-in-the-Loop)
+-- =========================
+CREATE TABLE feedback (
+    id          BIGSERIAL PRIMARY KEY,
+    session_id  UUID NOT NULL,
+    user_id     UUID NOT NULL,
+    rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment     TEXT DEFAULT '',
+    judge_score FLOAT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_feedback_session_id ON feedback(session_id);
+CREATE INDEX idx_feedback_user_id    ON feedback(user_id);
+
+ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "feedback_policy" ON feedback FOR ALL
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+

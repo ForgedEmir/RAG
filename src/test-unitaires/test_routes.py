@@ -43,7 +43,7 @@ def parse_sse(content: bytes) -> list:
 def test_ask_question_valide(mock_stream, mock_rechercher, mock_index):
     """On peut poser une question valide et recevoir une réponse streamée."""
     mock_index.return_value = True
-    mock_rechercher.return_value = (["Passage 1", "Passage 2"], ["source1.md", "source2.md"])
+    mock_rechercher.return_value = (["Passage 1", "Passage 2"], ["source1.md", "source2.md"], [0.9, 0.8])
     mock_stream.return_value = iter(["Réponse ", "de l'IA"])
 
     response = create_client().post("/api/ask",
@@ -78,15 +78,13 @@ def test_ask_question_vide(mock_index):
 def test_ask_aucun_passage_trouve(mock_rechercher, mock_index):
     """Quand aucun passage n'est trouvé, on reçoit un message d'information."""
     mock_index.return_value = True
-    mock_rechercher.return_value = ([], [])
+    mock_rechercher.return_value = ([], [], [])
 
     response = create_client().post("/api/ask",
                                     json={"question": "Question inconnue", "user_id": "user_test"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert "archives ne contiennent aucune information" in data["reponse"]
-    assert data["sources"] == []
+    assert "archives ne contiennent aucune information" in response.text
 
 
 @patch("src.api.routes.index_data")
@@ -95,7 +93,7 @@ def test_ask_aucun_passage_trouve(mock_rechercher, mock_index):
 def test_ask_erreur_generation(mock_stream, mock_rechercher, mock_index):
     """Si la génération échoue, un événement erreur est envoyé dans le stream."""
     mock_index.return_value = True
-    mock_rechercher.return_value = (["Passage"], ["source.md"])
+    mock_rechercher.return_value = (["Passage"], ["source.md"], [0.8])
     mock_stream.side_effect = Exception("Erreur API")
 
     response = create_client().post("/api/ask",
@@ -121,7 +119,7 @@ def test_ask_utilise_question_reformulee(mock_stream, mock_rechercher, mock_refo
     mock_index.return_value = True
     mock_history.return_value = [{"question": "Qui est Lucas ?", "answer": "Un guerrier."}]
     mock_reformuler.return_value = "Quelle est la taille de Lucas le Tranchant ?"
-    mock_rechercher.return_value = (["Lucas mesure 1m30."], ["lore.md"])
+    mock_rechercher.return_value = (["Lucas mesure 1m30."], ["lore.md"], [0.9])
     mock_stream.return_value = iter(["1m30"])
 
     create_client().post("/api/ask",
@@ -143,7 +141,7 @@ def test_ask_sans_historique_pas_de_reformulation(mock_stream, mock_rechercher, 
     mock_index.return_value = True
     mock_history.return_value = []
     mock_reformuler.return_value = "Qui est le roi ?"
-    mock_rechercher.return_value = (["Le roi est Alaric."], ["lore.md"])
+    mock_rechercher.return_value = (["Le roi est Alaric."], ["lore.md"], [0.9])
     mock_stream.return_value = iter(["Alaric"])
 
     create_client().post("/api/ask",
