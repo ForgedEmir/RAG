@@ -63,6 +63,39 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     logger.info(f"Fichier uploadé : {file.filename}")
     return {"message": f"'{file.filename}' uploadé. Réindexe pour l'activer.", "filename": file.filename}
 
+@admin_router.post("/api/evaluate")
+@limiter.limit("30/hour")
+async def evaluate_rag_endpoint(request: Request):
+    """Evaluate RAG quality for a given question / contexts / answer triple.
+
+    Body (JSON):
+        question  : str
+        contexts  : list[str]   — retrieved passages used to generate the answer
+        answer    : str
+
+    Returns RAGAS scores: faithfulness, answer_relevancy, context_precision (0–1).
+    """
+    require_monitoring(request)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Corps JSON invalide."}, status_code=400)
+
+    question = (body or {}).get("question", "").strip()
+    contexts = (body or {}).get("contexts", [])
+    answer = (body or {}).get("answer", "").strip()
+
+    if not question or not answer:
+        return JSONResponse({"error": "Les champs 'question' et 'answer' sont requis."}, status_code=400)
+    if not isinstance(contexts, list):
+        return JSONResponse({"error": "'contexts' doit être une liste de chaînes."}, status_code=400)
+
+    from src.evaluation.ragas_eval import evaluate_rag
+    scores = evaluate_rag(question, [str(c) for c in contexts], answer)
+    track("evaluate", detail=f"q={question[:60]}")
+    return {"scores": scores}
+
+
 @admin_router.delete("/api/admin/delete")
 async def admin_delete(request: Request):
     require_monitoring(request)

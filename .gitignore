@@ -3,6 +3,11 @@
 # Local tooling
 .claude/
 
+# IDE
+.idea/
+.vscode/
+*.iml
+
 # Python
 *.pyc
 __pycache__/
@@ -23,5 +28,14 @@ chroma_db/
 # Env
 venv/
 
+# Node
+node_modules/
+
+# Rapports de tests
+rapport_tests_*.txt
+
 # Documents de schema locaux (PDF exclus, draw.io inclus)
 Schéma/*.pdf
+
+# Kilo
+.kilo/

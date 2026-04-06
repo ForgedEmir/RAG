@@ -43,10 +43,12 @@ async def stt(request: Request, audio: UploadFile = File(...)):
         transcription = client.audio.transcriptions.create(
             model="whisper-large-v3",
             file=(audio.filename or "audio.webm", content),
-            language="fr",
+            # WHY: Pas de language fixé — Whisper détecte automatiquement la langue
+            # pour supporter les utilisateurs francophones ET anglophones.
         )
-        track("voice", detail=f"whisper | {audio.filename or 'audio.webm'}")
-        return {"text": transcription.text}
+        detected_lang = getattr(transcription, "language", "unknown")
+        track("voice", detail=f"whisper | {audio.filename or 'audio.webm'} | lang:{detected_lang}")
+        return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)

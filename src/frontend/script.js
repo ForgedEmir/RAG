@@ -51,32 +51,47 @@ function setAuthStateUI() {
 }
 
 async function initAuth() {
-    // Vérifier si l'utilisateur était en mode guest
+    // WHY: On initialise Supabase en premier pour détecter un callback OAuth
+    // (token dans le fragment URL). Si on retournait tôt pour le guest, le login
+    // GitHub ne pouvait jamais s'enregistrer après un passage en mode invité.
+    const cfg = await loadAuthConfig().catch(() => null);
+
+    if (cfg?.supabase_url && cfg?.supabase_anon_key && window.supabase?.createClient) {
+        supabaseClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+        const { data } = await supabaseClient.auth.getSession();
+        const sessionUser = data?.session?.user || null;
+
+        if (sessionUser) {
+            // Session réelle (email ou OAuth GitHub) — on efface le mode invité s'il existait
+            localStorage.removeItem('oracleGuestId');
+            currentUser = sessionUser;
+            setAuthStateUI();
+
+            supabaseClient.auth.onAuthStateChange((_event, session) => {
+                currentUser = session?.user || null;
+                if (currentUser) localStorage.removeItem('oracleGuestId');
+                setAuthStateUI();
+            });
+            return;
+        }
+
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            currentUser = session?.user || null;
+            if (currentUser) localStorage.removeItem('oracleGuestId');
+            setAuthStateUI();
+        });
+    }
+
+    // Pas de session Supabase active : vérifier le mode guest local
     const guestId = localStorage.getItem('oracleGuestId');
     if (guestId) {
-        currentUser = { id: guestId, email: 'Invité' };
+        currentUser = { id: guestId, email: 'Invit\u00e9' };
         setAuthStateUI();
-        return; // Ne pas initialiser Supabase pour les guests
+        return;
     }
 
-    const cfg = await loadAuthConfig();
-
-    if (!cfg.supabase_url || !cfg.supabase_anon_key) {
-        throw new Error('SUPABASE_URL ou SUPABASE_ANON_KEY manquant(s) côté serveur');
-    }
-    if (!window.supabase?.createClient) {
-        throw new Error('SDK Supabase non chargé');
-    }
-
-    supabaseClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
-    const { data } = await supabaseClient.auth.getSession();
-    currentUser = data?.session?.user || null;
+    // Ni session ni guest → montrer le modal d'auth
     setAuthStateUI();
-
-    supabaseClient.auth.onAuthStateChange((_event, session) => {
-        currentUser = session?.user || null;
-        setAuthStateUI();
-    });
 }
 
 async function loginWithEmail() {
@@ -479,6 +494,53 @@ function addTtsButton(textEl) {
 function showLoading() { loadingIndicator.classList.add('visible'); }
 function hideLoading() { loadingIndicator.classList.remove('visible'); }
 
+// ── Confidence score & feedback ──────────────────────────────────────────────
+
+function addConfidenceBadge(msgEl, metaData) {
+    if (!metaData) return;
+    const confidence = metaData.confidence ?? null;
+    const sources    = (metaData.sources || []).join(' · ');
+    if (confidence === null && !sources) return;
+
+    const badge = document.createElement('div');
+    badge.className = 'confidence-badge';
+    const parts = [];
+    if (sources) parts.push(`📚 ${sources}`);
+    if (confidence !== null) parts.push(`Confiance : ${confidence} %`);
+    badge.textContent = parts.join('  ·  ');
+    msgEl.parentNode.appendChild(badge);
+}
+
+function addFeedbackButtons(msgEl, sessionId) {
+    const wrap = document.createElement('div');
+    wrap.className = 'feedback-wrap';
+
+    [{ emoji: '👍', rating: 5 }, { emoji: '👎', rating: 1 }].forEach(({ emoji, rating }) => {
+        const btn = document.createElement('button');
+        btn.className = 'feedback-btn';
+        btn.textContent = emoji;
+        btn.title = rating >= 4 ? 'Bonne réponse' : 'Réponse incorrecte';
+        btn.addEventListener('click', async () => {
+            if (wrap.dataset.sent) return;
+            wrap.dataset.sent = '1';
+            wrap.querySelectorAll('.feedback-btn').forEach(b => b.disabled = true);
+            btn.textContent += ' ✔';
+            try {
+                await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ session_id: sessionId, rating }),
+                });
+            } catch (e) {
+                console.warn('Feedback error:', e);
+            }
+        });
+        wrap.appendChild(btn);
+    });
+
+    msgEl.parentNode.appendChild(wrap);
+}
+
 // ── Cooldown anti-spam (5s) ─────────────────────────────────────────────────
 
 let _cooldownTimer = null;
@@ -559,6 +621,7 @@ async function consultOracle() {
         const decoder = new TextDecoder();
         let buffer = '';
         let fullText = '';
+        let metaData = null;
         let isFirstQuestion = getSessions().find(s => s.id === sessionId) === undefined;
 
         while (true) {
@@ -576,7 +639,9 @@ async function consultOracle() {
 
                 try {
                     const event = JSON.parse(payload);
-                    if (event.type === 'text') {
+                    if (event.type === 'meta') {
+                        metaData = event;
+                    } else if (event.type === 'text') {
                         fullText += event.text;
                         msgEl.textContent = fullText;
                         oracleResponses.scrollTop = oracleResponses.scrollHeight;
@@ -585,6 +650,8 @@ async function consultOracle() {
                         if (isFirstQuestion) registerSession(sessionId, question);
                         appendLocalExchange(sessionId, question, fullText);
                         addTtsButton(msgEl);
+                        addConfidenceBadge(msgEl, metaData);
+                        addFeedbackButtons(msgEl, sessionId);
                         if (voiceMode) { voiceMode = false; autoPlayTts(msgEl); }
                     }
                 } catch (_) {}

@@ -107,7 +107,12 @@ def test_recherche(mock_embeddings):
 @patch('src.ingestion.vector_store.QdrantVectorStore')
 def test_get_store_cree_collection(mock_qdrant_vs, mock_embeddings, mock_client_class):
     """get_store cree la collection si elle n'existe pas."""
+    import src.ingestion.vector_store as vs
     from src.ingestion.vector_store import get_store
+
+    # Réinitialiser les singletons pour isoler ce test
+    vs._collection_ready = False
+    vs._client = None
 
     mock_client = Mock()
     mock_client_class.return_value = mock_client
