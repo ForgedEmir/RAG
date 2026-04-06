@@ -11,7 +11,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 DATA_FOLDER   = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
-DEBOUNCE_MS   = 2.0   # secondes
+DEBOUNCE_MS   = 10.0   # secondes
 
 
 class _LoreWatcher:
@@ -19,6 +19,7 @@ class _LoreWatcher:
         self._timer: Optional[threading.Timer] = None
         self._lock  = threading.Lock()
         self._observer = None
+        self._indexing = False
 
     def start(self) -> None:
         try:
@@ -68,6 +69,9 @@ class _LoreWatcher:
             self._timer.start()
 
     def _reindex(self) -> None:
+        if self._indexing:
+            return
+        self._indexing = True
         logger.info("[WATCHDOG] Changement détecté — réindexation en cours...")
         try:
             from src.ingestion.run import index_data
@@ -75,6 +79,8 @@ class _LoreWatcher:
             logger.info("[WATCHDOG] Réindexation terminée.")
         except Exception as e:
             logger.error(f"[WATCHDOG] Réindexation échouée : {e}")
+        finally:
+            self._indexing = False
 
 
 # Singleton

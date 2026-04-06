@@ -1,3 +1,10 @@
+FROM node:20-slim AS frontend
+WORKDIR /build
+COPY src/frontend-react/package.json src/frontend-react/package-lock.json ./
+RUN npm ci
+COPY src/frontend-react/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -10,6 +17,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY --from=frontend /frontend/assets/ /app/src/frontend/assets/
+COPY --from=frontend /frontend/index.html /app/src/frontend/index.html
 
 RUN chmod +x start.sh
 
