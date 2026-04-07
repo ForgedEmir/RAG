@@ -20,6 +20,16 @@ async def monitoring_stats(request: Request):
     return get_stats()
 
 
+@monitoring_router.get("/api/cache/stats")
+async def monitoring_cache_stats(request: Request):
+    require_monitoring(request)
+    try:
+        from src.caching.semantic_cache import stats as cache_stats
+        return cache_stats()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @monitoring_router.get("/api/monitoring/pipeline")
 async def monitoring_pipeline(request: Request):
     require_monitoring(request)
@@ -238,3 +248,13 @@ async def monitoring_pii(request: Request):
     require_monitoring(request)
     from src.security.pii_masker import get_pii_history
     return {"history": get_pii_history()}
+
+
+@monitoring_router.get("/api/monitoring/feedbacks")
+async def monitoring_feedbacks(request: Request):
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import get_feedback_events
+        return {"feedbacks": get_feedback_events(limit=200)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

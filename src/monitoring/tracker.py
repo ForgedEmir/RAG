@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import threading
 import uuid
@@ -298,3 +299,70 @@ def get_stats() -> dict:
     except Exception as e:
         logger.error(f"[MONITORING] get_stats : {e}")
         return {"error": str(e), "counts": {}, "events": []}
+
+
+def get_feedback_events(limit: int = 100) -> list:
+    """Retourne les derniers événements de feedback utilisateur.
+
+    Format attendu dans `detail`: "uid=<id> value=<+1|-1> trace=<id>".
+    """
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        r = (client.table("events").select("type, detail, created_at")
+             .eq("type", "feedback")
+             .order("created_at", desc=True)
+             .limit(limit).execute())
+        rows = r.data or []
+
+        parsed = []
+        for ev in rows:
+            detail = ev.get("detail", "") or ""
+            user_id = ""
+            value = None
+            trace = ""
+            comment = ""
+            message = ""
+            question = ""
+
+            # Nouveau format JSON (préféré)
+            try:
+                d = json.loads(detail)
+                if isinstance(d, dict):
+                    user_id = str(d.get("uid", "") or "")
+                    try:
+                        value = int(d.get("value")) if d.get("value") is not None else None
+                    except Exception:
+                        value = None
+                    trace = str(d.get("trace", "") or "")
+                    comment = str(d.get("comment", "") or "")
+                    message = str(d.get("message", "") or "")
+                    question = str(d.get("question", "") or "")
+            except Exception:
+                # Ancien format texte: "uid=... value=... trace=..."
+                for token in detail.split():
+                    if token.startswith("uid="):
+                        user_id = token[4:]
+                    elif token.startswith("value="):
+                        try:
+                            value = int(token[6:])
+                        except Exception:
+                            value = None
+                    elif token.startswith("trace="):
+                        trace = token[6:]
+
+            parsed.append({
+                "created_at": ev.get("created_at"),
+                "user_id": user_id,
+                "value": value,
+                "trace_id": trace,
+                "comment": comment,
+                "message": message,
+                "question": question,
+                "detail": detail,
+            })
+        return parsed
+    except Exception as e:
+        logger.warning(f"[MONITORING] get_feedback_events : {e}")
+        return []

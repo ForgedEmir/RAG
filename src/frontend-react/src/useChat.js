@@ -31,7 +31,12 @@ function newSessionId() {
 }
 
 function flatToMessages(flat) {
-  return flat.map((m, i) => ({ id: m.id ?? i, role: m.role, content: m.content }));
+  return flat.map((m, i) => ({
+    id: m.id ?? i,
+    role: m.role,
+    content: m.content,
+    trace_id: m.trace_id ?? null,
+  }));
 }
 
 export function useChat() {
@@ -158,7 +163,15 @@ export function useChat() {
     }
 
     _addMsg(sid, { role: 'user', content: question, id: Date.now() });
-    _addMsg(sid, { role: 'assistant', content: '', id: Date.now() + 1, streaming: true, sources: [], confidence: null });
+    _addMsg(sid, {
+      role: 'assistant',
+      content: '',
+      id: Date.now() + 1,
+      streaming: true,
+      sources: [],
+      confidence: null,
+      question_for_feedback: question,
+    });
 
     setStreaming(true);
     const controller = new AbortController();
@@ -181,7 +194,7 @@ export function useChat() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buf = '', accumulated = '', sources = [], confidence = null;
+      let buf = '', accumulated = '', sources = [], confidence = null, traceId = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -200,7 +213,8 @@ export function useChat() {
               accumulated += evt.text;
               _patchLast(sid, { content: accumulated, sources, confidence });
             } else if (evt.type === 'done') {
-              _patchLast(sid, { content: accumulated, streaming: false, sources, confidence });
+              traceId = evt.trace_id ?? null;
+              _patchLast(sid, { content: accumulated, streaming: false, sources, confidence, trace_id: traceId });
             } else if (evt.type === 'error') {
               _patchLast(sid, { content: evt.message || 'Erreur', streaming: false });
             }

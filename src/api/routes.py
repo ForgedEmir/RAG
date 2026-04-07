@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from typing import Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -88,9 +89,11 @@ class ReindexBody(BaseModel):
     force: bool = False
 
 class FeedbackBody(BaseModel):
-    session_id: str
-    rating: int          # 1-5
-    comment: str = ""
+    trace_id: str
+    value: int
+    comment: Optional[str] = None
+    message: Optional[str] = None
+    question: Optional[str] = None
 
 
 router = APIRouter()
@@ -221,7 +224,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     confidence_pct = round(sum(conf_scores) / len(conf_scores) * 100) if conf_scores else 0
 
     async def event_stream():
-        accumulated, model_used = [], []
+        accumulated, model_used, trace_id_out = [], [], []
         try:
             yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'passages': passages, 'confidence': confidence_pct})}\n\n"
 
@@ -233,7 +236,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 try:
                     for chunk in stream_reponse(question, passages, sources, history,
                                                 model_used=model_used, user_summary=summary,
-                                                vector_memories=memories):
+                                                vector_memories=memories,
+                                                trace_id_out=trace_id_out):
                         loop.call_soon_threadsafe(queue.put_nowait, ("text", chunk))
                 except Exception as e:
                     loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
@@ -254,7 +258,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 yield f"data: {json.dumps({'type': 'text', 'text': data})}\n\n"
 
             model_name = model_used[0] if model_used else "unknown"
-            yield f"data: {json.dumps({'type': 'done', 'model': model_name})}\n\n"
+            trace_id = trace_id_out[0] if trace_id_out else None
+            yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id})}\n\n"
 
             if body.session_id:
                 answer = "".join(accumulated)
@@ -287,45 +292,51 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
 
 @router.post("/api/feedback")
-async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current_user)):
-    """Cycle Human-in-the-Loop : stocke le feedback, déclenche le judge si rating ≤ 2."""
-    if not (1 <= body.rating <= 5):
-        return JSONResponse({"error": "rating doit être entre 1 et 5"}, status_code=400)
+@limiter.limit("20/minute")
+async def submit_feedback(request: Request, body: FeedbackBody, user_id: str = Depends(get_current_user)):
+    if body.value not in (-1, 1):
+        return JSONResponse({"error": "value doit être -1 (downvote) ou 1 (upvote)"}, status_code=400)
 
-    def _persist_and_judge():
-        from src.monitoring.tracker import _get_client
-        judge_score = None
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip().strip('"')
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip().strip('"')
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip().strip('"')
 
-        if body.rating <= 2:
-            try:
-                from src.security.judge import evaluer_reponse
-                # WHY: On récupère la dernière réponse de la conversation pour la juger.
-                history = get_history(body.session_id)
-                if history:
-                    last = history[-1]
-                    judge_score = evaluer_reponse(last["question"], last["answer"])
-                    if judge_score is not None and judge_score < 0.5:
-                        track("judge_flag", detail=f"session:{body.session_id} score:{judge_score:.2f}")
-                        logger.warning(f"[JUDGE] Score faible ({judge_score:.2f}) pour session {body.session_id[:8]}")
-            except Exception as e:
-                logger.warning(f"[JUDGE] Évaluation échouée : {e}")
+    if not public_key or not secret_key:
+        return JSONResponse({"error": "Langfuse non configuré"}, status_code=500)
 
-        client = _get_client()
-        if not client:
-            return
-        try:
-            client.table("feedback").insert({
-                "session_id":  body.session_id,
-                "user_id":     user_id,
-                "rating":      body.rating,
-                "comment":     body.comment[:500] if body.comment else "",
-                "judge_score": judge_score,
-            }).execute()
-        except Exception as e:
-            logger.warning(f"[FEEDBACK] Stockage échoué : {e}")
+    clean_comment = (body.comment or "").strip()[:300] or None
+    clean_message = (body.message or "").strip().replace("\n", " ")[:240] or None
+    clean_question = (body.question or "").strip().replace("\n", " ")[:240] or None
 
-    _executor.submit(_persist_and_judge)
-    return {"ok": True}
+    monitor_payload = {
+        "uid": user_id,
+        "value": body.value,
+        "trace": body.trace_id[:12],
+        "comment": clean_comment,
+        "message": clean_message,
+        "question": clean_question,
+        "langfuse": "pending",
+    }
+
+    try:
+        from langfuse import Langfuse
+
+        langfuse = Langfuse(public_key=public_key, secret_key=secret_key, host=host)
+        langfuse.create_score(
+            trace_id=body.trace_id,
+            name="user_feedback",
+            value=body.value,
+            comment=clean_comment,
+        )
+        langfuse.flush()
+        monitor_payload["langfuse"] = "ok"
+        track("feedback", detail=json.dumps(monitor_payload, ensure_ascii=False))
+        return {"message": "Feedback enregistré"}
+    except Exception as e:
+        monitor_payload["langfuse"] = f"error:{str(e)[:120]}"
+        track("feedback", detail=json.dumps(monitor_payload, ensure_ascii=False))
+        logger.error(f"Erreur Langfuse feedback: {e}")
+        return {"message": "Feedback enregistré (mode dégradé)", "warning": "Langfuse indisponible"}
 
 
 @router.post("/api/reindex")

@@ -112,6 +112,15 @@ const MOCK_DB = {
   logs: Array(50).fill(0).map((_, i) => ({ time: new Date(Date.now() - i*10000).toISOString(), level: ['INFO', 'WARNING', 'ERROR', 'DEBUG'][Math.floor(Math.random()*4)], name: 'CoreEngine', msg: `Traitement du chunk #${Math.floor(Math.random()*1000)} effectué.` })),
   pii: [{ original: "Mon email est jean@test.com", masked: "Mon email est [EMAIL]", timestamp: new Date().toISOString() }],
   memories: [{ user_id: "usr_12345", summary: "Utilisateur intéressé par le développement React et l'architecture RAG.", updated_at: new Date().toISOString() }],
+  feedbacks: Array(15).fill(0).map((_, i) => ({
+    created_at: new Date(Date.now() - i * 180000).toISOString(),
+    user_id: `usr_${1000 + i}`,
+    value: i % 3 === 0 ? -1 : 1,
+    trace_id: `trace_${(100000 + i).toString(16)}`,
+    message: `Extrait réponse #${i + 1}: le lore mentionne une faction ancienne liée au royaume d'Aethelgard...`,
+    question: `Question #${i + 1}: Qui est lié à cette faction ?`,
+    detail: `uid=usr_${1000 + i} value=${i % 3 === 0 ? -1 : 1} trace=trace_${(100000 + i).toString(16)}`,
+  })),
   sources: { files: ["manifeste_v1.md", "architecture_rag.pdf", "logs_systeme.csv"], total: 3 }
 };
 
@@ -131,6 +140,7 @@ async function apiFetch(path, monitoringKey, options = {}) {
     if (path === '/api/monitoring/reformulation') return { enabled: MOCK_DB.reformulation_enabled };
     if (path === '/api/monitoring/reformulation/history') return { history: MOCK_DB.reformulation_history };
     if (path === '/api/monitoring/logs') return { logs: MOCK_DB.logs };
+    if (path === '/api/monitoring/feedbacks') return { feedbacks: MOCK_DB.feedbacks };
     if (path === '/api/monitoring/pii') return { history: MOCK_DB.pii };
     if (path === '/api/monitoring/user-memories') return { memories: MOCK_DB.memories };
     if (path === '/api/admin/sources') return MOCK_DB.sources;
@@ -851,12 +861,71 @@ const LogsTab = ({ apiKey }) => {
   );
 };
 
+// 6. FEEDBACKS
+const FeedbacksTab = ({ apiKey }) => {
+  const [feedbacks, setFeedbacks] = useState([]);
+
+  const fetchFeedbacks = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/monitoring/feedbacks', apiKey);
+      setFeedbacks(res.feedbacks || []);
+    } catch (_) {}
+  }, [apiKey]);
+
+  useEffect(() => { fetchFeedbacks(); }, [fetchFeedbacks]);
+  useInterval(fetchFeedbacks, 10000);
+
+  return (
+    <Card delay={0} className="h-[600px] flex flex-col">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-white/40 text-xs uppercase tracking-widest">Feedbacks Utilisateur (votes)</h3>
+        <div className="text-[10px] uppercase tracking-widest text-white/30">{feedbacks.length} entrée(s)</div>
+      </div>
+
+      <div className="overflow-y-auto custom-scrollbar pr-2 flex-1">
+        <table className="w-full text-sm text-left">
+          <thead className="text-xs text-white/20 uppercase tracking-widest sticky top-0 bg-black/80 backdrop-blur pb-2">
+            <tr>
+              <th className="pb-3 font-normal">Date</th>
+              <th className="pb-3 font-normal">Utilisateur</th>
+              <th className="pb-3 font-normal">Vote</th>
+              <th className="pb-3 font-normal">Trace</th>
+              <th className="pb-3 font-normal">Message</th>
+              <th className="pb-3 font-normal pl-6">Question</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {feedbacks.map((f, i) => {
+              const up = Number(f.value) > 0;
+              return (
+                <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} key={`${f.created_at}-${i}`} className="hover:bg-white/5 transition-colors">
+                  <td className="py-3 text-white/40 text-xs">{f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+                  <td className="py-3 text-white/80 text-xs">{f.user_id || '-'}</td>
+                  <td className="py-3">
+                    <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-widest ${up ? 'bg-[#5ed29c]/15 text-[#5ed29c]' : 'bg-[#f87171]/15 text-[#f87171]'}`}>
+                      {up ? 'Upvote' : 'Downvote'}
+                    </span>
+                  </td>
+                  <td className="py-3 text-white/50 text-xs font-mono-custom">{f.trace_id || '-'}</td>
+                  <td className="py-3 text-white/70 text-xs max-w-[360px] truncate" title={f.message || f.detail || ''}>{f.message || f.detail || '-'}</td>
+                  <td className="py-3 pl-6 text-white/60 text-xs max-w-[320px] truncate" title={f.question || ''}>{f.question || '-'}</td>
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!feedbacks.length && <div className="text-white/30 text-sm mt-4">Aucun feedback pour le moment.</div>}
+      </div>
+    </Card>
+  );
+};
+
 // ============================================================================
 // PAGE PRINCIPALE & WRAPPER AUTH
 // ============================================================================
 
 const MonitoringPage = ({ apiKey, onLogout }) => {
-  const tabs = ['Vue d\'ensemble', 'Pipeline', 'Features', 'Sources', 'Logs'];
+  const tabs = ['Vue d\'ensemble', 'Pipeline', 'Features', 'Sources', 'Feedbacks', 'Logs'];
   const [activeTab, setActiveTab] = useState(tabs[0]);
 
   const renderTab = () => {
@@ -865,7 +934,8 @@ const MonitoringPage = ({ apiKey, onLogout }) => {
       case tabs[1]: return <PipelineTab apiKey={apiKey} />;
       case tabs[2]: return <FeatureGridTab apiKey={apiKey} />;
       case tabs[3]: return <SourcesTab apiKey={apiKey} />;
-      case tabs[4]: return <LogsTab apiKey={apiKey} />;
+      case tabs[4]: return <FeedbacksTab apiKey={apiKey} />;
+      case tabs[5]: return <LogsTab apiKey={apiKey} />;
       default: return null;
     }
   };

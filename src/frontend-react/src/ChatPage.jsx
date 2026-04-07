@@ -249,7 +249,7 @@ function useTTS() {
   return { speak, stop, speaking };
 }
 
-const MessageBubble = ({ msg, sessionId }) => {
+const MessageBubble = ({ msg, messages = [], index = -1 }) => {
   const [vote, setVote] = useState(null); // 'up' | 'down' | null
   const { speak, stop, speaking } = useTTS();
   const [ttsActive, setTtsActive] = useState(false);
@@ -257,9 +257,18 @@ const MessageBubble = ({ msg, sessionId }) => {
   const handleVote = async (direction) => {
     const newVote = vote === direction ? null : direction;
     setVote(newVote);
-    if (!newVote || !sessionId) return;
-    // pouce haut = 5 (bon) → pas de judge ; pouce bas = 1 (mauvais) → déclenche le judge LLM
-    const rating = newVote === 'up' ? 5 : 1;
+    if (!newVote || !msg?.trace_id) return;
+    const value = newVote === 'up' ? 1 : -1;
+    const fallbackQuestion = (() => {
+      if (msg?.question_for_feedback) return msg.question_for_feedback;
+      if (!Array.isArray(messages) || index < 0) return '';
+      for (let i = index - 1; i >= 0; i--) {
+        if (messages[i]?.role === 'user' && messages[i]?.content) {
+          return messages[i].content;
+        }
+      }
+      return '';
+    })();
     try {
       const headers = { 'Content-Type': 'application/json' };
       try {
@@ -273,7 +282,12 @@ const MessageBubble = ({ msg, sessionId }) => {
       await fetch('/api/feedback', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ session_id: sessionId, rating }),
+        body: JSON.stringify({
+          trace_id: msg.trace_id,
+          value,
+          message: (msg.content || '').slice(0, 240),
+          question: fallbackQuestion.slice(0, 240),
+        }),
       });
     } catch (_) {}
   };
@@ -614,7 +628,9 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
             {!activeSession?.messages?.length ? (
               <EmptyState onSuggest={(text) => { send(text, activeId || undefined); setAutoScroll(true); }} />
             ) : (
-              activeSession.messages.map(msg => <MessageBubble key={msg.id} msg={msg} sessionId={activeId} />)
+              activeSession.messages.map((msg, index) => (
+                <MessageBubble key={msg.id} msg={msg} messages={activeSession.messages} index={index} />
+              ))
             )}
             <div ref={messagesEndRef} />
           </div>

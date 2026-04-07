@@ -1,7 +1,7 @@
-"""Tests unitaires — Human-in-the-Loop Feedback endpoint."""
-import pytest
+"""Tests unitaires — endpoint feedback upvote/downvote basé sur trace_id."""
 from collections import deque
 from unittest.mock import patch
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
@@ -20,34 +20,45 @@ def create_client(user_id: str = "user-test-123") -> TestClient:
     return TestClient(app)
 
 
-@patch("src.monitoring.tracker._get_client", return_value=None)
-def test_feedback_rating_valide(mock_sb):
-    resp = create_client().post("/api/feedback", json={
-        "session_id": "sess-001",
-        "rating": 5,
-        "comment": "Excellente réponse !",
+@patch("src.api.routes.track")
+@patch("langfuse.Langfuse")
+@patch("src.api.routes.os.getenv")
+def test_feedback_valide(mock_getenv, mock_langfuse_cls, mock_track):
+    values = {
+        "LANGFUSE_PUBLIC_KEY": "pk_test",
+        "LANGFUSE_SECRET_KEY": "sk_test",
+        "LANGFUSE_HOST": "https://cloud.langfuse.com",
+    }
+    mock_getenv.side_effect = lambda k, d=None: values.get(k, d)
+
+    client = create_client()
+    resp = client.post("/api/feedback", json={
+        "trace_id": "trace-123",
+        "value": 1,
+        "comment": "Bonne réponse",
     })
+
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
+    assert "Feedback" in resp.json()["message"]
+    mock_langfuse_cls.return_value.create_score.assert_called_once()
+    mock_langfuse_cls.return_value.flush.assert_called_once()
+    mock_track.assert_called_once()
 
 
-def test_feedback_rating_invalide():
-    resp = create_client().post("/api/feedback", json={
-        "session_id": "sess-001",
-        "rating": 6,
+def test_feedback_value_invalide():
+    client = create_client()
+    resp = client.post("/api/feedback", json={
+        "trace_id": "trace-123",
+        "value": 0,
     })
     assert resp.status_code == 400
 
 
-@patch("src.monitoring.tracker._get_client", return_value=None)
-@patch("src.monitoring.tracker.get_history", return_value=[{"question": "Q?", "answer": "R."}])
-@patch("src.security.judge.evaluer_reponse", return_value=0.3)
-@patch("src.monitoring.tracker.track")
-def test_feedback_mauvaise_note_declenche_judge(mock_track, mock_judge, mock_history, mock_sb):
-    """Rating ≤ 2 doit déclencher judge.py et tracker un flag si score < 0.5."""
-    resp = create_client().post("/api/feedback", json={
-        "session_id": "sess-002",
-        "rating": 1,
-        "comment": "Mauvaise réponse",
+@patch("src.api.routes.os.getenv", side_effect=lambda k, d=None: "" if "LANGFUSE_" in k else d)
+def test_feedback_langfuse_non_configure(_mock_getenv):
+    client = create_client()
+    resp = client.post("/api/feedback", json={
+        "trace_id": "trace-123",
+        "value": -1,
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 500
