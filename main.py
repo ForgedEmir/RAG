@@ -32,6 +32,7 @@ _buf_handler.setFormatter(logging.Formatter())
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S")
 logging.getLogger().addHandler(_buf_handler)
+logger = logging.getLogger(__name__)
 # Capture warnings.warn(...) into the standard logging pipeline.
 logging.captureWarnings(True)
 warnings.simplefilter("default")
