@@ -2,12 +2,14 @@
 import os
 import logging
 import threading
+import subprocess
 import warnings
 from collections import deque
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv(override=False)
+_is_dev = os.getenv("ENV", "production").lower() == "development"
 
 # Sentry (optionnel)
 if dsn := os.getenv("SENTRY_DSN"):
@@ -36,6 +38,24 @@ logger = logging.getLogger(__name__)
 # Capture warnings.warn(...) into the standard logging pipeline.
 logging.captureWarnings(True)
 warnings.simplefilter("default")
+warnings.filterwarnings(
+    "ignore",
+    message=r".*BaseCommand.*deprecated.*Click 9.0.*",
+    category=DeprecationWarning,
+    module=r"typer\.completion",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*parser\.split_arg_string.*deprecated.*Click 9.0.*",
+    category=DeprecationWarning,
+    module=r"spacy\.cli\._util",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*parser\.split_arg_string.*deprecated.*Click 9.0.*",
+    category=DeprecationWarning,
+    module=r"weasel\.util\.config",
+)
 
 def _attach_buffer_handler_to_logger(logger_name: str) -> None:
     lg = logging.getLogger(logger_name)
@@ -117,9 +137,63 @@ register_routes(app, _log_buffer)
 
 # Fichiers statiques (frontend) — no-cache en dev pour éviter les versions périmées
 _root_dir = os.path.dirname(__file__)
+_frontend_react_dir = os.path.join(_root_dir, "src", "frontend-react")
+_frontend_react_dist = os.path.join(_frontend_react_dir, "dist")
+
+
+def _ensure_frontend_build() -> None:
+    """Build React frontend locally if no static frontend is available."""
+    if _is_dev:
+        return
+
+    index_file = os.path.join(_frontend_react_dist, "index.html")
+    if os.path.isfile(index_file):
+        return
+
+    package_json = os.path.join(_frontend_react_dir, "package.json")
+    if not os.path.isfile(package_json):
+        return
+
+    logger.info("Frontend non buildé: tentative de build automatique (npm run build)")
+    npm_commands = [
+        ["npm", "run", "build"],
+        ["npm.cmd", "run", "build"],
+        ["cmd", "/c", "npm", "run", "build"],
+    ]
+    last_error = ""
+
+    for cmd in npm_commands:
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=_frontend_react_dir,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            if result.returncode == 0:
+                return
+            stderr_tail = (result.stderr or "").strip()[-500:]
+            last_error = f"code={result.returncode} {stderr_tail}".strip()
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            last_error = str(e)
+
+    logger.warning(
+        "Build frontend automatique impossible. Installez Node.js/npm ou lancez manuellement: "
+        "cd src/frontend-react && npm install && npm run build"
+        + (f" | Détail: {last_error}" if last_error else "")
+    )
+
+
+_ensure_frontend_build()
+
 _frontend_candidates = [
+    os.path.join(_root_dir, "frontend"),
     os.path.join(_root_dir, "src", "frontend"),
-    os.path.join(_root_dir, "src", "frontend-react", "dist"),
+    _frontend_react_dist,
 ]
 
 _frontend = _frontend_candidates[0]
@@ -133,8 +207,6 @@ _index_file = os.path.join(_frontend, "index.html")
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-
-_is_dev = os.getenv("ENV", "production").lower() == "development"
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
