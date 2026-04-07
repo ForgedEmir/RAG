@@ -19,6 +19,7 @@ from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
 from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse
+from src.feedback.learning import record_feedback_event, register_trace_context
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
@@ -199,16 +200,16 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    history    = get_history(body.session_id)
-    summary    = get_user_summary(user_id)
-    memories   = search_user_memories(user_id, question)
+    history = get_history(body.session_id)
+    user_summary = get_user_summary(user_id)
+    vector_memories = search_user_memories(user_id, question)
 
     t_ref = time.time()
     query = reformuler_question(question, history)
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, sources, conf_scores = rechercher_passages(query)
+    passages, sources, retrieved_details = rechercher_passages(query, user_id=user_id, return_details=True)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
@@ -221,7 +222,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         )
 
     # Score de confiance moyen (0–100 %)
-    confidence_pct = round(sum(conf_scores) / len(conf_scores) * 100) if conf_scores else 0
+    confidence_pct = 0
 
     async def event_stream():
         accumulated, model_used, trace_id_out = [], [], []
@@ -235,8 +236,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 # WHY: stream_reponse est synchrone, la queue évite de bloquer la boucle événementielle.
                 try:
                     for chunk in stream_reponse(question, passages, sources, history,
-                                                model_used=model_used, user_summary=summary,
-                                                vector_memories=memories,
+                                                model_used=model_used, user_summary=user_summary,
+                                                vector_memories=vector_memories,
                                                 trace_id_out=trace_id_out):
                         loop.call_soon_threadsafe(queue.put_nowait, ("text", chunk))
                 except Exception as e:
@@ -261,6 +262,20 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             trace_id = trace_id_out[0] if trace_id_out else None
             yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id})}\n\n"
 
+            if trace_id:
+                try:
+                    register_trace_context(
+                        trace_id=trace_id,
+                        user_id=user_id,
+                        question=question,
+                        passages=passages,
+                        sources=sources,
+                        chunk_ids=[d.get("chunk_id", "") for d in (retrieved_details or []) if d.get("chunk_id")],
+                    )
+                except Exception as e:
+                    logger.warning(f"Feedback learning trace non enregistrée : {e}")
+
+            # Post-traitement en background
             if body.session_id:
                 answer = "".join(accumulated)
                 save_exchange(body.session_id, question, answer, user_id)
@@ -301,12 +316,21 @@ async def submit_feedback(request: Request, body: FeedbackBody, user_id: str = D
     secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip().strip('"')
     host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip().strip('"')
 
-    if not public_key or not secret_key:
-        return JSONResponse({"error": "Langfuse non configuré"}, status_code=500)
-
     clean_comment = (body.comment or "").strip()[:300] or None
     clean_message = (body.message or "").strip().replace("\n", " ")[:240] or None
     clean_question = (body.question or "").strip().replace("\n", " ")[:240] or None
+
+    learning_meta = {"matched_trace": False, "sources_count": 0, "chunks_count": 0}
+    try:
+        learning_meta = record_feedback_event(
+            trace_id=body.trace_id,
+            user_id=user_id,
+            value=body.value,
+            question=clean_question,
+            message=clean_message,
+        )
+    except Exception as e:
+        logger.warning(f"Feedback learning indisponible : {e}")
 
     monitor_payload = {
         "uid": user_id,
@@ -315,8 +339,14 @@ async def submit_feedback(request: Request, body: FeedbackBody, user_id: str = D
         "comment": clean_comment,
         "message": clean_message,
         "question": clean_question,
+        "learned": learning_meta,
         "langfuse": "pending",
     }
+
+    if not public_key or not secret_key:
+        monitor_payload["langfuse"] = "skipped:not_configured"
+        track("feedback", detail=json.dumps(monitor_payload, ensure_ascii=False))
+        return {"message": "Feedback enregistré (Langfuse non configuré)", "warning": "Langfuse non configuré"}
 
     try:
         from langfuse import Langfuse

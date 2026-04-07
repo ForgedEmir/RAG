@@ -24,6 +24,7 @@ _RERANKER_ENABLED        = os.getenv("RERANKER_ENABLED",        "false").lower()
 _QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "false").lower() != "false"
 _RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 _MIN_VECTOR_BEFORE_BM25  = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", "3")))
+_FEEDBACK_LEARNING_ENABLED = os.getenv("FEEDBACK_LEARNING_ENABLED", "true").lower() != "false"
 
 _COMPLEX_SIGNALS = {
     "comment", "pourquoi", "différence", "difference", "compare", "comparer",
@@ -36,6 +37,7 @@ _pipeline_stats: dict = {
     "simple_queries": 0, "complex_queries": 0, "reranker_calls": 0,
     "bm25_active": 0, "last_query": None, "last_mode": None,
     "last_vector_count": 0, "last_bm25_count": 0,
+    "last_feedback_adjusted": 0, "last_feedback_matches": 0,
 }
 
 _bm25_index:  Optional[BM25Okapi] = None
@@ -186,13 +188,13 @@ def _rrf(vector: List[dict], bm25: List[dict], k: int = 60) -> List[dict]:
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
-def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
+def rechercher_passages(question: str, user_id: str = "", return_details: bool = False) -> Tuple[List[str], List[str]]:
     """Pipeline : cache → router → [expansion] → vector + BM25 → RRF → [reranker].
     Retourne (passages, sources).
     """
     _pipeline_stats["total_queries"] += 1
     cached = _get_cache(question)
-    if cached:
+    if cached and not user_id and not return_details:
         _pipeline_stats["cache_hits"] += 1
         return cached
     _pipeline_stats["cache_misses"] += 1
@@ -225,6 +227,15 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
 
     combined = _rrf(vector_results, bm25_results)[:plan.k_candidates] if bm25_results else vector_results[:plan.k_candidates]
 
+    if _FEEDBACK_LEARNING_ENABLED and combined:
+        try:
+            from src.feedback.learning import rerank_documents_with_feedback
+            combined, fb_meta = rerank_documents_with_feedback(question, user_id, combined)
+            _pipeline_stats["last_feedback_adjusted"] = int(fb_meta.get("adjusted_docs", 0))
+            _pipeline_stats["last_feedback_matches"] = int(fb_meta.get("matched_feedbacks", 0))
+        except Exception as e:
+            logger.warning(f"Feedback reranking indisponible : {e}")
+
     if plan.use_reranker:
         _pipeline_stats["reranker_calls"] += 1
         combined = _rerank(question, combined)
@@ -233,7 +244,8 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
     passages = [d["text"] for d in combined]
     sources  = list(dict.fromkeys(d["fichier"] for d in combined))
 
-    _set_cache(question, passages, sources)
+    if not user_id and not return_details:
+        _set_cache(question, passages, sources)
 
     mode = "complex" if plan.use_expansion or plan.use_reranker else "simple"
     if bm25_results:
@@ -242,4 +254,13 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str]]:
                            last_vector_count=len(vector_results), last_bm25_count=len(bm25_results))
     logger.info(f"[{mode}] '{question[:60]}' → {len(passages)} passage(s) "
                 f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{plan.use_reranker})")
+    if return_details:
+        details = [
+            {
+                "chunk_id": d.get("id", ""),
+                "source": d.get("fichier", "inconnu"),
+            }
+            for d in combined
+        ]
+        return passages, sources, details
     return passages, sources

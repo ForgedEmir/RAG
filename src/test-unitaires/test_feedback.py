@@ -21,9 +21,10 @@ def create_client(user_id: str = "user-test-123") -> TestClient:
 
 
 @patch("src.api.routes.track")
+@patch("src.api.routes.record_feedback_event", return_value={"matched_trace": True, "sources_count": 2, "chunks_count": 2})
 @patch("langfuse.Langfuse")
 @patch("src.api.routes.os.getenv")
-def test_feedback_valide(mock_getenv, mock_langfuse_cls, mock_track):
+def test_feedback_valide(mock_getenv, mock_langfuse_cls, _mock_learning, mock_track):
     values = {
         "LANGFUSE_PUBLIC_KEY": "pk_test",
         "LANGFUSE_SECRET_KEY": "sk_test",
@@ -55,10 +56,12 @@ def test_feedback_value_invalide():
 
 
 @patch("src.api.routes.os.getenv", side_effect=lambda k, d=None: "" if "LANGFUSE_" in k else d)
-def test_feedback_langfuse_non_configure(_mock_getenv):
+@patch("src.api.routes.record_feedback_event", return_value={"matched_trace": False, "sources_count": 0, "chunks_count": 0})
+def test_feedback_langfuse_non_configure(_mock_learning, _mock_getenv):
     client = create_client()
     resp = client.post("/api/feedback", json={
         "trace_id": "trace-123",
         "value": -1,
     })
-    assert resp.status_code == 500
+    assert resp.status_code == 200
+    assert "Feedback" in resp.json()["message"]
