@@ -115,7 +115,20 @@ app.add_middleware(
 register_routes(app, _log_buffer)
 
 # Fichiers statiques (frontend) — no-cache en dev pour éviter les versions périmées
-_frontend = os.path.join(os.path.dirname(__file__), "src", "frontend")
+_root_dir = os.path.dirname(__file__)
+_frontend_candidates = [
+    os.path.join(_root_dir, "src", "frontend"),
+    os.path.join(_root_dir, "src", "frontend-react", "dist"),
+]
+
+_frontend = _frontend_candidates[0]
+for candidate in _frontend_candidates:
+    if os.path.isdir(candidate):
+        _frontend = candidate
+        break
+
+_assets_dir = os.path.join(_frontend, "assets")
+_index_file = os.path.join(_frontend, "index.html")
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -147,7 +160,10 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheStaticMiddleware)
 
 # Assets statiques montés sur /assets/ (JS, CSS, images)
-app.mount("/assets", StaticFiles(directory=os.path.join(_frontend, "assets")), name="assets")
+if os.path.isdir(_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+else:
+    logger.warning(f"Frontend assets introuvables: {_assets_dir}. '/assets' non monté.")
 
 # Catch-all SPA : sert index.html pour /chat, /monitoring, etc.
 # Doit être APRÈS les routes API et APRÈS /assets
@@ -162,7 +178,15 @@ async def spa_fallback(full_path: str):
     if full_path and os.path.isfile(static_file):
         return _FileResponse(static_file)
     # Toutes les autres routes → index.html (React Router gère côté client)
-    return _FileResponse(os.path.join(_frontend, "index.html"))
+    if os.path.isfile(_index_file):
+        return _FileResponse(_index_file)
+    return JSONResponse(
+        {
+            "error": "Frontend non buildé",
+            "detail": "Lancez le build frontend (npm run build) ou démarrez en Docker.",
+        },
+        status_code=503,
+    )
 
 
 if __name__ == "__main__":
