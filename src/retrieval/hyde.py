@@ -14,7 +14,7 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 _HYDE_ENABLED = os.getenv("HYDE_ENABLED", "true").lower() != "false"
-_HYDE_CHEAP_MODEL = os.getenv("HYDE_CHEAP_MODEL", "qwen/qwen-2.5-7b-instruct")
+_HYDE_CHEAP_MODEL = os.getenv("HYDE_CHEAP_MODEL", "meta-llama/llama-3.2-3b-instruct")
 
 
 def is_hyde_enabled() -> bool:

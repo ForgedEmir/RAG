@@ -199,8 +199,14 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     history    = get_history(body.session_id)
     summary    = get_user_summary(user_id)
     memories   = search_user_memories(user_id, question)
-    query      = reformuler_question(question, history)
+
+    t_ref = time.time()
+    query = reformuler_question(question, history)
+    logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
+
+    t_search = time.time()
     passages, sources, conf_scores = rechercher_passages(query)
+    logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
         return StreamingResponse(
@@ -255,9 +261,13 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 save_exchange(body.session_id, question, answer, user_id)
                 cache_store(question, answer)
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
-                    count = count_user_exchanges(user_id)
-                    if count > 0 and count % SUMMARY_UPDATE_INTERVAL == 0:
-                        _executor.submit(_run_background_summary, user_id, history)
+                    # WHY: count_user_exchanges is a Supabase round-trip — run it in the
+                    # thread pool so it never blocks the SSE stream post-response.
+                    def _maybe_summary(uid=user_id, hist=history):
+                        count = count_user_exchanges(uid)
+                        if count > 0 and count % SUMMARY_UPDATE_INTERVAL == 0:
+                            _run_background_summary(uid, hist)
+                    _executor.submit(_maybe_summary)
                     _executor.submit(add_user_memory, user_id, question, answer)
 
             latency = int((time.time() - start) * 1000)
@@ -404,6 +414,25 @@ async def ask_agent(request: Request, body: AskBody, user_id: str = Depends(get_
     question = body.question.strip()
     if not question:
         return JSONResponse({"error": "Question vide"}, status_code=400)
+
+    if not user_id:
+        return JSONResponse({"error": "Authentification requise."}, status_code=401)
+
+    # Masquage PII + validation sécurité (même pipeline que /api/ask)
+    try:
+        from src.security.pii_masker import masquer
+        question = masquer(question)
+    except Exception as e:
+        logger.debug(f"PII masker ignoré : {e}")
+
+    validation = valider_entree(question)
+    if not validation["valid"]:
+        bt = validation["type"]
+        track("injection_lakera" if bt == "jailbreak" else "injection_regex", detail=question[:200])
+        msg = ("⚠️ L'Oracle a détecté une tentative de manipulation des arcanes sacrées."
+               if bt in ("prompt_injection", "jailbreak") else
+               "🔮 L'Oracle ne répond qu'aux questions sur le lore du jeu.")
+        return JSONResponse({"error": msg, "blocked": True, "block_type": bt}, status_code=400)
 
     history = get_history(body.session_id) if body.session_id else []
     summary = get_user_summary(user_id) if user_id else ""

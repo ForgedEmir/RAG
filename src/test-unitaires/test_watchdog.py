@@ -9,31 +9,30 @@ import pytest
 
 def test_watchdog_detecte_nouveau_fichier():
     """Le watchdog doit planifier une réindexation à la création d'un fichier."""
+    import src.ingestion.watcher as watcher_module
     from src.ingestion.watcher import _LoreWatcher
 
     watcher = _LoreWatcher()
-    reindex_called = []
-
-    with patch("src.ingestion.run.index_data", side_effect=lambda **kw: reindex_called.append(True)):
-        # Simuler un appel _schedule_reindex
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(watcher, "_reindex") as mock_reindex:
-                watcher._schedule_reindex()
-                time.sleep(2.5)   # attendre le debounce (2s)
-                mock_reindex.assert_called_once()
+    with patch.object(watcher_module, "DEBOUNCE_MS", 0.3):
+        with patch.object(watcher, "_reindex") as mock_reindex:
+            watcher._schedule_reindex()
+            time.sleep(0.6)   # attendre le debounce (0.3s)
+            mock_reindex.assert_called_once()
 
 
 def test_watchdog_debounce_fusionne_events():
     """Plusieurs events rapides ne doivent déclencher qu'une seule réindexation."""
+    import src.ingestion.watcher as watcher_module
     from src.ingestion.watcher import _LoreWatcher
 
     watcher = _LoreWatcher()
-    with patch.object(watcher, "_reindex") as mock_reindex:
-        for _ in range(10):
-            watcher._schedule_reindex()
-            time.sleep(0.1)
-        time.sleep(2.5)   # attendre le debounce
-        assert mock_reindex.call_count == 1
+    with patch.object(watcher_module, "DEBOUNCE_MS", 0.3):
+        with patch.object(watcher, "_reindex") as mock_reindex:
+            for _ in range(10):
+                watcher._schedule_reindex()
+                time.sleep(0.05)
+            time.sleep(0.6)   # attendre le debounce
+            assert mock_reindex.call_count == 1
 
 
 def test_watchdog_fail_sans_package():

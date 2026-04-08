@@ -3,6 +3,7 @@ import os
 import logging
 import importlib
 import threading
+from collections import deque
 from typing import List, Optional, Iterator
 
 from langchain_openai import ChatOpenAI
@@ -10,7 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
-_api_key        = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+_api_key        = os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 _primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
 _fallback_key   = os.getenv("FALLBACK_API_KEY")
 _fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
@@ -47,20 +48,31 @@ _llm_groq: Optional[ChatOpenAI] = ChatOpenAI(
     api_key=_groq_api_key, temperature=0.2,
 ) if _groq_api_key else None
 
-# Third-tier free fallback via OpenRouter (no auth required for free models).
+# Third-tier free fallback via OpenRouter (requires auth since 2025-Q4).
 _llm_free: Optional[ChatOpenAI] = ChatOpenAI(
     model=_FREE_FALLBACK_MODEL,
     base_url=_FREE_FALLBACK_BASE_URL,
-    api_key="no-key",  # OpenRouter accepts a placeholder for free models
+    api_key=_api_key or _fallback_key or "no-key",
     temperature=0.2,
-)
+) if (_api_key or _fallback_key) else None
+
+# Dedicated fast LLM for reformulation (cheap, low-latency ~500ms).
+# Uses Groq by default (llama-3.1-8b-instant). Falls back gracefully to
+# _llm_fallback then _llm so reformulation never breaks when Groq is unavailable.
+_reformulation_model = os.getenv("REFORMULATION_MODEL", "llama-3.1-8b-instant")
+_llm_reformulation: Optional[ChatOpenAI] = ChatOpenAI(
+    model=_reformulation_model,
+    base_url="https://api.groq.com/openai/v1",
+    api_key=_groq_api_key,
+    temperature=0.0,  # deterministic reformulation
+) if _groq_api_key else None
 
 _LANGFUSE_LOGGED    = False
 _langfuse_client    = None
 _langfuse_lock      = threading.Lock()
 
 
-_reformulation_history: list = []  # [(original, reformulated)]
+_reformulation_history: deque = deque(maxlen=50)
 
 def get_reformulation_enabled() -> bool:
     return _REFORMULATION_ENABLED
@@ -189,28 +201,30 @@ def reformuler_question(question: str, history: List[dict]) -> str:
     """Reformule une question vague grâce à l'historique."""
     if not _REFORMULATION_ENABLED:
         return question
-    if not history or not _llm:
+    if not history:
         return question
     # Skip reformulation pour questions courtes sans historique pertinent — économise un appel LLM
     if len(question.split()) <= 5 and len(history) <= 1:
         return question
+    # Use fast dedicated model (Groq ~500ms), fall back to primary if unavailable
+    llm = _llm_reformulation or _llm_fallback or _llm
+    if not llm:
+        return question
     historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
     try:
-        result = _llm.invoke([
+        result = llm.invoke([
             SystemMessage(content=(
                 "Reformule la question en version autonome et précise grâce à l'historique. "
                 "Retourne uniquement la question reformulée, sans explication."
             )),
             HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
-        ], config={"callbacks": _callbacks("reformulation")})
+        ], config={"callbacks": _callbacks("reformulation", model=_reformulation_model)})
         reformulated = result.content.strip()
-        logger.info(f"Reformulée : {reformulated!r}")
+        logger.info(f"Reformulée ({_reformulation_model}) : {reformulated!r}")
         _reformulation_history.append({"original": question, "reformulated": reformulated})
-        if len(_reformulation_history) > 50:
-            _reformulation_history.pop(0)
         return reformulated
     except Exception as e:
-        logger.warning(f"Reformulation échouée : {e}")
+        logger.warning(f"Reformulation échouée ({_reformulation_model}) : {e}")
         return question
 
 

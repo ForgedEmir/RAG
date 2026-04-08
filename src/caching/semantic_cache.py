@@ -1,56 +1,80 @@
 """Semantic cache for LLM responses.
-Semantic cache for LLM responses. Uses shared FastEmbed from vector_store (zero PyTorch, no second model load).
-Store embedding as JSON string in Redis (compatible with decode_responses=True).
+Uses shared FastEmbed from vector_store (zero PyTorch, no second model load).
+Stores embedding + response in Redis.
+
+Performance: local in-process normalized matrix for O(1) Redis round-trips on lookup.
+- check(): 1 SCAN + 1 MGET to build matrix (lazy, cached), then 1 numpy dot-product.
+- store(): pipeline (SET emb + SET resp + INCR counter) — 1 round-trip.
 """
 import hashlib
 import json
 import logging
+import os
+import threading
 import time
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-import os
-_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-_THRESHOLD = 0.92
-_TTL = 3600
+_REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379")
+_THRESHOLD   = 0.92
+_TTL         = 3600
 _MAX_ENTRIES = 5000
-_PREFIX = "scache:"
+_PREFIX      = "scache:"
+_COUNT_KEY   = f"{_PREFIX}meta:count"
+# Rebuild local matrix after this many seconds (handles Redis TTL expiry drift)
+_MATRIX_REFRESH_INTERVAL = int(os.getenv("SCACHE_MATRIX_REFRESH", "120"))
 
-_redis = None
-_cache_initialized = False
+_redis      = None
+_redis_lock = threading.Lock()
 
+# ── In-process embedding matrix ───────────────────────────────────────────────
+# Pre-normalized rows → cosine similarity = simple dot product (no division needed).
+_matrix:       Optional[np.ndarray] = None  # shape (n, dim), float32, L2-normalized
+_matrix_keys:  List[str]            = []    # emb key for each row (includes _PREFIX)
+_matrix_ts:    float                = 0.0   # unix timestamp of last build
+_matrix_valid: bool                 = False
+_matrix_lock                        = threading.Lock()
+_cache_initialized: bool            = False
+
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
 
 def _get_redis():
     global _redis
     if _redis is not None:
         return _redis
-    try:
-        import redis
-        _redis = redis.Redis.from_url(
-            _REDIS_URL, decode_responses=True,
-            socket_connect_timeout=5, socket_timeout=5,
-        )
-        _redis.ping()
-        return _redis
-    except Exception as e:
-        logger.warning(f"Semantic cache Redis unavailable: {e}")
-        return None
+    with _redis_lock:
+        if _redis is None:
+            try:
+                import redis
+                _redis = redis.Redis.from_url(
+                    _REDIS_URL, decode_responses=True,
+                    socket_connect_timeout=5, socket_timeout=5,
+                )
+                _redis.ping()
+            except Exception as e:
+                logger.warning(f"Semantic cache Redis unavailable: {e}")
+                _redis = None
+    return _redis
 
 
-def _embed(text):
-    """Use the shared embedder from vector_store to avoid loading a second model."""
+# ── Embedding ─────────────────────────────────────────────────────────────────
+
+def _embed(text: str) -> Optional[List[float]]:
+    """Shared embedder from vector_store — no second model load."""
     try:
         from src.ingestion.vector_store import _get_embeddings
-        emb = _get_embeddings()
-        return emb.embed_query(text)
+        return _get_embeddings().embed_query(text)
     except Exception:
         return None
 
 
-def _ensure_cache_version():
-    """Vide le cache Redis si la dimension du modèle a changé."""
+# ── Cache version (dim check) ─────────────────────────────────────────────────
+
+def _ensure_cache_version() -> None:
     global _cache_initialized
     if _cache_initialized:
         return
@@ -62,10 +86,10 @@ def _ensure_cache_version():
         from src.ingestion.vector_store import _get_vector_size
         current_dim = _get_vector_size()
         version_key = f"{_PREFIX}meta:dim"
-        stored_dim = r.get(version_key)
+        stored_dim  = r.get(version_key)
         if stored_dim is not None and int(stored_dim) != current_dim:
             logger.warning(
-                f"Semantic cache : dimension changée ({stored_dim}→{current_dim}). Vidage du cache."
+                f"Semantic cache: dimension changed ({stored_dim}→{current_dim}). Clearing."
             )
             clear_all()
         r.set(version_key, str(current_dim))
@@ -73,67 +97,154 @@ def _ensure_cache_version():
         logger.warning(f"Semantic cache version check failed: {e}")
 
 
-def check(query):
-    """Search Redis for similar cached responses. Returns (response, score) or None."""
+# ── Matrix build ──────────────────────────────────────────────────────────────
+
+def _build_matrix() -> Tuple[Optional[np.ndarray], List[str]]:
+    """Load all cached embeddings from Redis in two round-trips (SCAN + MGET).
+    Returns (normalized_matrix, list_of_emb_keys) or (None, []).
+    """
+    r = _get_redis()
+    if not r:
+        return None, []
+
+    # Round-trip 1: collect all emb keys
+    keys: List[str] = []
+    cursor = 0
+    while True:
+        cursor, batch = r.scan(cursor, match=f"{_PREFIX}emb:*", count=500)
+        keys.extend(batch)
+        if cursor == 0:
+            break
+
+    if not keys:
+        return None, []
+
+    # Round-trip 2: fetch all embeddings in one MGET
+    raw_values = r.mget(keys)
+
+    embeddings, valid_keys = [], []
+    for key, raw in zip(keys, raw_values):
+        if not raw:
+            continue
+        try:
+            emb = json.loads(raw)["embedding"]
+            embeddings.append(emb)
+            valid_keys.append(key)
+        except Exception:
+            pass
+
+    if not embeddings:
+        return None, []
+
+    matrix = np.array(embeddings, dtype=np.float32)
+    # Pre-normalize rows → cosine sim = dot product at query time
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-9)
+    matrix /= norms
+
+    logger.debug(f"Semantic cache matrix built: {len(valid_keys)} entries.")
+    return matrix, valid_keys
+
+
+def _get_matrix() -> Tuple[Optional[np.ndarray], List[str]]:
+    """Return the current (or refreshed) in-process matrix. Thread-safe."""
+    global _matrix, _matrix_keys, _matrix_ts, _matrix_valid
+    with _matrix_lock:
+        now = time.time()
+        if _matrix_valid and (now - _matrix_ts) < _MATRIX_REFRESH_INTERVAL:
+            return _matrix, _matrix_keys
+        _matrix, _matrix_keys = _build_matrix()
+        _matrix_ts    = now
+        _matrix_valid = True
+        return _matrix, _matrix_keys
+
+
+def _invalidate_matrix() -> None:
+    global _matrix_valid
+    with _matrix_lock:
+        _matrix_valid = False
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def check(query: str):
+    """Search for a semantically similar cached response.
+    Returns (response, score) or None.
+
+    Complexity: O(n) numpy dot-product (vectorized) — no Redis loop.
+    """
     _ensure_cache_version()
     try:
         r = _get_redis()
         if not r:
             return None
+
         q_vec = _embed(query)
         if q_vec is None:
             return None
-        q_arr = np.array(q_vec, dtype=np.float32)
 
-        best_score, best_resp = 0.0, None
-        cursor = 0
-        while True:
-            cursor, keys = r.scan(cursor, match=f"{_PREFIX}emb:*", count=200)
-            for key in keys:
-                try:
-                    emb_json = r.get(key)
-                    if not emb_json:
-                        continue
-                    cached = json.loads(emb_json)
-                    cached_emb = np.array(cached["embedding"], dtype=np.float32)
-                    sim = float(
-                        np.dot(q_arr, cached_emb)
-                        / (max(np.linalg.norm(q_arr), 1e-9) * max(np.linalg.norm(cached_emb), 1e-9))
-                    )
-                    if sim > best_score:
-                        best_score = sim
-                        resp_key = key.replace(f"{_PREFIX}emb:", f"{_PREFIX}resp:")
-                        best_resp = r.get(resp_key)
-                except Exception:
-                    pass
-            if cursor == 0:
-                break
+        matrix, keys = _get_matrix()
+        if matrix is None or len(keys) == 0:
+            return None
 
-        if best_score >= _THRESHOLD and best_resp:
-            logger.info(f"Semantic cache HIT (sim={best_score:.3f})")
-            return best_resp, round(best_score, 4)
+        # Normalize query once
+        q_arr  = np.array(q_vec, dtype=np.float32)
+        q_norm = float(np.linalg.norm(q_arr))
+        if q_norm < 1e-9:
+            return None
+        q_arr /= q_norm
+
+        # Single vectorized cosine similarity
+        sims      = matrix @ q_arr          # shape (n,)
+        best_idx  = int(np.argmax(sims))
+        best_score = float(sims[best_idx])
+
+        if best_score >= _THRESHOLD:
+            emb_key  = keys[best_idx]
+            resp_key = emb_key.replace(f"{_PREFIX}emb:", f"{_PREFIX}resp:")
+            best_resp = r.get(resp_key)
+            if best_resp:
+                logger.info(f"Semantic cache HIT (sim={best_score:.3f})")
+                return best_resp, round(best_score, 4)
     except Exception as e:
         logger.warning(f"Semantic cache check failed: {e}")
     return None
 
 
-def store(query, response):
-    """Store embedding + response in Redis as JSON strings."""
+def store(query: str, response: str) -> bool:
+    """Store embedding + response in Redis.
+    Uses a pipeline (1 round-trip) + INCR counter instead of len(r.keys(...)).
+    """
     _ensure_cache_version()
     try:
         r = _get_redis()
         if not r:
             return False
-        if len(r.keys(f"{_PREFIX}emb:*")) >= _MAX_ENTRIES:
-            logger.warning("Semantic cache full (5000). Skipping.")
+
+        # Use Redis counter — cheaper than SCAN+count
+        count = int(r.get(_COUNT_KEY) or 0)
+        if count >= _MAX_ENTRIES:
+            logger.warning(f"Semantic cache full ({_MAX_ENTRIES}). Skipping.")
             return False
+
         vec = _embed(query)
         if vec is None:
             return False
-        key = hashlib.sha256(query.lower().encode()).hexdigest()[:16]
+
+        key      = hashlib.sha256(query.lower().encode()).hexdigest()[:16]
         emb_json = json.dumps({"embedding": vec, "query": query})
-        r.set(f"{_PREFIX}emb:{key}", emb_json, ex=_TTL)
-        r.set(f"{_PREFIX}resp:{key}", response, ex=_TTL)
+
+        # Atomic pipeline — 1 round-trip
+        pipe = r.pipeline()
+        pipe.set(f"{_PREFIX}emb:{key}",  emb_json,  ex=_TTL)
+        pipe.set(f"{_PREFIX}resp:{key}", response,  ex=_TTL)
+        pipe.incr(_COUNT_KEY)
+        pipe.expire(_COUNT_KEY, _TTL)
+        pipe.execute()
+
+        # Invalidate local matrix so next check picks up the new entry
+        _invalidate_matrix()
+
         logger.info(f"Semantic cache STORE key={key}")
         return True
     except Exception as e:
@@ -141,8 +252,8 @@ def store(query, response):
         return False
 
 
-def clear_all():
-    """Clear all semantic cache entries from Redis."""
+def clear_all() -> None:
+    """Clear all semantic cache entries from Redis and local matrix."""
     try:
         r = _get_redis()
         if not r:
@@ -154,22 +265,28 @@ def clear_all():
                 r.delete(*keys)
             if cursor == 0:
                 break
+        _invalidate_matrix()
     except Exception as e:
         logger.warning(f"Semantic cache clear failed: {e}")
 
 
-def stats():
+def stats() -> dict:
     try:
         r = _get_redis()
         if not r:
             return {"status": "redis_unavailable", "entries": 0}
-        n = 0
-        cursor = 0
-        while True:
-            cursor, keys = r.scan(cursor, match=f"{_PREFIX}emb:*", count=200)
-            n += len(keys)
-            if cursor == 0:
-                break
-        return {"status": "ok", "entries": n, "max": _MAX_ENTRIES, "threshold": _THRESHOLD, "ttl": _TTL}
+        count = int(r.get(_COUNT_KEY) or 0)
+        with _matrix_lock:
+            matrix_size  = len(_matrix_keys) if _matrix_valid else None
+            matrix_age_s = round(time.time() - _matrix_ts) if _matrix_ts else None
+        return {
+            "status":       "ok",
+            "entries":      count,
+            "max":          _MAX_ENTRIES,
+            "threshold":    _THRESHOLD,
+            "ttl":          _TTL,
+            "matrix_size":  matrix_size,
+            "matrix_age_s": matrix_age_s,
+        }
     except Exception:
         return {"status": "error", "entries": 0}

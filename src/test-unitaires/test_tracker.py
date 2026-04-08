@@ -2,7 +2,10 @@
 Tests unitaires pour le module monitoring/tracker.
 Teste get_history, save_exchange et track avec le schéma conversations/messages.
 """
+import uuid
 from unittest.mock import patch, MagicMock, call
+
+_VALID_SESSION = str(uuid.uuid5(uuid.NAMESPACE_DNS, "test-session"))
 
 
 # ===== TESTS POUR get_history =====
@@ -46,7 +49,7 @@ def test_get_history_retourne_echanges(mock_get_client):
     table_mock.select.return_value.eq.return_value.limit.return_value.execute.return_value = conv_result
     table_mock.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = messages_result
 
-    resultat = get_history("session-abc")
+    resultat = get_history(_VALID_SESSION)
 
     assert len(resultat) == 2
     assert resultat[0]["question"] == "Premiere question"
@@ -112,7 +115,7 @@ def test_save_exchange_insere_correctement(mock_get_client):
 
     mock_client.table.side_effect = table_router
 
-    save_exchange("session-abc", "Qui est Lucas ?", "Lucas est un guerrier.", "user-1")
+    save_exchange(_VALID_SESSION, "Qui est Lucas ?", "Lucas est un guerrier.", "user-1")
 
     # Vérifie que 2 messages ont été insérés
     insert_call = messages_table.insert.call_args[0][0]
