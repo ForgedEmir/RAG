@@ -84,7 +84,6 @@ async def ask_lore(question: str, ctx: Context) -> str:
     Args:
         question: La question sur le lore (personnages, lieux, factions, artefacts, timeline...)
     """
-    print(question)
     await ctx.info(f"Recherche dans les archives pour : {question!r}")
     try:
         from src.search.search import rechercher_passages
