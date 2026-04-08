@@ -40,8 +40,11 @@ src/frontend/*
 rapport_tests_*.txt
 test-output/
 
-# Documents de schema locaux (PDF exclus, draw.io inclus)
-Schéma/*.pdf
+# Scripts locaux
+scripts/
+
+# Documents de schema locaux
+Schéma/
 
 # Kilo
 .kilo/
