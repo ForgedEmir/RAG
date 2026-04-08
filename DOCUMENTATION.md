@@ -1,4 +1,4 @@
-# Documentation Technique — HELMo Oracle
+# Documentation Technique — Oracle LoreKeeper
 
 > Document complet expliquant chaque feature du projet, de A a Z.
 
@@ -30,7 +30,7 @@
 
 ## 1. Vue d'ensemble
 
-HELMo Oracle est un assistant conversationnel base sur le pattern **RAG** (Retrieval-Augmented Generation).
+Oracle LoreKeeper est un assistant conversationnel base sur le pattern **RAG** (Retrieval-Augmented Generation).
 Il repond aux questions des joueurs sur le lore du jeu **Aethelgard Online** en se basant **exclusivement** sur les documents officiels deposes dans le dossier `data/sample/`.
 
 **Principe simple :** l'utilisateur pose une question, le systeme cherche les passages pertinents dans les documents indexes, puis un LLM genere une reponse en citant uniquement ces passages. Rien n'est invente.
@@ -48,7 +48,7 @@ Utilisateur (navigateur)
              [ Qdrant ]      [ Supabase ]      [ Redis ]
            (vecteurs)      (auth + sessions)   (cache)
                    |                |
-            [ FastEmbed ]    [ OpenRouter / Groq ]
+            [ FastEmbed ]    [ OpenRouter / Groq / Google ]
            (embeddings)         (LLM)
 ```
 
@@ -60,7 +60,7 @@ Utilisateur (navigateur)
 | **Qdrant** | Qdrant Cloud ou meme VPS | Gratuit (1 Go) |
 | **Supabase** | Supabase Cloud | Gratuit (500 Mo) |
 | **Redis** | Coolify (meme VPS) | Inclus |
-| **OpenRouter** | Cloud OpenRouter | Pay-per-token |
+| **Google AI / OpenRouter** | Cloud | Pay-per-token |
 | **Groq** | Cloud Groq | Gratuit (rate limited) |
 | **Langfuse** | Cloud Langfuse | Gratuit (50k obs/mois) |
 | **Lakera Guard** | Cloud Lakera | Gratuit (10k req/mois) |
@@ -76,32 +76,32 @@ Le coeur du systeme. Quand un utilisateur pose une question, voici ce qui se pas
 Question : "Qui est Lucas le Tranchant ?"
      |
      v
-1. Validation securite    -- regex + Lakera Guard (bloque les injections)
+1. Masquage PII            -- remplace emails, telephones par [EMAIL], [TEL]
      |
      v
-2. Masquage PII           -- remplace emails, telephones par [EMAIL], [TEL]
+2. Validation securite     -- regex + Lakera Guard (bloque les injections)
      |
      v
-3. Cache semantique       -- si une question similaire a deja ete posee, retourne le cache
+3. Cache semantique        -- si une question similaire a deja ete posee, retourne le cache
      |
      v
-4. Reformulation          -- LLM reecrit la question avec le contexte conversationnel
-                             "il fait quelle taille ?" → "Quelle est la taille de Lucas le Tranchant ?"
+4. Reformulation           -- LLM rapide (Groq ~500ms) reecrit la question avec le contexte
+                              "il fait quelle taille ?" → "Quelle est la taille de Lucas le Tranchant ?"
      |
      v
-5. Recherche hybride      -- vecteurs (Qdrant) + BM25 (lexical) → fusion RRF
+5. Recherche hybride       -- vecteurs (Qdrant) + BM25 (lexical) → fusion RRF
      |
      v
-6. Reranking              -- cross-encoder reordonne les resultats par pertinence
+6. Reranking               -- cross-encoder reordonne les resultats par pertinence
      |
      v
-7. Generation LLM         -- le LLM genere la reponse en se basant sur les passages trouves
+7. Generation LLM          -- le LLM genere la reponse en se basant sur les passages trouves
      |
      v
-8. Streaming SSE          -- la reponse arrive token par token dans le navigateur
+8. Streaming SSE           -- la reponse arrive token par token dans le navigateur
      |
      v
-9. Sauvegarde             -- echange sauvegarde dans Supabase + cache mis a jour
+9. Sauvegarde              -- echange sauvegarde dans Supabase + cache mis a jour (en arriere-plan)
 ```
 
 **Fichier :** `src/api/routes.py` — endpoint `POST /api/ask`
@@ -122,7 +122,7 @@ POST /api/ask
 data: {"type": "meta", "sources": ["personnages.md", "lore.md"], "confidence": 87}
 data: {"type": "text", "text": "Lucas le Tranchant est un guerrier"}
 data: {"type": "text", "text": " legendaire d'Aethelgard..."}
-data: {"type": "done", "model": "llama-3.3-70b-versatile"}
+data: {"type": "done", "model": "gemini-2.0-flash-001"}
 ```
 
 ---
@@ -134,7 +134,7 @@ La recherche combine **deux approches** pour trouver les passages pertinents :
 ### Recherche vectorielle (semantique)
 
 - Les documents sont decoupes en chunks de ~1200 caracteres
-- Chaque chunk est transforme en vecteur de 1024 dimensions par **FastEmbed** (modele `BAAI/bge-m3`)
+- Chaque chunk est transforme en vecteur par **FastEmbed** (modele configurable via `EMBEDDING_MODEL`, defaut `BAAI/bge-m3`, actuellement `intfloat/multilingual-e5-large` — 1024 dimensions)
 - Les vecteurs sont stockes dans **Qdrant**
 - A la recherche, la question est aussi vectorisee, et Qdrant trouve les vecteurs les plus proches (cosine similarity)
 
@@ -186,24 +186,25 @@ Si les scores de recherche sont trop bas (< 0.005), le systeme genere un **docum
 Le systeme a **4 niveaux** de fallback pour garantir qu'une reponse est toujours generee :
 
 ```
-Tier 1 : LLM principal (OpenRouter / Groq)
+Tier 1 : LLM principal  (LLM_MODEL, configurable)
    |  echec (429, timeout, erreur)
    v
-Tier 2 : LLM fallback (cle + modele configurable)
+Tier 2 : LLM fallback   (FALLBACK_MODEL, configurable)
    |  echec
    v
-Tier 3 : Groq dedie (si GROQ_API_KEY defini)
+Tier 3 : Groq dedie     (si GROQ_API_KEY defini)
    |  echec
    v
 Tier 4 : Mistral 7B gratuit sur OpenRouter (aucune cle requise)
 ```
 
-**Exemple avec Groq :**
-- Tier 1 : `llama-3.3-70b-versatile` sur `api.groq.com`
-- Tier 2 : `llama-4-scout-17b` sur `api.groq.com`
-- Tier 4 : `mistral-7b-instruct:free` sur OpenRouter
+### LLM dedie pour la reformulation
 
-Si le Tier 1 recoit un `429 Too Many Requests` de Groq, le systeme bascule automatiquement sur le Tier 2, et ainsi de suite.
+La reformulation utilise un **modele rapide separe** (Groq `llama-3.1-8b-instant` par defaut) au lieu du modele principal. Cela reduit le temps avant le premier token de 2-5s a ~500ms.
+
+- Configurable via `REFORMULATION_MODEL` et `GROQ_API_KEY`
+- Fallback automatique sur `_llm_fallback` puis `_llm` si Groq indisponible
+- Desactivable via `REFORMULATION_ENABLED=false`
 
 ### Streaming
 
@@ -217,8 +218,8 @@ Quand l'utilisateur dit "il fait quelle taille ?", le systeme regarde l'historiq
 
 Cela ameliore la recherche car la question reformulee est autonome et precise.
 
-- Desactivable via `REFORMULATION_ENABLED=false`
-- Ignorer pour les questions < 5 mots sans historique (economise un appel LLM)
+- Ignore les questions < 5 mots sans historique (economise un appel LLM)
+- Historique de reformulation stocke dans une `deque(maxlen=50)` en memoire
 
 ### Langfuse (observabilite LLM)
 
@@ -235,22 +236,35 @@ Chaque appel LLM est trace dans **Langfuse** :
 
 ### Formats supportes
 
-| Format | Parsing |
-|--------|---------|
+Deux modes de parsing selectionnable via `PARSER_MODE` dans le `.env` :
+
+**Mode `custom` (defaut) — parser maison par format :**
+
+| Format | Parser |
+|--------|--------|
 | `.txt`, `.md` | Lecture directe UTF-8 |
 | `.csv` | Detection dialect + rendu ligne par ligne |
-| `.json` | Aplatissement JSON → texte |
-| `.xlsx` | openpyxl (lecture feuilles) |
-| `.xml` | Conversion XML → texte |
-| `.pdf` | LlamaParse (si cle) ou Unstructured (fallback) |
+| `.json` | Aplatissement recursif JSON → texte cle: valeur |
+| `.xlsx` | openpyxl — rendu "Colonne: Valeur" par ligne |
+| `.xml` | xml.etree — extraction texte (ignore balises) |
+| `.pdf` | LlamaParse si `LLAMA_CLOUD_API_KEY` defini, sinon Unstructured |
+
+**Mode `unstructured` — Unstructured gere tout :**
+
+| Format | Parser |
+|--------|--------|
+| `.txt`, `.md`, `.csv`, `.xlsx`, `.xml`, `.pdf` | Unstructured (26+ formats, tables, images) |
+| `.json` | Parser custom (toujours — Unstructured produit un moins bon texte pour JSON) |
+| Tous les formats | Fallback automatique vers parser custom si Unstructured echoue |
 
 ### Processus d'indexation
 
 ```
 1. Scan data/sample/           -- detecte nouveaux/modifies/supprimes
 2. Parsing                     -- extrait le texte de chaque fichier
-3. Validation lore             -- LLM verifie que le contenu est du lore
-4. Enrichissement contextuel   -- LLM genere un resume + liste d'entites par document
+3. Validation lore             -- LLM verifie que le contenu est du lore (singleton _llm_checker, max_tokens=10)
+4. Enrichissement contextuel   -- LLM genere un resume + liste d'entites (singleton _llm_summarizer, max_tokens=400)
+                                  Cache Redis 24h sur hash MD5 du texte
 5. Chunking                    -- decoupe en morceaux de 1200 chars (overlap 200)
 6. Embedding                   -- FastEmbed transforme chaque chunk en vecteur
 7. Indexation Qdrant           -- upsert dans la collection "lore"
@@ -260,12 +274,12 @@ Chaque appel LLM est trace dans **Langfuse** :
 
 ### Indexation incrementale
 
-Le systeme ne reindexe que les fichiers modifies. Il compare les hash SHA256 et les dates de modification.
+Le systeme ne reindexe que les fichiers modifies. Il compare les dates de modification.
 Pour forcer une reindexation complete : `POST /api/reindex {"force": true}`
 
 ### Watchdog
 
-Un observateur surveille le dossier `data/sample/`. Si un fichier est ajoute, modifie ou supprime, la reindexation se declenche automatiquement apres un delai de 2 secondes (debounce pour eviter les cascades).
+Un observateur surveille le dossier `data/sample/`. Si un fichier est ajoute, modifie ou supprime, la reindexation se declenche automatiquement apres un delai (configurable via `DEBOUNCE_MS`, defaut 10s).
 
 **Fichiers :** `src/ingestion/run.py`, `src/ingestion/chunker.py`, `src/ingestion/parser.py`, `src/ingestion/watcher.py`
 
@@ -313,10 +327,11 @@ Le systeme a **3 niveaux** de memoire :
 
 ### Memoire long-terme (resume utilisateur)
 
-- Toutes les 5 interactions, un **resume** de l'utilisateur est genere par le LLM
+- Toutes les `SUMMARY_UPDATE_INTERVAL` interactions (defaut 5), un **resume** est genere par le LLM
+- La verification du compteur tourne en **arriere-plan** (thread pool) pour ne pas bloquer le stream
 - Stocke dans Supabase (`user_memory`) — un seul resume par utilisateur
 - Contient : faits importants, personnages explores, preferences, objectifs
-- Limite a 150 mots, PII masque avant stockage
+- Limite a 150 mots
 
 **Exemple :** "L'utilisateur s'interesse principalement a la faction des Forgerons et au personnage Lucas. Il explore la region nord d'Aethelgard."
 
@@ -325,6 +340,7 @@ Le systeme a **3 niveaux** de memoire :
 - Chaque echange important est embedde et stocke dans Qdrant (`user_memories`)
 - A la prochaine question, les 3-5 echanges les plus similaires sont recuperes
 - Permet de retrouver des informations vieilles de plusieurs sessions
+- Activable via `VECTOR_MEMORY_ENABLED=true`
 
 **Fichiers :** `src/monitoring/tracker.py`, `src/memory/vector_memory.py`
 
@@ -344,13 +360,15 @@ Le systeme a **3 couches de cache** :
 
 **Exemple :** si 10 utilisateurs posent "Qui est le roi ?", seul le premier declenchera une recherche. Les 9 suivants recevront le resultat du cache en < 50ms.
 
-### Cache semantique (Redis)
+### Cache semantique (Redis + matrice numpy)
 
 - **Quoi :** reponses LLM completes
-- **Cle :** embedding de la question (cosine similarity > 0.92)
+- **Cle :** embedding de la question (cosine similarity > seuil configurable)
 - **TTL :** 1 heure
 - **Ou :** Redis uniquement (desactive sans Redis)
-- **Taille max :** 5000 entrees, eviction LRU
+- **Taille max :** 5000 entrees (compteur Redis INCR, pas de scan complet)
+
+**Implementation O(1) :** les embeddings sont charges depuis Redis en **2 round-trips** (SCAN + MGET) et stockes dans une **matrice numpy normalisee en memoire**. La similarite cosine est calculee par un produit matriciel vectorise (`matrix @ q_arr`). La matrice est reconstruite toutes les 120 secondes (configurable via `MATRIX_REFRESH_INTERVAL`).
 
 **Difference avec le cache de recherche :** le cache de recherche est un match exact (meme question = meme resultats). Le cache semantique est un match flou ("Qui est le roi ?" et "Parle-moi du roi" retournent le meme cache).
 
@@ -367,13 +385,11 @@ Le systeme a **3 couches de cache** :
 | FastEmbed (modele ONNX) | ~300-500 Mo |
 | BM25 corpus (10k chunks) | ~50-100 Mo |
 | Cross-encoder reranker | ~100-200 Mo |
-| Cache memoire (fallback) | ~10-50 Mo |
+| Matrice numpy semantic cache | ~negligeable |
 | Application Python | ~100 Mo |
 | **Total par worker** | **~600 Mo - 1 Go** |
 
 Avec 2 workers Gunicorn, prevoir **~1.5-2 Go de RAM** minimum.
-
-`--max-requests 500` dans Gunicorn force le redemarrage des workers apres 500 requetes, ce qui evite les fuites memoire progressives.
 
 **Fichiers :** `src/search/search.py`, `src/caching/semantic_cache.py`
 
@@ -381,34 +397,36 @@ Avec 2 workers Gunicorn, prevoir **~1.5-2 Go de RAM** minimum.
 
 ## 9. Securite
 
-### 3 couches de protection
+### 2 couches de protection
 
 ```
 Requete utilisateur
      |
      v
-Couche 1 : Whitelist lore     -- 80 mots-cles du jeu (passage immediat)
-     |
+Couche 1 : Regex              -- patterns d'injection connus (instantane)
+     |                            "ignore instructions", "tu es maintenant",
+     |                            "system prompt", "[SYSTEM]", etc.
      v
-Couche 2 : Regex              -- 30 patterns d'injection connus
-     |                            "ignore instructions", "tu es maintenant", etc.
+Couche 2 : Lakera Guard       -- detecteur ML anti-attaque (API externe)
+     |                            ecoute uniquement le detecteur "prompt_attack"
+     |                            ignore pii/name, moderated_content (geres ailleurs)
      v
-Couche 3 : Lakera Guard       -- ML anti-jailbreak (API externe)
-     |
-     v
-Resultat : {valid: true/false, type: "ok" | "jailbreak" | "prompt_injection"}
+Resultat : {valid: true/false, type: "ok" | "prompt_injection"}
 ```
 
 ### Lakera Guard
 
-Service ML specialise dans la detection d'injections de prompt.
+Service ML specialise dans la detection d'attaques de prompt.
+
 - Appel API < 50ms
 - Cache Redis de 60 secondes (evite les appels redondants)
 - Modes : `enforce` (bloque), `shadow` (log seulement), `disabled`
+- **Detecteur ecoute :** uniquement `prompt_attack` (les detecteurs `pii/*` et `moderated_content/*` sont ignores — le PII est gere par `pii_masker.py` et les questions lore contiennent des prenoms legaux)
+- Fail-open si l'API Lakera est indisponible
 
 ### Masquage PII
 
-Avant toute validation, les informations personnelles sont masquees :
+Avant la validation, les informations personnelles sont masquees :
 
 | Type | Avant | Apres |
 |------|-------|-------|
@@ -425,17 +443,19 @@ Quand un utilisateur met un pouce en bas (rating <= 2), le systeme :
 3. Si score < 0.5, log un evenement `judge_flag` dans Supabase
 4. Le score est stocke dans la table `feedback`
 
-### Langfuse LLM-as-a-Judge (evaluateurs)
+### Langfuse online evaluators (LLM-as-a-judge)
 
-En plus du judge interne, **3 evaluateurs Langfuse** sont configures :
+Evaluation automatique de chaque generation via les evaluateurs Langfuse configures dans l'UI :
 
-| Evaluateur | Ce qu'il mesure |
-|------------|----------------|
-| **Hallucination** | La reponse invente-t-elle des informations absentes du contexte ? |
-| **Context Relevance** | Les passages recuperes sont-ils pertinents pour la question ? |
-| **Correctness** | La reponse est-elle factuellemnt correcte par rapport au contexte ? |
+| Score | Ce qu'il mesure |
+|-------|----------------|
+| `Correctness` | La reponse est-elle correcte par rapport au lore ? |
+| `Contextrelevance` | Les passages recuperes sont-ils pertinents a la question ? |
+| `Hallucination` | La reponse contient-elle des informations inventees ? |
 
-Ces evaluateurs tournent dans Langfuse Cloud et produisent des scores automatiques pour chaque trace.
+Les scores (0-1) sont calcules automatiquement apres chaque generation et stockes dans Langfuse. Visualisation disponible dans le dashboard Langfuse → Scores.
+
+**Configuration :** UI Langfuse → Evaluations → LLM-as-a-judge
 
 **Fichiers :** `src/security/validator.py`, `src/security/pii_masker.py`, `src/security/judge.py`
 
@@ -449,7 +469,6 @@ Interface d'administration accessible avec la cle `MONITORING_KEY`.
 
 **Metriques affichees :**
 - Total questions, erreurs, tentatives d'injection
-- Taux de cache hit (%)
 - Latence P50 (mediane)
 - Nombre de vecteurs dans Qdrant
 - Distribution requetes simples vs complexes
@@ -485,9 +504,9 @@ Si plus de **10 tentatives d'injection en 5 minutes**, le systeme :
 ### Langfuse
 
 Traces detaillees de chaque appel LLM :
-- Modele, tokens, cout, latence
+- Modele utilise, tokens, latence
 - Question originale et reformulee
-- Scores des evaluateurs
+- Modele de reformulation separe visible dans les traces
 
 **Fichiers :** `src/monitoring/tracker.py`, `src/api/blueprints/monitoring_bp.py`
 
@@ -538,8 +557,8 @@ Reponse finale : "Lucas le Tranchant est un guerrier legendaire..."
 ```
 
 - Maximum 3 iterations (pour eviter les boucles infinies)
-- Utilise un modele rapide et leger (`qwen-2.5-7b-instruct`)
 - Endpoint : `POST /api/ask_agent`
+- Securite identique a `/api/ask` : PII masquage + validation injection
 
 **Fichier :** `src/agent/react_agent.py`
 
@@ -636,7 +655,7 @@ npm install
 npm run build    # → genere dans src/frontend/assets/
 ```
 
-Le build React est servi par FastAPI comme fichiers statiques. Le SPA fallback (`main.py`) redirige toutes les routes vers `index.html` pour que React Router fonctionne.
+Le build React est servi par FastAPI comme fichiers statiques.
 
 **Dossier :** `src/frontend-react/`
 
@@ -694,12 +713,6 @@ gunicorn main:app \
 | Rate limit | 10 questions/min/user | Protection contre le spam |
 | Timeout | 120s | Pour les reponses longues via LLM |
 
-### Taille du projet
-
-- **82 fichiers** tracked dans git
-- **~400 Ko** total (hors `node_modules` et venv, qui sont gitignores)
-- Image Docker finale : ~1.5-2 Go (avec deps Python + ONNX)
-
 ---
 
 ## 16. Schema de la base de donnees
@@ -713,8 +726,9 @@ Heberge sur **Supabase** (PostgreSQL).
 | id (PK)          |<--->| conversation_id   |
 | session_id (UUID)|     | role (user/asst)  |
 | user_id (UUID)   |     | content (TEXT)    |
-| created_at       |     | created_at        |
-+------------------+     +------------------+
+| created_at       |     | user_id           |
++------------------+     | created_at        |
+                         +------------------+
 
 +------------------+     +------------------+
 |  user_memory     |     |    events         |
@@ -748,10 +762,11 @@ Le frontend utilise la cle `anon` pour l'authentification uniquement.
 
 | Variable | Description | Exemple |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | Cle API LLM | `gsk_...` (Groq) ou `sk-or-...` (OpenRouter) |
-| `LLM_BASE_URL` | URL de l'API LLM | `https://api.groq.com/openai/v1` |
-| `LLM_MODEL` | Modele principal | `llama-3.3-70b-versatile` |
-| `QDRANT_URL` | URL Qdrant | `http://qdrant:6333` |
+| `OPENROUTER_API_KEY` | Cle API LLM principal | `sk-or-...` |
+| `LLM_BASE_URL` | URL de l'API LLM | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `LLM_MODEL` | Modele principal | `gemini-2.0-flash-001` |
+| `QDRANT_URL` | URL Qdrant | `https://xxx.qdrant.io:6333` |
+| `QDRANT_API_KEY` | Cle Qdrant Cloud | `xxx` |
 | `SUPABASE_URL` | URL Supabase | `https://xxx.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Cle service Supabase | `eyJ...` |
 | `SUPABASE_ANON_KEY` | Cle publique Supabase | `eyJ...` |
@@ -762,11 +777,14 @@ Le frontend utilise la cle `anon` pour l'authentification uniquement.
 | Variable | Description | Defaut |
 |----------|-------------|--------|
 | `REDIS_URL` | Redis partage | memoire locale |
-| `FALLBACK_API_KEY` | Cle LLM fallback | — |
-| `FALLBACK_BASE_URL` | URL LLM fallback | Groq |
-| `FALLBACK_MODEL` | Modele fallback | `llama-3.1-8b-instant` |
+| `GROQ_API_KEY` | Cle Groq (reformulation + fallback) | — |
+| `GROQ_MODEL` | Modele Groq fallback | `llama-3.1-8b-instant` |
+| `FALLBACK_API_KEY` | Cle LLM fallback Tier 2 | — |
+| `FALLBACK_BASE_URL` | URL LLM fallback Tier 2 | Groq |
+| `FALLBACK_MODEL` | Modele fallback Tier 2 | `llama-3.1-8b-instant` |
 | `ALLOWED_ORIGINS` | CORS (domaine Coolify) | `*` |
 | `LAKERA_API_KEY` | Lakera Guard | — |
+| `LAKERA_MODE` | `enforce` / `shadow` / `disabled` | `enforce` |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse | — |
 | `LANGFUSE_SECRET_KEY` | Langfuse | — |
 | `SENTRY_DSN` | Sentry errors | — |
@@ -779,25 +797,34 @@ Le frontend utilise la cle `anon` pour l'authentification uniquement.
 | `VECTOR_MEMORY_ENABLED` | `false` | Memoire vectorielle par utilisateur |
 | `QUERY_EXPANSION_ENABLED` | `false` | Variantes de requete via LLM |
 | `REFORMULATION_ENABLED` | `true` | Reformulation contextuelle |
-| `SECURITY_VALIDATOR` | `rules` | `true`/`rules`/`shadow`/`false` |
+| `SECURITY_VALIDATOR` | `rules` | `true` (regex+Lakera) / `rules` (regex only) / `false` |
+| `PARSER_MODE` | `custom` | `custom` ou `unstructured` (26+ formats) |
 
 ### Tuning
 
 | Variable | Defaut | Description |
 |----------|--------|-------------|
 | `CONVERSATION_DEPTH` | `5` | Echanges injectes dans le contexte |
-| `SUMMARY_UPDATE_INTERVAL` | `5` | Frequence MAJ du resume |
+| `SUMMARY_UPDATE_INTERVAL` | `5` | Frequence MAJ du resume utilisateur |
 | `SEARCH_CACHE_TTL` | `300` | Duree cache recherche (sec) |
 | `SEARCH_CACHE_SIZE` | `100` | Taille max cache memoire |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` | Modele embeddings |
-| `RERANKER_MODEL` | `BAAI/bge-reranker-base` | Modele reranker |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | Modele embeddings FastEmbed |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-base` | Modele reranker ONNX |
+| `REFORMULATION_MODEL` | `llama-3.1-8b-instant` | Modele rapide pour reformulation (Groq) |
+| `MATRIX_REFRESH_INTERVAL` | `120` | Frequence rebuild matrice cache semantique (sec) |
+| `LAKERA_CACHE_TTL` | `60` | TTL cache Redis Lakera (sec) |
+| `DEBOUNCE_MS` | `10000` | Delai reindexation watchdog (ms) |
 
 ---
 
 ## 18. Tests
 
 ```bash
-python -m pytest src/test-unitaires/ -v
+# Tous les tests unitaires
+python -m pytest src/test-unitaires/ --ignore=src/test-unitaires/test_load.py -v
+
+# Tests de charge (necessite serveur actif sur localhost:8080)
+python -m pytest src/test-unitaires/test_load.py -v
 ```
 
 ### Couverture
@@ -806,22 +833,22 @@ python -m pytest src/test-unitaires/ -v
 |-------------|----------------|
 | `test_routes.py` | Endpoints API (ask, reindex, reformulation) |
 | `test_search.py` | Pipeline hybride, router, BM25, reranker |
-| `test_generator.py` | Generation LLM, fallback, reformulation |
+| `test_generator.py` | Generation LLM, fallback, reformulation, deque |
 | `test_vector_store.py` | Operations Qdrant (ajout, suppression, recherche) |
 | `test_run.py` | Ingestion, detection de changements, indexation |
 | `test_chunker.py` | Decoupage en chunks |
 | `test_document_loader.py` | Parsing multi-format |
-| `test_tracker.py` | Supabase events + conversations |
-| `test_integration.py` | Flux complet bout-en-bout |
+| `test_tracker.py` | Supabase events + conversations (UUID valides) |
+| `test_integration.py` | Flux complet bout-en-bout (SSE parse) |
 | `test_auth_flow.py` | Scenarios d'authentification |
 | `test_feedback.py` | Feedback human-in-the-loop |
 | `test_confidence_score.py` | Calcul du score de confiance |
-| `test_validator_lakera.py` | Validation securite + Lakera |
+| `test_validator_lakera.py` | Securite : regex, Lakera prompt_attack, PII ignore, shadow |
 | `test_pii_masker.py` | Masquage d'informations personnelles |
-| `test_watchdog.py` | Surveillance fichiers |
-| `test_load.py` | Tests de charge |
+| `test_watchdog.py` | Surveillance fichiers (debounce patche a 0.3s) |
+| `test_load.py` | Tests de charge 1000 users (necessite serveur actif) |
 
-**Resultat actuel :** 49/49 tests passed
+**Resultat actuel :** 124/124 tests unitaires passes — 5 tests de charge necessitent un serveur actif.
 
 ---
 

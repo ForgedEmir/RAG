@@ -99,12 +99,46 @@ def _is_first_worker() -> bool:
     except FileExistsError:
         return False
 
+def _warmup() -> None:
+    """Pré-charge FastEmbed + Reranker ONNX en parallèle pour éliminer la latence sur la première requête."""
+    import time
+
+    def _load_embeddings():
+        t = time.monotonic()
+        try:
+            from src.ingestion.vector_store import _get_embeddings
+            _get_embeddings()
+            logger.info(f"[WARMUP] FastEmbed prêt ({time.monotonic() - t:.1f}s)")
+        except Exception as e:
+            logger.warning(f"[WARMUP] FastEmbed échoué : {e}")
+
+    def _load_reranker():
+        t = time.monotonic()
+        try:
+            from src.search.search import _get_reranker
+            _get_reranker()
+            logger.info(f"[WARMUP] Reranker prêt ({time.monotonic() - t:.1f}s)")
+        except Exception as e:
+            logger.warning(f"[WARMUP] Reranker échoué : {e}")
+
+    t0 = time.monotonic()
+    t_embed = threading.Thread(target=_load_embeddings, daemon=True)
+    t_rerank = threading.Thread(target=_load_reranker, daemon=True)
+    t_embed.start()
+    t_rerank.start()
+    t_embed.join()
+    t_rerank.join()
+    logger.info(f"[WARMUP] Terminé ({time.monotonic() - t0:.1f}s)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     first = _is_first_worker()
     if first:
         # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
         threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
+        # Pré-charge FastEmbed + Reranker ONNX pour que la première requête ne paie pas le coût de chargement
+        threading.Thread(target=_warmup, daemon=True).start()
         # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
         start_watchdog()
     yield

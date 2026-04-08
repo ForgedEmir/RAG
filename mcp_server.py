@@ -34,6 +34,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -55,6 +56,9 @@ logging.basicConfig(level=logging.WARNING)
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 _COLLECTION     = "lore"
+_MCP_FILE_ROOT  = Path(os.getenv("MCP_FILE_ROOT", os.path.join(os.path.dirname(__file__), "data", "sample"))).resolve()
+_ALLOWED_LOG_EXTENSIONS = {".log", ".txt", ".out"}
+_ALLOWED_SAVE_EXTENSIONS = {".json", ".xml", ".txt", ".log", ".sav", ".dat", ".cfg", ".ini", ".yaml", ".yml", ".nbt"}
 
 
 # ── Lifespan : connexion Qdrant gérée proprement au démarrage/arrêt ──────────
@@ -89,6 +93,47 @@ class SearchResult(BaseModel):
     total:    int       = Field(description="Nombre de passages trouvés")
 
 
+class LogResult(BaseModel):
+    path: str = Field(description="Chemin du fichier de log")
+    lines: list[str] = Field(description="Dernieres lignes du log")
+    total_lines: int = Field(description="Nombre total de lignes dans le fichier")
+
+
+class FileListResult(BaseModel):
+    root: str = Field(description="Racine de recherche resolue")
+    files: list[str] = Field(description="Fichiers detectes")
+    total: int = Field(description="Nombre de fichiers detectes")
+
+
+def _resolve_sandbox_path(user_path: str, *, expect_dir: bool = False) -> tuple[Optional[Path], Optional[str]]:
+    """Resout user_path dans MCP_FILE_ROOT et bloque les acces hors sandbox."""
+    raw = (user_path or "").strip()
+    if not raw:
+        candidate = _MCP_FILE_ROOT
+    else:
+        p = Path(raw)
+        candidate = p if p.is_absolute() else (_MCP_FILE_ROOT / p)
+
+    try:
+        resolved = candidate.resolve()
+    except Exception as e:
+        return None, f"Chemin invalide: {e}"
+
+    if not resolved.is_relative_to(_MCP_FILE_ROOT):
+        return None, f"Acces refuse: le chemin doit rester dans {_MCP_FILE_ROOT}"
+
+    if not resolved.exists():
+        return None, f"Chemin introuvable: {resolved}"
+
+    if expect_dir and not resolved.is_dir():
+        return None, f"Le chemin n'est pas un dossier: {resolved}"
+
+    if not expect_dir and not resolved.is_file():
+        return None, f"Le chemin n'est pas un fichier: {resolved}"
+
+    return resolved, None
+
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -107,7 +152,7 @@ async def ask_lore(question: str, ctx: Context) -> str:
         from src.generation.generator import stream_reponse
 
         await ctx.report_progress(progress=0.3, total=1.0, message="Recherche vectorielle...")
-        passages, sources = rechercher_passages(question)
+        passages, sources, _ = rechercher_passages(question)
 
         if not passages:
             return "Je n'ai trouvé aucun passage pertinent dans les archives pour cette question."
@@ -139,10 +184,59 @@ async def search_lore(query: str, ctx: Context) -> SearchResult:
     await ctx.info(f"Recherche brute : {query!r}")
     try:
         from src.search.search import rechercher_passages
-        passages, sources = rechercher_passages(query)
+        passages, sources, _ = rechercher_passages(query)
         return SearchResult(passages=passages, sources=sources, total=len(passages))
     except Exception as e:
         return SearchResult(passages=[f"Erreur : {e}"], sources=[], total=0)
+
+
+@mcp.tool()
+async def list_save_files(folder_path: str = ".", ctx: Context = None) -> FileListResult:
+    """Liste les fichiers de sauvegarde/log dans la sandbox MCP_FILE_ROOT."""
+    if ctx:
+        await ctx.info(f"Listing securise du dossier: {folder_path!r}")
+
+    folder, err = _resolve_sandbox_path(folder_path, expect_dir=True)
+    if err:
+        return FileListResult(root=str(_MCP_FILE_ROOT), files=[err], total=0)
+
+    files: list[str] = []
+    for item in sorted(folder.rglob("*")):
+        if item.is_file() and item.suffix.lower() in _ALLOWED_SAVE_EXTENSIONS:
+            rel = item.relative_to(_MCP_FILE_ROOT)
+            size = item.stat().st_size
+            size_str = f"{size}B" if size < 1024 else f"{size // 1024}KB"
+            files.append(f"{rel} ({size_str})")
+
+    return FileListResult(root=str(folder), files=files[:200], total=len(files))
+
+
+@mcp.tool()
+async def read_log_file(file_path: str, ctx: Context, last_n_lines: int = 50) -> LogResult:
+    """Lit les dernieres lignes d'un fichier log texte, dans la sandbox MCP_FILE_ROOT."""
+    await ctx.info(f"Lecture securisee du log: {file_path!r}")
+
+    log_file, err = _resolve_sandbox_path(file_path, expect_dir=False)
+    if err:
+        return LogResult(path=file_path, lines=[err], total_lines=0)
+
+    if log_file.suffix.lower() not in _ALLOWED_LOG_EXTENSIONS:
+        return LogResult(
+            path=str(log_file),
+            lines=[f"Extension non autorisee ({log_file.suffix}). Autorisees: {', '.join(sorted(_ALLOWED_LOG_EXTENSIONS))}"],
+            total_lines=0,
+        )
+
+    n = max(1, min(int(last_n_lines), 500))
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+    except Exception as e:
+        return LogResult(path=str(log_file), lines=[f"Erreur lecture: {e}"], total_lines=0)
+
+    total = len(all_lines)
+    lines = [line.rstrip("\n") for line in all_lines[-n:]]
+    return LogResult(path=str(log_file), lines=lines, total_lines=total)
 
 
 # ── Resources ─────────────────────────────────────────────────────────────────

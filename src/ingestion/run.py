@@ -29,9 +29,20 @@ PARSER_MODE         = os.getenv("PARSER", "custom")
 
 _CHUNK_CTX_REDIS_TTL = 86400   # 24h — clé "chunk_ctx:{md5_hash}"
 
-# LLM singleton thread-safe
+# LLM singletons thread-safe
+# _llm_checker    : max_tokens=10  — classifies lore vs non-lore (OUI/NON)
+# _llm_summarizer : max_tokens=200 — generates doc summary + entities
 _llm_checker      = None
 _llm_checker_lock = threading.Lock()
+_llm_summarizer      = None
+_llm_summarizer_lock = threading.Lock()
+
+_LLM_COMMON = dict(
+    model    = os.getenv("LLM_MODEL",    "deepseek-chat"),
+    base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+    api_key  = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
+    temperature = 0,
+)
 
 
 def _get_llm_checker() -> ChatOpenAI:
@@ -40,27 +51,40 @@ def _get_llm_checker() -> ChatOpenAI:
         return _llm_checker
     with _llm_checker_lock:
         if _llm_checker is None:
-            _llm_checker = ChatOpenAI(
-                model=os.getenv("LLM_MODEL", "deepseek-chat"),
-                base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
-                api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
-                temperature=0,
-                max_tokens=10,
-            )
+            _llm_checker = ChatOpenAI(**_LLM_COMMON, max_tokens=10)
     return _llm_checker
+
+
+def _get_llm_summarizer() -> ChatOpenAI:
+    global _llm_summarizer
+    if _llm_summarizer is not None:
+        return _llm_summarizer
+    with _llm_summarizer_lock:
+        if _llm_summarizer is None:
+            _llm_summarizer = ChatOpenAI(**_LLM_COMMON, max_tokens=400)
+    return _llm_summarizer
 
 
 # ── Redis (optionnel) ─────────────────────────────────────────────────────────
 
+_redis_client      = None
+_redis_client_lock = threading.Lock()
+
 def _get_redis():
-    """Retourne un client Redis ou None si indisponible. Fail-open."""
-    try:
-        import redis
-        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
-        r.ping()
-        return r
-    except Exception:
-        return None
+    """Retourne un client Redis singleton ou None si indisponible. Fail-open."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    with _redis_client_lock:
+        if _redis_client is None:
+            try:
+                import redis
+                r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+                r.ping()
+                _redis_client = r
+            except Exception:
+                pass
+    return _redis_client
 
 
 # ── Mémoire des fichiers indexés ─────────────────────────────────────────────
@@ -150,16 +174,7 @@ def _get_doc_context(texte: str, nom: str) -> dict:
     # Appel LLM
     context = {"doc_summary": "", "entities": []}
     try:
-        llm = _get_llm_checker()
-        # On réutilise un LLM avec max_tokens plus généreux pour le résumé
-        summary_llm = ChatOpenAI(
-            model=os.getenv("LLM_MODEL", "deepseek-chat"),
-            base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
-            api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
-            temperature=0,
-            max_tokens=200,
-        )
-        result = summary_llm.invoke([
+        result = _get_llm_summarizer().invoke([
             SystemMessage(content=(
                 "Tu analyses du lore de jeu. Réponds en JSON strict (pas de markdown) avec deux clés : "
                 "'summary' (résumé 2-3 phrases), "
