@@ -5,7 +5,13 @@ Teste la fonction rechercher_passages et le router adaptatif.
 from unittest.mock import Mock, patch, MagicMock
 from langchain_core.documents import Document
 
-from src.search.search import rechercher_passages, _route
+from src.search.search import (
+    rechercher_passages,
+    _route,
+    CANDIDATES_SIMPLE,
+    CANDIDATES_COMPLEX,
+    get_runtime_switches,
+)
 
 
 # ===== TESTS DU ROUTER ADAPTATIF =====
@@ -14,13 +20,13 @@ def test_router_question_simple_courte():
     """Une question courte (< 6 mots) sans signal complexe → k_candidates=5."""
     plan = _route("Qui est Elarion ?")
     assert plan.use_expansion is False
-    assert plan.k_candidates  == 5
+    assert plan.k_candidates == CANDIDATES_SIMPLE
 
 
 def test_router_question_longue_complexe():
     """Une question longue (≥ 6 mots) → mode complexe k=100."""
     plan = _route("Quels sont les pouvoirs magiques des elfes anciens ?")
-    assert plan.k_candidates  == 100
+    assert plan.k_candidates == CANDIDATES_COMPLEX
 
 
 def test_router_mot_cle_complexe_declenche_mode_complexe():
@@ -32,7 +38,7 @@ def test_router_mot_cle_complexe_declenche_mode_complexe():
         "compare les deux royaumes",
     ]:
         plan = _route(question)
-        assert plan.k_candidates == 100
+        assert plan.k_candidates == CANDIDATES_COMPLEX
 
 
 def test_router_expansion_desactivee_par_defaut():
@@ -218,4 +224,13 @@ def test_parametres_search(mock_search, mock_get_store):
     question = "Ma question de test"
     rechercher_passages(question)
 
-    mock_search.assert_called_once_with(mock_store, question, k=5)
+    mock_search.assert_called_once_with(mock_store, question, k=CANDIDATES_SIMPLE)
+
+
+def test_runtime_switches_snapshot_contains_expected_keys():
+    """Le snapshot runtime expose les switches lisibles par le monitoring."""
+    sw = get_runtime_switches()
+    assert "reranker_enabled" in sw
+    assert "query_expansion_enabled" in sw
+    assert "smart_rerank_enabled" in sw
+    assert "reranker_model" in sw

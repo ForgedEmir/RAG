@@ -123,11 +123,19 @@ def _build_matrix() -> Tuple[Optional[np.ndarray], List[str]]:
     raw_values = r.mget(keys)
 
     embeddings, valid_keys = [], []
+    expected_dim: Optional[int] = None
     for key, raw in zip(keys, raw_values):
         if not raw:
             continue
         try:
             emb = json.loads(raw)["embedding"]
+            if not isinstance(emb, list) or not emb:
+                continue
+            # Ignore entries from a previous embedding model (different dimension)
+            if expected_dim is None:
+                expected_dim = len(emb)
+            if len(emb) != expected_dim:
+                continue
             embeddings.append(emb)
             valid_keys.append(key)
         except Exception:

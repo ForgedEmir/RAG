@@ -38,6 +38,7 @@ SUMMARY_UPDATE_INTERVAL = int(os.getenv("SUMMARY_UPDATE_INTERVAL", "5"))
 IMPORTANCE_THRESHOLD    = int(os.getenv("SUMMARY_IMPORTANCE_MIN_LEN", "80"))
 MAX_LOCK_CACHE_SIZE     = max(100, int(os.getenv("MAX_USER_LOCKS", "5000")))
 BACKGROUND_WORKERS      = max(2, int(os.getenv("BACKGROUND_MAX_WORKERS", "8")))
+MAX_RESPONSE_SECONDS    = float(os.getenv("MAX_RESPONSE_SECONDS", "0"))
 
 _user_locks:  defaultdict = defaultdict(threading.Lock)
 _locks_mutex              = threading.Lock()
@@ -143,7 +144,7 @@ async def get_user_identity(user_id: str = Depends(get_current_user)):
 
 
 @router.post("/api/ask")
-@limiter.limit("1/5seconds;10/minute;100/day")
+@limiter.limit("2/5seconds;30/minute;500/day")
 async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get_current_user)):
     req_id  = str(uuid.uuid4())[:8]
     start   = time.time()
@@ -196,9 +197,21 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    history    = get_history(body.session_id)
-    summary    = get_user_summary(user_id)
-    memories   = search_user_memories(user_id, question)
+    # Les 3 appels sont indépendants; exécution parallèle sur l'executor partagé.
+    loop = asyncio.get_running_loop()
+    history_f = loop.run_in_executor(_executor, get_history, body.session_id)
+    summary_f = loop.run_in_executor(_executor, get_user_summary, user_id)
+    memories_f = loop.run_in_executor(_executor, search_user_memories, user_id, question)
+    history, summary, memories = await asyncio.gather(history_f, summary_f, memories_f, return_exceptions=True)
+    if isinstance(history, Exception):
+        logger.warning(f"[{req_id}] history fetch failed: {history}")
+        history = []
+    if isinstance(summary, Exception):
+        logger.warning(f"[{req_id}] summary fetch failed: {summary}")
+        summary = ""
+    if isinstance(memories, Exception):
+        logger.warning(f"[{req_id}] memory fetch failed: {memories}")
+        memories = []
 
     t_ref = time.time()
     query = reformuler_question(question, history)
@@ -222,6 +235,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     async def event_stream():
         accumulated, model_used = [], []
+        timed_out = False
         try:
             yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'passages': passages, 'confidence': confidence_pct})}\n\n"
 
@@ -243,7 +257,20 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             _executor.submit(produce)
 
             while True:
-                kind, data = await queue.get()
+                if MAX_RESPONSE_SECONDS > 0:
+                    remaining = MAX_RESPONSE_SECONDS - (time.time() - start)
+                    if remaining <= 0:
+                        timed_out = True
+                        logger.warning(f"[{req_id}] response timeout after {MAX_RESPONSE_SECONDS}s")
+                        break
+                    try:
+                        kind, data = await asyncio.wait_for(queue.get(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        logger.warning(f"[{req_id}] response timeout after {MAX_RESPONSE_SECONDS}s")
+                        break
+                else:
+                    kind, data = await queue.get()
                 if kind == "done":
                     break
                 if kind == "error":
@@ -254,6 +281,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 yield f"data: {json.dumps({'type': 'text', 'text': data})}\n\n"
 
             model_name = model_used[0] if model_used else "unknown"
+            if timed_out:
+                yield f"data: {json.dumps({'type': 'text', 'text': ' [Reponse interrompue pour respecter la latence cible.]'})}\n\n"
+                model_name = f"{model_name} [timeout]"
             yield f"data: {json.dumps({'type': 'done', 'model': model_name})}\n\n"
 
             if body.session_id:
@@ -404,71 +434,6 @@ async def get_cache_stats(request: Request):
     """Return semantic cache metadata — accessible via monitoring key."""
     require_monitoring(request)
     return cache_stats()
-
-
-
-@router.post("/api/ask_agent")
-@limiter.limit("1/5seconds;10/minute;100/day")
-async def ask_agent(request: Request, body: AskBody, user_id: str = Depends(get_current_user)):
-    """ReAct agent endpoint — alternatif a /api/ask qui utilise un agent avec outils."""
-    question = body.question.strip()
-    if not question:
-        return JSONResponse({"error": "Question vide"}, status_code=400)
-
-    if not user_id:
-        return JSONResponse({"error": "Authentification requise."}, status_code=401)
-
-    # Masquage PII + validation sécurité (même pipeline que /api/ask)
-    try:
-        from src.security.pii_masker import masquer
-        question = masquer(question)
-    except Exception as e:
-        logger.debug(f"PII masker ignoré : {e}")
-
-    validation = valider_entree(question)
-    if not validation["valid"]:
-        bt = validation["type"]
-        track("injection_lakera" if bt == "jailbreak" else "injection_regex", detail=question[:200])
-        msg = ("⚠️ L'Oracle a détecté une tentative de manipulation des arcanes sacrées."
-               if bt in ("prompt_injection", "jailbreak") else
-               "🔮 L'Oracle ne répond qu'aux questions sur le lore du jeu.")
-        return JSONResponse({"error": msg, "blocked": True, "block_type": bt}, status_code=400)
-
-    history = get_history(body.session_id) if body.session_id else []
-    summary = get_user_summary(user_id) if user_id else ""
-    memories = search_user_memories(user_id, question) if user_id else []
-
-    # ReAct agent loop
-    from src.agent.react_agent import run_react_agent
-    result = run_react_agent(question)
-
-    answer = result.get("answer", "")
-
-    # Fallback to normal pipeline if agent returned raw passages
-    if result.get("fallback") and len(answer.split("\n")) > 3:
-        passages = [line for line in answer.split("\n") if line.strip()]
-        answer_stream = stream_reponse(
-            question, passages[:5], [], history,
-            user_summary=summary, vector_memories=memories
-        )
-        full_answer = "".join(list(answer_stream))
-        if full_answer:
-            answer = full_answer
-
-    # Save conversation
-    if body.session_id and answer and answer != "No results found after agent search.":
-        try:
-            save_exchange(body.session_id, question, answer, user_id)
-        except Exception:
-            pass
-
-    return JSONResponse({
-        "reponse": answer,
-        "tool_calls": result.get("tool_calls", []),
-        "iterations": result.get("iterations", 0),
-        "model_used": result.get("model", "unknown"),
-        "sources": [],
-    })
 
 
 def register_routes(app: FastAPI, log_buffer: deque = None) -> None:

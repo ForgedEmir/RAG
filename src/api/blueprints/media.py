@@ -39,15 +39,18 @@ async def stt(request: Request, audio: UploadFile = File(...)):
             return JSONResponse({"error": f"Audio trop volumineux. Max: {limit_mb} MB"}, status_code=400)
 
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url="https://api.groq.com/openai/v1")
+        stt_api_key = os.getenv("STT_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        stt_base_url = os.getenv("STT_BASE_URL", "https://api.groq.com/openai/v1")
+        stt_model = os.getenv("STT_MODEL", "whisper-large-v3")
+        client = OpenAI(api_key=stt_api_key, base_url=stt_base_url)
         transcription = client.audio.transcriptions.create(
-            model="whisper-large-v3",
+            model=stt_model,
             file=(audio.filename or "audio.webm", content),
             # WHY: Pas de language fixé — Whisper détecte automatiquement la langue
             # pour supporter les utilisateurs francophones ET anglophones.
         )
         detected_lang = getattr(transcription, "language", "unknown")
-        track("voice", detail=f"whisper | {audio.filename or 'audio.webm'} | lang:{detected_lang}")
+        track("voice", detail=f"{stt_model} | {audio.filename or 'audio.webm'} | lang:{detected_lang}")
         return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")

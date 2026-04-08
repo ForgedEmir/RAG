@@ -28,6 +28,10 @@ _COLLECTION_NAME = "lore"
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+_QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH = os.getenv(
+    "QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH", "true"
+).lower() != "false"
+_QDRANT_VECTOR_SIZE_OVERRIDE = os.getenv("QDRANT_VECTOR_SIZE")
 
 # Singletons — créés une seule fois
 _embeddings: Optional[FastEmbedEmbeddings] = None
@@ -39,7 +43,7 @@ _vector_size: Optional[int] = None
 def _get_embeddings() -> FastEmbedEmbeddings:
     global _embeddings
     if _embeddings is None:
-        model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+        model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         # FastEmbed uses ONNX — no PyTorch/GPU required, starts in ~3s
         _embeddings = FastEmbedEmbeddings(model_name=model)
         logger.info(f"FastEmbed embeddings chargé : {model}")
@@ -52,6 +56,30 @@ def _get_vector_size() -> int:
         probe = _get_embeddings().embed_query("dimension probe")
         _vector_size = len(probe)
     return _vector_size
+
+
+def _get_expected_vector_size() -> int:
+    """Expected collection dimension from override or embedding model."""
+    if _QDRANT_VECTOR_SIZE_OVERRIDE:
+        try:
+            value = int(_QDRANT_VECTOR_SIZE_OVERRIDE)
+            if value > 0:
+                return value
+        except ValueError:
+            logger.warning("QDRANT_VECTOR_SIZE invalide (%s), fallback embedder.", _QDRANT_VECTOR_SIZE_OVERRIDE)
+    return _get_vector_size()
+
+
+def _collection_vector_size(client: QdrantClient) -> int:
+    info = client.get_collection(_COLLECTION_NAME)
+    vectors = info.config.params.vectors
+    if hasattr(vectors, "size"):
+        return int(vectors.size)
+    if isinstance(vectors, dict):
+        first = next(iter(vectors.values()), None)
+        if first is not None and hasattr(first, "size"):
+            return int(first.size)
+    raise ValueError("Impossible de lire la dimension de la collection Qdrant.")
 
 
 def _get_client() -> QdrantClient:
@@ -72,12 +100,32 @@ def _ensure_collection(client: QdrantClient) -> None:
     if _collection_ready:
         return
     existing = [c.name for c in client.get_collections().collections]
+    expected_size = _get_expected_vector_size()
+
+    if _COLLECTION_NAME in existing:
+        try:
+            current_size = _collection_vector_size(client)
+            if current_size != expected_size:
+                message = (
+                    f"Qdrant dimension mismatch: collection={current_size}, expected={expected_size}."
+                )
+                if _QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH:
+                    logger.warning("%s Recréation automatique activée.", message)
+                    client.delete_collection(_COLLECTION_NAME)
+                    existing.remove(_COLLECTION_NAME)
+                else:
+                    raise RuntimeError(message)
+        except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
+            logger.warning("Vérification dimension Qdrant impossible: %s", e)
+
     if _COLLECTION_NAME not in existing:
         client.create_collection(
             collection_name=_COLLECTION_NAME,
-            vectors_config=VectorParams(size=_get_vector_size(), distance=Distance.COSINE),
+            vectors_config=VectorParams(size=expected_size, distance=Distance.COSINE),
         )
-        logger.info(f"Collection '{_COLLECTION_NAME}' créée.")
+        logger.info(f"Collection '{_COLLECTION_NAME}' créée ({expected_size} dims).")
 
     # Requis pour les filtres de suppression sur metadata.fichier.
     try:

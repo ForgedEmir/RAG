@@ -1,5 +1,3 @@
-.env
-
 # Local tooling
 .claude/
 
@@ -27,6 +25,9 @@ chroma_db/
 
 # Env
 venv/
+.env
+.env.*
+!.env.example
 
 # Node
 node_modules/

@@ -12,7 +12,6 @@ langchain-openai>=0.2.0
 langchain-text-splitters>=0.3.0
 langchain-qdrant>=0.2.0
 langchain-community>=0.3.0
-langchain-groq>=0.2.0
 
 # === Vector DB ===
 qdrant-client>=1.7.0
@@ -46,8 +45,8 @@ supabase>=2.0.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 requests>=2.31.0
+openai>=1.0.0
 gunicorn>=21.2.0
-gevent>=24.0.0
 
 # === TTS ===
 edge-tts>=7.0.0

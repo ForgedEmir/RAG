@@ -62,9 +62,9 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
 
     ext = os.path.splitext(filepath)[1].lower()
     loaders = {
-        '.txt': lambda p: open(p, 'r', encoding='utf-8').read(),
-        '.md':  lambda p: open(p, 'r', encoding='utf-8').read(),
-        '.json': lambda p: _json_to_text(json.load(open(p, 'r', encoding='utf-8'))),
+        '.txt': _read_text_file,
+        '.md':  _read_text_file,
+        '.json': _read_json_file,
         '.csv': _read_csv,
         '.xlsx': _xlsx_to_text,
         '.xml': _xml_to_text,
@@ -79,6 +79,17 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Erreur en lisant {filepath} : {e}")
         return None
+
+
+def _read_text_file(filepath: str) -> str:
+    with open(filepath, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def _read_json_file(filepath: str) -> str:
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return _json_to_text(data)
 
 
 def _read_csv(filepath: str) -> str:

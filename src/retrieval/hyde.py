@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 _HYDE_ENABLED = os.getenv("HYDE_ENABLED", "true").lower() != "false"
 _HYDE_CHEAP_MODEL = os.getenv("HYDE_CHEAP_MODEL", "meta-llama/llama-3.2-3b-instruct")
+_HYDE_TIMEOUT_SECONDS = float(os.getenv("HYDE_TIMEOUT_SECONDS", "3.5"))
+_HYDE_API_URL = os.getenv("HYDE_API_URL", "https://openrouter.ai/api/v1/chat/completions")
 
 
 def is_hyde_enabled() -> bool:
@@ -23,11 +25,13 @@ def is_hyde_enabled() -> bool:
 
 def _hypothetical_answer(query: str) -> str:
     """Génère une réponse hypothétique via httpx + OpenRouter (modèle cheap)."""
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+    api_key = os.getenv("HYDE_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return ""
     try:
-        with httpx.Client(timeout=15) as client:
+        with httpx.Client(timeout=_HYDE_TIMEOUT_SECONDS) as client:
             resp = client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                _HYDE_API_URL,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={
                     "model": _HYDE_CHEAP_MODEL,

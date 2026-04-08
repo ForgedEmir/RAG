@@ -3,12 +3,16 @@ import os
 import logging
 import threading
 import subprocess
+import time
 import warnings
 from collections import deque
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv(override=False)
+from src.config.features import apply_feature_profile, env_bool
+
+apply_feature_profile()
 _is_dev = os.getenv("ENV", "production").lower() == "development"
 
 # Sentry (optionnel)
@@ -88,9 +92,26 @@ from src.ingestion.watcher import start_watchdog, stop_watchdog
 
 
 _LOCK_FILE = os.path.join(os.path.dirname(__file__), ".startup.lock")
+_STARTUP_INDEX_ENABLED = env_bool("STARTUP_INDEX_ENABLED", True)
+_STARTUP_WARMUP_ENABLED = env_bool("STARTUP_WARMUP_ENABLED", True)
+_WATCHDOG_ENABLED = env_bool("WATCHDOG_ENABLED", True)
 
 def _is_first_worker() -> bool:
-    """Utilise un fichier lock pour qu'un seul worker Gunicorn lance l'indexation."""
+    """Utilise un fichier lock pour qu'un seul worker lance le warmup/indexation.
+    Un lock vieux de plus de 60s est considéré périmé (crash, Stop-Process, redémarrage).
+    Dans la même session, les workers démarrent en quelques secondes → lock < 10s → non supprimé.
+    """
+    if os.path.exists(_LOCK_FILE):
+        try:
+            age = time.time() - os.path.getmtime(_LOCK_FILE)
+            if age > 60:
+                os.remove(_LOCK_FILE)
+                logger.info(f"[STARTUP] Verrou périmé supprimé ({age:.0f}s).")
+        except Exception:
+            try:
+                os.remove(_LOCK_FILE)
+            except Exception:
+                pass
     try:
         fd = os.open(_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode())
@@ -100,15 +121,38 @@ def _is_first_worker() -> bool:
         return False
 
 def _warmup() -> None:
-    """Pré-charge FastEmbed + Reranker ONNX en parallèle pour éliminer la latence sur la première requête."""
+    """Pré-charge FastEmbed + Reranker ONNX + BM25 en parallèle."""
     import time
 
     def _load_embeddings():
         t = time.monotonic()
         try:
-            from src.ingestion.vector_store import _get_embeddings
+            from src.ingestion.vector_store import _get_embeddings, _get_client, _COLLECTION_NAME
             _get_embeddings()
-            logger.info(f"[WARMUP] FastEmbed prêt ({time.monotonic() - t:.1f}s)")
+            try:
+                client = _get_client()
+                count = client.count(_COLLECTION_NAME).count
+                # Vérifie aussi la dimension — une collection 384-dim avec 30 points
+                # sera quand même effacée au 1er appel get_store() → mieux vaut re-indexer maintenant
+                needs_reindex = count == 0
+                if count > 0:
+                    try:
+                        from src.ingestion.vector_store import _get_vector_size
+                        current_dim = _get_vector_size()
+                        coll_dim = client.get_collection(_COLLECTION_NAME).config.params.vectors.size
+                        if coll_dim != current_dim:
+                            logger.warning(f"[WARMUP] Dimension mismatch ({coll_dim} vs {current_dim}) → re-indexation forcée.")
+                            needs_reindex = True
+                    except Exception as e:
+                        logger.warning(f"[WARMUP] Vérification dimension impossible : {e}")
+                logger.info(f"[WARMUP] FastEmbed prêt, Qdrant '{_COLLECTION_NAME}': {count} points ({time.monotonic() - t:.1f}s)")
+                if needs_reindex:
+                    from src.ingestion.run import index_data
+                    index_data(force_reindex=True)
+                    count2 = client.count(_COLLECTION_NAME).count
+                    logger.info(f"[WARMUP] Re-indexation terminée : {count2} points.")
+            except Exception as e:
+                logger.info(f"[WARMUP] FastEmbed prêt ({time.monotonic() - t:.1f}s) (count check: {e})")
         except Exception as e:
             logger.warning(f"[WARMUP] FastEmbed échoué : {e}")
 
@@ -116,34 +160,82 @@ def _warmup() -> None:
         t = time.monotonic()
         try:
             from src.search.search import _get_reranker
-            _get_reranker()
-            logger.info(f"[WARMUP] Reranker prêt ({time.monotonic() - t:.1f}s)")
+            reranker = _get_reranker()
+            if reranker:
+                # Prime ONNX execution graph — sans ça la 1ère inférence réelle prend ~10s
+                list(reranker.rerank("warmup query", ["warmup passage"]))
+            logger.info(f"[WARMUP] Reranker prêt + ONNX primed ({time.monotonic() - t:.1f}s)")
         except Exception as e:
             logger.warning(f"[WARMUP] Reranker échoué : {e}")
 
+    def _load_bm25():
+        t = time.monotonic()
+        try:
+            from src.search.search import _load_bm25
+            _load_bm25()
+            logger.info(f"[WARMUP] BM25 prêt ({time.monotonic() - t:.1f}s)")
+        except Exception as e:
+            logger.warning(f"[WARMUP] BM25 échoué : {e}")
+
+    def _load_llm():
+        t = time.monotonic()
+        try:
+            # Force l'import du module generator → initialise Langfuse + crée le client LLM
+            # Sans ça, Langfuse s'initialise pendant la 1ère requête et ajoute ~2-3s
+            import src.generation.generator as _gen  # noqa: F401
+            try:
+                # Prime callback stack (Langfuse) pour éviter l'init à la première requête.
+                _gen._callbacks("startup-warmup")
+            except Exception:
+                pass
+            logger.info(f"[WARMUP] LLM + Langfuse prêts ({time.monotonic() - t:.1f}s)")
+        except Exception as e:
+            logger.warning(f"[WARMUP] LLM init échoué : {e}")
+
     t0 = time.monotonic()
-    t_embed = threading.Thread(target=_load_embeddings, daemon=True)
-    t_rerank = threading.Thread(target=_load_reranker, daemon=True)
-    t_embed.start()
-    t_rerank.start()
-    t_embed.join()
-    t_rerank.join()
+    threads = [
+        threading.Thread(target=_load_embeddings, daemon=True),
+        threading.Thread(target=_load_reranker,   daemon=True),
+        threading.Thread(target=_load_llm,         daemon=True),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Charge BM25 après la phase embeddings/Qdrant pour éviter d'afficher
+    # un corpus obsolète juste avant une réindexation forcée.
+    _load_bm25()
     logger.info(f"[WARMUP] Terminé ({time.monotonic() - t0:.1f}s)")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     first = _is_first_worker()
     if first:
-        # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
-        threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
-        # Pré-charge FastEmbed + Reranker ONNX pour que la première requête ne paie pas le coût de chargement
-        threading.Thread(target=_warmup, daemon=True).start()
-        # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
-        start_watchdog()
+        if _STARTUP_INDEX_ENABLED:
+            # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
+            threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
+        else:
+            logger.info("[STARTUP] Indexation initiale désactivée (STARTUP_INDEX_ENABLED=false).")
+
+        if _STARTUP_WARMUP_ENABLED:
+            # Pré-charge FastEmbed + Reranker ONNX de façon BLOQUANTE avant d'accepter des requêtes
+            # → élimine la latence à froid sur la première requête (~4–10s sans ça)
+            await asyncio.to_thread(_warmup)
+        else:
+            logger.info("[STARTUP] Warmup désactivé (STARTUP_WARMUP_ENABLED=false).")
+
+        if _WATCHDOG_ENABLED:
+            # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
+            start_watchdog()
+        else:
+            logger.info("[STARTUP] Watchdog désactivé (WATCHDOG_ENABLED=false).")
     yield
     if first:
-        stop_watchdog()
+        if _WATCHDOG_ENABLED:
+            stop_watchdog()
         try:
             os.remove(_LOCK_FILE)
         except OSError:
@@ -299,4 +391,7 @@ async def spa_fallback(full_path: str):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=_is_dev)
+    uvicorn.run(
+        "main:app", host="0.0.0.0", port=port, reload=_is_dev,
+        reload_excludes=["*.lock", "*.pyc", "__pycache__"],
+    )

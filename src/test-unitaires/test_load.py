@@ -1,7 +1,9 @@
 """Tests de charge — Oracle LoreKeeper (1000 users simulés).
 
-Exécuter : pytest src/test-unitaires/test_load.py -v -s
-Prérequis : serveur local actif sur http://localhost:8080
+Exécuter :
+    RUN_LOAD_TESTS=true TEST_BASE_URL=http://localhost:8000 pytest src/test-unitaires/test_load.py -v -s
+
+Par défaut ces tests sont ignorés pour ne pas casser les runs unitaires standards.
 """
 import asyncio
 import gc
@@ -16,7 +18,13 @@ import httpx
 import pytest
 import pytest_asyncio
 
-BASE_URL  = os.getenv("TEST_BASE_URL", "http://localhost:8080")
+RUN_LOAD_TESTS = os.getenv("RUN_LOAD_TESTS", "false").lower() == "true"
+pytestmark = pytest.mark.skipif(
+    not RUN_LOAD_TESTS,
+    reason="Load tests disabled by default. Set RUN_LOAD_TESTS=true and run against a live backend.",
+)
+
+BASE_URL  = os.getenv("TEST_BASE_URL", "http://localhost:8000")
 GUEST_HDR = {"x-local-guest-id": "guest_load_test_user"}
 
 # Pré-génère des UUIDs stables pour les sessions (Supabase exige UUID pour session_id)

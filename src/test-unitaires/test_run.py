@@ -104,7 +104,8 @@ def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists):
 @patch('src.ingestion.run.get_store')
 @patch('src.ingestion.run.add_documents')
 @patch('src.ingestion.run.save_memory')
-def test_index_force_reindex(mock_save, mock_add, mock_get_store, mock_prepare, mock_list):
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_force_reindex(mock_bm25, mock_save, mock_add, mock_get_store, mock_prepare, mock_list):
     """On peut forcer une reindexation complete de tous les fichiers."""
     mock_list.return_value = {"file1.md": 1000, "file2.txt": 2000}
     mock_prepare.return_value = [
@@ -118,6 +119,7 @@ def test_index_force_reindex(mock_save, mock_add, mock_get_store, mock_prepare, 
     mock_prepare.assert_called_once()
     mock_get_store.assert_called_once_with(force_reindex=True)
     mock_add.assert_called_once()
+    mock_bm25.assert_called_once()
     mock_save.assert_called_once()
 
 

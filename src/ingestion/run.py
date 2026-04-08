@@ -13,6 +13,7 @@ from typing import List, Set
 from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from src.config.features import env_bool
 from src.ingestion.chunker import split_into_chunks
 from src.ingestion.parser import extract_text_from_file, clean_text
 from src.ingestion.vector_store import get_store, add_documents, remove_files
@@ -26,6 +27,8 @@ MEMORY_FILE         = os.path.join(_DATA_DIR, "files_metadata.json")
 BM25_CORPUS_FILE    = os.path.join(_DATA_DIR, "bm25_corpus.json")
 SUPPORTED_EXTENSIONS = (".md", ".txt", ".json", ".csv", ".xlsx", ".xml", ".pdf")
 PARSER_MODE         = os.getenv("PARSER", "custom")
+_INGESTION_LORE_CLASSIFIER_ENABLED = env_bool("INGESTION_LORE_CLASSIFIER_ENABLED", True)
+_INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED = env_bool("INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED", True)
 
 _CHUNK_CTX_REDIS_TTL = 86400   # 24h — clé "chunk_ctx:{md5_hash}"
 
@@ -40,7 +43,7 @@ _llm_summarizer_lock = threading.Lock()
 _LLM_COMMON = dict(
     model    = os.getenv("LLM_MODEL",    "deepseek-chat"),
     base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
-    api_key  = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
+    api_key  = os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
     temperature = 0,
 )
 
@@ -132,6 +135,8 @@ def list_current_files() -> dict:
 
 def _is_lore_content(texte: str, nom: str) -> bool:
     """Vérifie via LLM que le fichier contient du lore. Fail-open si LLM indisponible."""
+    if not _INGESTION_LORE_CLASSIFIER_ENABLED:
+        return True
     try:
         llm      = _get_llm_checker()
         response = llm.invoke([
@@ -158,6 +163,9 @@ def _get_doc_context(texte: str, nom: str) -> dict:
     sur les questions qui font référence à des éléments mentionnés ailleurs dans le document.
     Cache Redis 24h sur le hash MD5 du texte pour éviter les appels LLM redondants.
     """
+    if not _INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED:
+        return {"doc_summary": "", "entities": []}
+
     content_hash = hashlib.md5(texte[:5000].encode()).hexdigest()
     redis_key    = f"chunk_ctx:{content_hash}"
 
@@ -293,6 +301,42 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
         logger.warning(f"Impossible d'invalider le cache BM25 : {e}")
 
 
+def _is_bm25_corpus_healthy(expected_files: Set[str]) -> bool:
+    """Valide rapidement le corpus BM25 persistant.
+
+    WHY: Les tests peuvent laisser un corpus factice (ex: file1.md / Chunk),
+    ce qui dégrade la recherche au runtime si aucun changement de fichier n'est détecté.
+    """
+    if not os.path.exists(BM25_CORPUS_FILE):
+        return False
+
+    try:
+        with open(BM25_CORPUS_FILE, "r", encoding="utf-8-sig") as f:
+            corpus = json.load(f)
+    except Exception:
+        return False
+
+    if not isinstance(corpus, list) or not corpus:
+        return False
+
+    corpus_files = set()
+    for entry in corpus:
+        if not isinstance(entry, dict):
+            return False
+        text = entry.get("text")
+        fichier = entry.get("fichier")
+        if not isinstance(text, str) or not text.strip():
+            return False
+        if isinstance(fichier, str) and fichier.strip():
+            corpus_files.add(fichier)
+
+    # Cas typique de corpus de test: aucun fichier réel du dataset courant.
+    if expected_files and not (corpus_files & expected_files):
+        return False
+
+    return True
+
+
 def index_data(force_reindex: bool = False) -> bool:
     """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés."""
     logger.info("Vérification des fichiers de lore...")
@@ -320,8 +364,8 @@ def index_data(force_reindex: bool = False) -> bool:
 
     if not (supprimes or nouveaux or modifies):
         logger.info("Aucun changement détecté.")
-        if not os.path.exists(BM25_CORPUS_FILE):
-            logger.info("Corpus BM25 absent — reconstruction depuis les fichiers actuels.")
+        if not _is_bm25_corpus_healthy(actuels):
+            logger.info("Corpus BM25 absent/invalide — reconstruction depuis les fichiers actuels.")
             all_docs = prepare_files_for_ai(actuels)
             _save_bm25_corpus(all_docs)
         return False

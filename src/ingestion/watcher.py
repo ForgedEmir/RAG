@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 DATA_FOLDER   = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "sample"))
 DEBOUNCE_MS   = 10.0   # secondes
+WATCHDOG_ENABLED = os.getenv("WATCHDOG_ENABLED", "true").lower() != "false"
 
 
 class _LoreWatcher:
@@ -22,6 +23,9 @@ class _LoreWatcher:
         self._indexing = False
 
     def start(self) -> None:
+        if not WATCHDOG_ENABLED:
+            logger.info("[WATCHDOG] Désactivé (WATCHDOG_ENABLED=false).")
+            return
         try:
             from watchdog.observers import Observer
             from watchdog.events import FileSystemEventHandler

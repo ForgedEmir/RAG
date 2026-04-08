@@ -16,6 +16,7 @@ MAX_DETAIL_LEN     = 500
 HISTORY_LIMIT      = 10
 STATS_LATENCY_LIMIT = 100
 STATS_EVENTS_LIMIT  = 200
+TRACKING_ENABLED    = os.getenv("TRACKING_ENABLED", "true").lower() != "false"
 
 _client      = None
 _client_lock = threading.Lock()
@@ -32,6 +33,8 @@ def _get_client():
     return _client
 
 def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
+    if not TRACKING_ENABLED:
+        return
     client = _get_client()
     if not client:
         return

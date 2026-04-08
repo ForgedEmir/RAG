@@ -68,6 +68,20 @@ async def monitoring_reformulation_history(request: Request):
     return {"history": get_reformulation_history()}
 
 
+@monitoring_router.get("/api/monitoring/search-switches")
+async def monitoring_search_switches(request: Request):
+    require_monitoring(request)
+    from src.search.search import get_runtime_switches
+    return {"read_only": True, "switches": get_runtime_switches()}
+
+
+@monitoring_router.get("/api/monitoring/runtime-profile")
+async def monitoring_runtime_profile(request: Request):
+    require_monitoring(request)
+    from src.config.features import get_runtime_profile
+    return get_runtime_profile()
+
+
 @monitoring_router.get("/api/monitoring/contextual-retrieval")
 async def monitoring_contextual_retrieval(request: Request):
     require_monitoring(request)
@@ -128,10 +142,16 @@ async def monitoring_features(request: Request):
 
     # Reranker
     try:
-        from src.search.search import _RERANKER_ENABLED
-        features["reranker"] = {"ok": _RERANKER_ENABLED, "detail": "Actif" if _RERANKER_ENABLED else "Désactivé (RERANKER_ENABLED=false)"}
+        from src.search.search import get_runtime_switches
+        sw = get_runtime_switches()
+        hyde = bool(sw.get("hyde_enabled", False))
+        rr = bool(sw.get("reranker_enabled", False))
+        sr = bool(sw.get("smart_rerank_enabled", False))
+        features["reranker"] = {"ok": rr, "detail": "Actif" if rr else "Désactivé (runtime)", "smart": sr}
+        features["hyde"] = {"ok": hyde, "detail": "Actif" if hyde else "Désactivé (runtime)"}
     except Exception as e:
         features["reranker"] = {"ok": False, "detail": str(e)[:60]}
+        features["hyde"] = {"ok": False, "detail": str(e)[:60]}
 
     # Contextual Retrieval
     try:

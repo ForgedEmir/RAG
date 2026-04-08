@@ -37,13 +37,15 @@ from typing import Optional
 from pathlib import Path
 
 from dotenv import load_dotenv
+from src.config.features import apply_feature_profile, env_bool
+
 load_dotenv()
 
 # Mode rapide pour MCP local: évite les composants les plus lents au premier appel.
-_MCP_FAST_MODE = os.getenv("MCP_FAST_MODE", "true").lower() != "false"
+_MCP_FAST_MODE = env_bool("MCP_FAST_MODE", True)
 if _MCP_FAST_MODE:
-    os.environ.setdefault("RERANKER_ENABLED", "false")
-    os.environ.setdefault("QUERY_EXPANSION_ENABLED", "false")
+    os.environ.setdefault("RAG_FAST_MODE", "true")
+apply_feature_profile()
 
 sys.path.insert(0, os.path.dirname(__file__))
 

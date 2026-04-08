@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import hashlib
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -12,6 +13,17 @@ DEFAULT_STORAGE = "memory://"
 REDIS_TIMEOUT = 1
 
 def _get_key(request: Request) -> str:
+    guest_id = (request.headers.get("x-local-guest-id") or "").strip()
+    if guest_id.startswith("guest_"):
+        return f"guest:{guest_id}"
+
+    auth = (request.headers.get("authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+            return f"jwt:{token_hash}"
+
     try:
         # Use session_id for granularity if the body was already cached by a middleware
         body = request.state.__dict__.get("_body")

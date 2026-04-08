@@ -143,3 +143,70 @@ def test_get_store_force_reindex(mock_qdrant_vs, mock_embeddings, mock_client_cl
 
         # Le dossier qdrant_db doit etre supprime
         mock_rmtree.assert_called_once()
+
+
+@patch('src.ingestion.vector_store.QdrantClient')
+@patch('src.ingestion.vector_store._get_embeddings')
+@patch('src.ingestion.vector_store.QdrantVectorStore')
+def test_get_store_recree_si_dimension_mismatch(mock_qdrant_vs, mock_embeddings, mock_client_class):
+    """La collection est recréée automatiquement si la dimension ne correspond pas."""
+    import src.ingestion.vector_store as vs
+    from src.ingestion.vector_store import get_store
+
+    vs._collection_ready = False
+    vs._client = None
+    vs._vector_size = None
+
+    embedder = Mock()
+    embedder.embed_query.return_value = [0.1, 0.2, 0.3]
+    mock_embeddings.return_value = embedder
+
+    mock_client = Mock()
+    mock_client_class.return_value = mock_client
+    existing_collection = Mock()
+    existing_collection.name = vs._COLLECTION_NAME
+    mock_client.get_collections.return_value = Mock(collections=[existing_collection])
+
+    info = Mock()
+    info.config.params.vectors = Mock(size=5)
+    mock_client.get_collection.return_value = info
+
+    with patch.object(vs, "_QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH", True), \
+         patch.object(vs, "_get_expected_vector_size", return_value=3):
+        get_store(force_reindex=False)
+
+    mock_client.delete_collection.assert_called_with(vs._COLLECTION_NAME)
+    mock_client.create_collection.assert_called_once()
+
+
+@patch('src.ingestion.vector_store.QdrantClient')
+@patch('src.ingestion.vector_store._get_embeddings')
+@patch('src.ingestion.vector_store.QdrantVectorStore')
+def test_get_store_mismatch_sans_auto_recreate_leve_erreur(mock_qdrant_vs, mock_embeddings, mock_client_class):
+    """Sans auto-recreate, un mismatch de dimension remonte une erreur explicite."""
+    import pytest
+    import src.ingestion.vector_store as vs
+    from src.ingestion.vector_store import get_store
+
+    vs._collection_ready = False
+    vs._client = None
+    vs._vector_size = None
+
+    embedder = Mock()
+    embedder.embed_query.return_value = [0.1, 0.2, 0.3]
+    mock_embeddings.return_value = embedder
+
+    mock_client = Mock()
+    mock_client_class.return_value = mock_client
+    existing_collection = Mock()
+    existing_collection.name = vs._COLLECTION_NAME
+    mock_client.get_collections.return_value = Mock(collections=[existing_collection])
+
+    info = Mock()
+    info.config.params.vectors = Mock(size=8)
+    mock_client.get_collection.return_value = info
+
+    with patch.object(vs, "_QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH", False), \
+         patch.object(vs, "_get_expected_vector_size", return_value=3):
+        with pytest.raises(RuntimeError):
+            get_store(force_reindex=False)

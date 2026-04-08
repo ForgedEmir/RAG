@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 from rank_bm25 import BM25Okapi
+from src.config.features import env_bool
 from src.ingestion.vector_store import get_store, search
 
 logger = logging.getLogger(__name__)
@@ -22,24 +23,35 @@ _CACHE_SIZE  = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
 
 # Constantes nommées — évite les magic numbers dispersés dans le code
 RRF_K              = 60    # Paramètre de fusion RRF standard
-CANDIDATES_COMPLEX = 100   # Candidats vectoriels avant reranking sur requête complexe
-CANDIDATES_SIMPLE  = 5     # Candidats vectoriels sur requête simple
-RERANKER_TOP_N     = 10    # Nombre de passages gardés après cross-encoder
-FINAL_TOP_N        = 5     # Passages finaux envoyés au LLM
+CANDIDATES_COMPLEX = max(8, int(os.getenv("SEARCH_COMPLEX_CANDIDATES", "14")))
+CANDIDATES_SIMPLE  = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "5")))
+RERANKER_TOP_N     = max(3, int(os.getenv("RERANKER_TOP_N", "6")))
+FINAL_TOP_N        = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "4")))
 BM25_FALLBACK_MIN  = 3     # Seuil vecteur en dessous duquel BM25 est activé
 
 # WHY: Les scores RRF max = 1/(60+0) ≈ 0.016, donc le seuil doit être en échelle RRF.
 # 0.005 correspond à un score si bas qu'aucun document pertinent n'a été trouvé.
 _HYDE_THRESHOLD = float(os.getenv("HYDE_SCORE_THRESHOLD", "0.005"))
-_RERANKER_ENABLED        = os.getenv("RERANKER_ENABLED",        "true").lower() != "false"
-_QUERY_EXPANSION_ENABLED = os.getenv("QUERY_EXPANSION_ENABLED", "false").lower() != "false"
-_RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
+_HYDE_ENABLED            = env_bool("HYDE_ENABLED", True)
+_RERANKER_ENABLED        = env_bool("RERANKER_ENABLED", True)
+_QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", False)
+_RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+_RERANKER_MAX_INPUT      = max(2, int(os.getenv("RERANKER_MAX_INPUT", "6")))
 _MIN_VECTOR_BEFORE_BM25  = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", str(BM25_FALLBACK_MIN))))
+_SMART_RERANK_ENABLED    = env_bool("SMART_RERANK_ENABLED", True)
+_SMART_RERANK_TOP1_MIN   = float(os.getenv("SMART_RERANK_TOP1_MIN", "0.014"))
+_SMART_RERANK_GAP_MIN    = float(os.getenv("SMART_RERANK_GAP_MIN", "0.01"))
+_RERANK_SIMPLE_QUERIES   = env_bool("RERANK_SIMPLE_QUERIES", False)
 
 _COMPLEX_SIGNALS = {
     "comment", "pourquoi", "différence", "difference", "compare", "comparer",
     "explique", "décris", "décrit", "liste", "relation", "lien", "entre",
     "quelles", "quels", "quelles sont", "quels sont", "raconte",
+}
+
+_RERANK_REASONING_SIGNALS = {
+    "pourquoi", "comment", "compare", "comparer", "difference", "différence",
+    "relation", "lien", "entre", "vs", "versus", "explique", "expliquer",
 }
 
 _pipeline_stats: dict = {
@@ -48,6 +60,20 @@ _pipeline_stats: dict = {
     "bm25_active": 0, "last_query": None, "last_mode": None,
     "last_vector_count": 0, "last_bm25_count": 0,
 }
+
+
+def get_runtime_switches() -> dict:
+    return {
+        "hyde_enabled": _HYDE_ENABLED,
+        "reranker_enabled": _RERANKER_ENABLED,
+        "rerank_simple_queries": _RERANK_SIMPLE_QUERIES,
+        "reranker_model": _RERANKER_MODEL,
+        "reranker_max_input": _RERANKER_MAX_INPUT,
+        "query_expansion_enabled": _QUERY_EXPANSION_ENABLED,
+        "smart_rerank_enabled": _SMART_RERANK_ENABLED,
+        "smart_rerank_top1_min": _SMART_RERANK_TOP1_MIN,
+        "smart_rerank_gap_min": _SMART_RERANK_GAP_MIN,
+    }
 
 # ── Redis cache (partagé entre workers) avec fallback mémoire ────────────────
 _redis_client = None
@@ -155,6 +181,7 @@ def get_pipeline_stats() -> dict:
 
 @dataclass
 class _QueryPlan:
+    is_complex: bool
     use_expansion: bool
     use_reranker:  bool
     k_candidates:  int
@@ -163,10 +190,44 @@ def _route(question: str) -> _QueryPlan:
     words = question.lower().split()
     is_complex = len(words) >= 6 or bool(set(words) & _COMPLEX_SIGNALS)
     return _QueryPlan(
+        is_complex=is_complex,
         use_expansion=is_complex and _QUERY_EXPANSION_ENABLED,
         use_reranker=_RERANKER_ENABLED,
         k_candidates=CANDIDATES_COMPLEX if is_complex else CANDIDATES_SIMPLE,
     )
+
+
+def _needs_reasoning_rerank(question: str) -> bool:
+    q = question.lower()
+    return any(sig in q for sig in _RERANK_REASONING_SIGNALS)
+
+
+def _should_apply_reranker(plan: _QueryPlan, combined: List[dict], rrf_scores: dict, question: str) -> bool:
+    if not plan.use_reranker:
+        return False
+    if not plan.is_complex and not _RERANK_SIMPLE_QUERIES:
+        return False
+    if not _SMART_RERANK_ENABLED:
+        return True
+    if not combined:
+        return False
+
+    raw_scores = [rrf_scores.get(d["id"], 0.0) for d in combined]
+    top1_raw = raw_scores[0] if raw_scores else 0.0
+    if top1_raw <= 0:
+        return True
+    top2_raw = raw_scores[1] if len(raw_scores) > 1 else 0.0
+    relative_gap = (top1_raw - top2_raw) / max(top1_raw, 1e-9)
+
+    # Questions longues mais factuelles peuvent se passer du reranker si le top-1
+    # est solide et que le gap est correct.
+    needs_reasoning = _needs_reasoning_rerank(question)
+    score_threshold = _SMART_RERANK_TOP1_MIN
+    gap_threshold = _SMART_RERANK_GAP_MIN
+    if plan.is_complex and needs_reasoning:
+        gap_threshold = max(gap_threshold, 0.02)
+
+    return top1_raw < score_threshold or relative_gap < gap_threshold
 
 
 # ── Reranker ONNX (FastEmbed — zéro PyTorch) ─────────────────────────────────
@@ -194,10 +255,17 @@ def _rerank(query: str, docs: List[dict]) -> List[dict]:
     if not reranker or not docs:
         return docs
     try:
-        passages = [d["text"] for d in docs]
+        if len(docs) > _RERANKER_MAX_INPUT:
+            logger.info(
+                "reranker input capped: %s -> %s docs",
+                len(docs),
+                _RERANKER_MAX_INPUT,
+            )
+        docs_to_rerank = docs[:_RERANKER_MAX_INPUT]
+        passages = [d["text"] for d in docs_to_rerank]
         scores   = list(reranker.rerank(query, passages))
         # scores est un itérateur de floats dans l'ordre des passages
-        ranked   = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+        ranked   = sorted(zip(docs_to_rerank, scores), key=lambda x: x[1], reverse=True)
         return [d for d, _ in ranked][:RERANKER_TOP_N]
     except Exception as e:
         logger.warning(f"Reranking échoué : {e}")
@@ -294,23 +362,29 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
     store = get_store()
     seen: set = set()
     vector_results: List[dict] = []
-    for q in queries:
-        for doc in search(store, q, k=plan.k_candidates):
-            doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
-            if doc_id not in seen:
-                seen.add(doc_id)
-                vector_results.append({
-                    "id": doc_id, "text": doc.page_content,
-                    "fichier": doc.metadata.get("fichier", "inconnu"),
-                    "parent_id": doc.metadata.get("parent_id"),
-                    "chunk_type": doc.metadata.get("chunk_type", "standard"),
-                })
+    t_vec = time.time()
+    try:
+        for q in queries:
+            for doc in search(store, q, k=plan.k_candidates):
+                doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
+                if doc_id not in seen:
+                    seen.add(doc_id)
+                    vector_results.append({
+                        "id": doc_id, "text": doc.page_content,
+                        "fichier": doc.metadata.get("fichier", "inconnu"),
+                        "parent_id": doc.metadata.get("parent_id"),
+                        "chunk_type": doc.metadata.get("chunk_type", "standard"),
+                    })
+    except Exception as e:
+        logger.warning(f"Vector search failed ({int((time.time()-t_vec)*1000)}ms): {e}")
+    logger.info(f"vector={int((time.time()-t_vec)*1000)}ms ({len(vector_results)} docs)")
 
     if not _bm25_loaded:
         _load_bm25()
 
     bm25_results: List[dict] = []
-    if _bm25_index and _bm25_corpus:
+    run_bm25 = len(vector_results) < _MIN_VECTOR_BEFORE_BM25
+    if _bm25_index and _bm25_corpus and run_bm25:
         bm25_scores = _bm25_index.get_scores(question.lower().split())
         top         = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
         bm25_results = [_bm25_corpus[i] for i in top if bm25_scores[i] > 0]
@@ -333,12 +407,17 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
             seen_files[fichier] = doc
     combined = sorted(seen_files.values(), key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
 
-    if plan.use_reranker:
+    should_rerank = _should_apply_reranker(plan, combined, rrf_scores, question)
+    if should_rerank:
         _pipeline_stats["reranker_calls"] += 1
+        t_rerank = time.time()
         combined = _rerank(question, combined)
+        logger.info(f"reranker={int((time.time()-t_rerank)*1000)}ms")
+    elif plan.use_reranker:
+        logger.info("reranker=skipped (smart-rerank)" )
 
-    # HyDE fallback: if no results or very low scores, try Hypothetical Document Embeddings
-    if not combined or (rrf_scores and max(rrf_scores.values()) < _HYDE_THRESHOLD):
+    # HyDE fallback: if enabled + no results or very low scores, try Hypothetical Document Embeddings
+    if _HYDE_ENABLED and (not combined or (rrf_scores and max(rrf_scores.values()) < _HYDE_THRESHOLD)):
         logger.info(f"HyDE fallback triggered (max score {max(rrf_scores.values()) if rrf_scores else 0} < {_HYDE_THRESHOLD})")
         try:
             from src.retrieval.hyde import hyde_search
@@ -366,11 +445,11 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
 
     _set_cache(question, passages, sources, conf_scores)
 
-    mode = "complex" if plan.use_expansion or plan.use_reranker else "simple"
+    mode = "complex" if plan.is_complex else "simple"
     if bm25_results:
         _pipeline_stats["bm25_active"] += 1
     _pipeline_stats.update(last_query=question[:80], last_mode=mode,
                            last_vector_count=len(vector_results), last_bm25_count=len(bm25_results))
     logger.info(f"[{mode}] '{question[:60]}' → {len(passages)} passage(s) "
-                f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{plan.use_reranker})")
+                f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{should_rerank})")
     return passages, sources, conf_scores
