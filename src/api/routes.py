@@ -107,33 +107,6 @@ def _resolve_feedback_context(session_id: str = "", question: str = "", answer: 
     return q or (last.get("question") or ""), a or (last.get("answer") or "")
 
 
-def _evaluate_feedback_quality(question: str, answer: str) -> tuple[Optional[float], Optional[dict]]:
-    if not question or not answer:
-        return None, None
-    try:
-        from src.security.judge import evaluer_reponse, evaluer_reponse_multi
-
-        details = evaluer_reponse_multi(question, answer)
-        if details is not None:
-            return float(details.get("overall", 0.0)), details
-        return evaluer_reponse(question, answer), None
-    except Exception as e:
-        logger.warning(f"[JUDGE] evaluation failed: {e}")
-        return None, None
-
-
-def _track_judge_metrics(session_ref: str, details: dict) -> None:
-    track(
-        "judge_metrics",
-        detail=(
-            f"session:{session_ref[:8]} "
-            f"cr:{details.get('context_relevance', 0.0):.2f} "
-            f"fa:{details.get('faithfulness', 0.0):.2f} "
-            f"ar:{details.get('answer_relevance', 0.0):.2f} "
-            f"cc:{details.get('context_coverage', 0.0):.2f}"
-        ),
-    )
-
 
 class AskBody(BaseModel):
     question: str
@@ -222,7 +195,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     if body.session_id:
         owner = get_conversation_owner(body.session_id)
-        if owner and owner != user_id:
+        from src.monitoring.tracker import _normalize_user_id as _norm_uid
+        if owner and owner != _norm_uid(user_id):
             return JSONResponse({"error": "Accès refusé"}, status_code=403)
 
     # Masquage PII avant validation sécurité
@@ -248,12 +222,33 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    # ── Détection questions méta (sur l'Oracle lui-même) ─────────────────
+    _META_KEYWORDS = (
+        "user-memory", "user memory", "mémoire utilisateur", "ta mémoire",
+        "mes données", "mon profil", "tu sais quoi sur moi", "qu'est-ce que tu sais",
+        "qui es-tu", "qui es tu", "tu es qui", "comment tu fonctionnes",
+        "comment fonctionne", "ton fonctionnement", "tes données", "ta base de données",
+        "tu stockes", "tu enregistres", "qu'est-ce que tu es",
+    )
+    q_lower = question.lower()
+    if any(kw in q_lower for kw in _META_KEYWORDS):
+        meta_msg = "🔮 Je suis l'Oracle des Archives, gardien du lore d'Aethelgard Online. Je réponds uniquement aux questions sur l'univers du jeu — son histoire, ses personnages, ses factions et ses événements. Pour toute question technique sur le service, contacte les développeurs."
+        return StreamingResponse(
+            iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
+                  f"data: {json.dumps({'type': 'text', 'text': meta_msg})}\n\n",
+                  f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     # ── Semantic cache check ──────────────────────────────────────────────
     cached = cache_check(question)
     if cached is not None:
         cached_text = cached[0] if isinstance(cached, tuple) else cached
         register_trace_context(trace_id, question, cached_text, body.session_id, user_id)
         logger.info(f"[{req_id}] Cached response returned")
+        if body.session_id:
+            _executor.submit(save_exchange, body.session_id, question, cached_text, user_id)
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': cached_text})}\n\n",
@@ -393,28 +388,18 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
 
     def _persist_and_judge():
         from src.monitoring.tracker import _get_client
-        judge_score = None
-        judge_details = None
         question, answer = "", ""
-
         if body.rating <= 2:
             question, answer = _resolve_feedback_context(body.session_id)
-            judge_score, judge_details = _evaluate_feedback_quality(question, answer)
-            if judge_details:
-                _track_judge_metrics(body.session_id or "legacy", judge_details)
-            if judge_score is not None and judge_score < 0.5:
-                track("judge_flag", detail=f"session:{body.session_id} score:{judge_score:.2f}")
-                logger.warning(f"[JUDGE] Low score ({judge_score:.2f}) for session {body.session_id[:8]}")
 
         client = _get_client()
         if client and _is_uuid(body.session_id):
             try:
                 client.table("feedback").insert({
-                    "session_id":  body.session_id,
-                    "user_id":     user_id,
-                    "rating":      body.rating,
-                    "comment":     body.comment[:500] if body.comment else "",
-                    "judge_score": judge_score,
+                    "session_id": body.session_id,
+                    "user_id":    user_id,
+                    "rating":     body.rating,
+                    "comment":    body.comment[:500] if body.comment else "",
                 }).execute()
             except Exception as e:
                 logger.warning(f"[FEEDBACK] Storage failed: {e}")
@@ -429,7 +414,6 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
             question=question,
             answer=answer,
             comment=body.comment,
-            judge_score=judge_score,
         )
         track("feedback_legacy", detail=f"rating:{body.rating} session:{body.session_id[:8]}")
 
@@ -447,13 +431,14 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
 
     context = get_trace_context(trace_id)
     trace_owner = (context.get("user_id") or "").strip()
-    if trace_owner and trace_owner != user_id:
+    from src.monitoring.tracker import _normalize_user_id as _norm_uid
+    if trace_owner and trace_owner != _norm_uid(user_id):
         return JSONResponse({"error": "Acces refuse"}, status_code=403)
 
     session_id = (body.session_id or context.get("session_id") or "").strip()
     if session_id:
         owner = get_conversation_owner(session_id)
-        if owner and owner != user_id:
+        if owner and owner != _norm_uid(user_id):
             return JSONResponse({"error": "Acces refuse"}, status_code=403)
 
     question, answer = _resolve_feedback_context(
@@ -466,27 +451,16 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
     def _persist_vote():
         from src.monitoring.tracker import _get_client
 
-        judge_score = None
-        judge_details = None
-        if body.value < 0:
-            judge_score, judge_details = _evaluate_feedback_quality(question, answer)
-            if judge_details:
-                _track_judge_metrics(session_id or trace_id, judge_details)
-            if judge_score is not None and judge_score < 0.5:
-                ref = session_id or trace_id
-                track("judge_flag", detail=f"session:{ref} score:{judge_score:.2f}")
-
         client = _get_client()
         safe_comment = body.comment[:500] if body.comment else ""
         db_comment = (f"[trace:{trace_id[:16]}] {safe_comment}").strip()
         if client and _is_uuid(session_id):
             try:
                 client.table("feedback").insert({
-                    "session_id":  session_id,
-                    "user_id":     user_id,
-                    "rating":      rating,
-                    "comment":     db_comment,
-                    "judge_score": judge_score,
+                    "session_id": session_id,
+                    "user_id":    user_id,
+                    "rating":     rating,
+                    "comment":    db_comment,
                 }).execute()
             except Exception as e:
                 logger.warning(f"[FEEDBACK] Vote storage failed: {e}")
@@ -501,7 +475,6 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
             question=question,
             answer=answer,
             comment=body.comment,
-            judge_score=judge_score,
         )
         track("feedback_vote", detail=f"value:{body.value} trace:{trace_id[:8]} session:{session_id[:8]}")
 

@@ -469,35 +469,65 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
 
   // ── STT (Speech-to-Text via Web Speech API) ───────────────────────────────
   const [recording, setRecording] = useState(false);
-  const recognitionRef = useRef(null);
 
-  const toggleRecording = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
+  const toggleRecording = async () => {
     if (recording) {
-      recognitionRef.current?.stop();
+      mediaRecorderRef.current?.stop();
       setRecording(false);
       return;
     }
 
-    const rec = new SpeechRecognition();
-    rec.lang = 'fr-FR';
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      setInput(prev => (prev ? prev + ' ' + transcript : transcript));
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
-      }
-    };
-    rec.onend = () => setRecording(false);
-    rec.onerror = () => setRecording(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setRecording(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const rec = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      rec.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const formData = new FormData();
+        formData.append('audio', blob, mimeType === 'audio/webm' ? 'audio.webm' : 'audio.mp4');
+        try {
+          const { getSupabase } = await import('./auth.js');
+          const headers = {};
+          const sb = await getSupabase();
+          if (sb) {
+            const { data } = await sb.auth.getSession();
+            const token = data?.session?.access_token;
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+          }
+          if (!headers['Authorization']) {
+            const guestId = localStorage.getItem('oracleGuestId') || '';
+            if (guestId.startsWith('guest_')) headers['x-local-guest-id'] = guestId;
+          }
+          const res = await fetch('/api/stt', { method: 'POST', headers, body: formData });
+          if (res.ok) {
+            const { text } = await res.json();
+            if (text) {
+              setInput(prev => (prev ? prev + ' ' + text : text));
+              if (textareaRef.current) {
+                textareaRef.current.style.height = 'auto';
+                textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+              }
+            }
+          }
+        } catch (_) {}
+      };
+
+      rec.start();
+      mediaRecorderRef.current = rec;
+      setRecording(true);
+    } catch (_) {
+      setRecording(false);
+    }
   };
 
   useEffect(() => {

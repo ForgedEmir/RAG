@@ -12,60 +12,38 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 logger = logging.getLogger(__name__)
 
 _api_key        = os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
+_primary_model  = os.getenv("LLM_MODEL", "llama3.1-8b")
+_primary_base   = os.getenv("LLM_BASE_URL", "https://api.cerebras.ai/v1")
+
 _fallback_key   = os.getenv("FALLBACK_API_KEY")
-_fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
-_CONV_DEPTH     = int(os.getenv("CONVERSATION_DEPTH", "5"))
+_fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.3-70b-versatile")
+_fallback_base  = os.getenv("FALLBACK_BASE_URL", "https://api.groq.com/openai/v1")
+
+_reformulation_key   = os.getenv("REFORMULATION_API_KEY") or _api_key
+_reformulation_model = os.getenv("REFORMULATION_MODEL", _primary_model)
+_reformulation_base  = os.getenv("REFORMULATION_BASE_URL", _primary_base)
+
+_CONV_DEPTH            = int(os.getenv("CONVERSATION_DEPTH", "5"))
 _REFORMULATION_ENABLED = os.getenv("REFORMULATION_ENABLED", "true").lower() != "false"
-
-# Dedicated Groq fallback (GROQ_API_KEY takes precedence over the generic
-# FALLBACK_API_KEY so projects can use separate credentials for each tier).
-_groq_api_key   = os.getenv("GROQ_API_KEY")
-_groq_model     = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-
-# Hardcoded free tier: OpenRouter's free mixtral route (no key needed for
-# low-volume usage; requests that fail here raise normally).
-_FREE_FALLBACK_BASE_URL = "https://openrouter.ai/api/v1"
-_FREE_FALLBACK_MODEL    = "mistralai/mistral-7b-instruct:free"
 
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
     model=_primary_model,
-    base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+    base_url=_primary_base,
     api_key=_api_key, temperature=0.2,
 ) if _api_key else None
 
 _llm_fallback: Optional[ChatOpenAI] = ChatOpenAI(
     model=_fallback_model,
-    base_url=os.getenv("FALLBACK_BASE_URL", "https://api.groq.com/openai/v1"),
+    base_url=_fallback_base,
     api_key=_fallback_key, temperature=0.2,
 ) if _fallback_key else None
 
-# Groq-specific fallback (second tier — used when both primary and
-# _llm_fallback fail, or when GROQ_API_KEY is set independently).
-_llm_groq: Optional[ChatOpenAI] = ChatOpenAI(
-    model=_groq_model,
-    base_url="https://api.groq.com/openai/v1",
-    api_key=_groq_api_key, temperature=0.2,
-) if _groq_api_key else None
-
-# Third-tier free fallback via OpenRouter (requires auth since 2025-Q4).
-_llm_free: Optional[ChatOpenAI] = ChatOpenAI(
-    model=_FREE_FALLBACK_MODEL,
-    base_url=_FREE_FALLBACK_BASE_URL,
-    api_key=_api_key or _fallback_key or "no-key",
-    temperature=0.2,
-) if (_api_key or _fallback_key) else None
-
-# Dedicated fast LLM for reformulation (cheap, low-latency ~500ms).
-# Uses Groq by default (llama-3.1-8b-instant). Falls back gracefully to
-# _llm_fallback then _llm so reformulation never breaks when Groq is unavailable.
-_reformulation_model = os.getenv("REFORMULATION_MODEL", "llama-3.1-8b-instant")
 _llm_reformulation: Optional[ChatOpenAI] = ChatOpenAI(
     model=_reformulation_model,
-    base_url="https://api.groq.com/openai/v1",
-    api_key=_groq_api_key,
-    temperature=0.0,  # deterministic reformulation
-) if _groq_api_key else None
+    base_url=_reformulation_base,
+    api_key=_reformulation_key,
+    temperature=0.0,
+) if _reformulation_key else None
 
 _LANGFUSE_LOGGED    = False
 _langfuse_client    = None
@@ -244,7 +222,7 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
-    fallbacks = [llm for llm in [_llm_fallback, _llm_groq, _llm_free] if llm is not None]
+    fallbacks = [llm for llm in [_llm_fallback] if llm is not None]
     chain = _llm.with_fallbacks(fallbacks)
     return chain.invoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])}).content.strip()
 
@@ -266,12 +244,8 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
         except Exception:
             pass
 
-    # Build ordered fallback chain: primary is already tried above;
-    # remaining tiers: OpenRouter fallback → Groq → free OpenRouter model.
     _fallback_chain = [
         (_llm_fallback, _fallback_model, "fallback"),
-        (_llm_groq,     _groq_model,     "groq-fallback"),
-        (_llm_free,     _FREE_FALLBACK_MODEL, "free-fallback"),
     ]
 
     try:

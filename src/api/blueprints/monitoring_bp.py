@@ -182,13 +182,8 @@ async def monitoring_features(request: Request):
     except Exception as e:
         features["pii"] = {"ok": False, "detail": str(e)[:60]}
 
-    # LLM-as-Judge
-    try:
-        from src.security.judge import evaluer_reponse
-        has_key = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
-        features["judge"] = {"ok": has_key, "detail": "Clé API présente" if has_key else "Clé API manquante"}
-    except Exception as e:
-        features["judge"] = {"ok": False, "detail": str(e)[:60]}
+    # LLM-as-Judge (géré par Langfuse)
+    features["judge"] = {"ok": True, "detail": "Délégué à Langfuse"}
 
     # Feedback
     try:
@@ -226,13 +221,15 @@ async def monitoring_features(request: Request):
 
     # Multi-LLM Fallback
     try:
-        has_groq = bool(os.getenv("GROQ_API_KEY"))
-        has_openrouter = bool(os.getenv("OPENROUTER_API_KEY"))
-        providers = []
-        if has_openrouter: providers.append("OpenRouter")
-        if has_groq: providers.append("Groq")
-        if not providers: providers.append("Mistral free")
-        features["fallback"] = {"ok": has_openrouter, "detail": " → ".join(providers)}
+        primary_url = os.getenv("LLM_BASE_URL", "")
+        fallback_key = bool(os.getenv("FALLBACK_API_KEY"))
+        primary_name = "Cerebras" if "cerebras" in primary_url else ("Groq" if "groq" in primary_url else "LLM")
+        providers = [primary_name]
+        if fallback_key:
+            fallback_url = os.getenv("FALLBACK_BASE_URL", "")
+            fallback_name = "Groq" if "groq" in fallback_url else ("Cerebras" if "cerebras" in fallback_url else "Fallback")
+            providers.append(fallback_name)
+        features["fallback"] = {"ok": fallback_key, "detail": " → ".join(providers)}
     except Exception as e:
         features["fallback"] = {"ok": False, "detail": str(e)[:60]}
 

@@ -42,13 +42,13 @@ def _get_llm():
     with _llm_lock:
         if _llm is not None:
             return _llm
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_key:
             return None
         from langchain_openai import ChatOpenAI
         _llm = ChatOpenAI(
-            model=os.getenv("LLM_MODEL", "deepseek-chat"),
-            base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+            model=os.getenv("LLM_MODEL", "llama3.1-8b"),
+            base_url=os.getenv("LLM_BASE_URL", "https://api.cerebras.ai/v1"),
             api_key=api_key,
             temperature=0,
             max_tokens=120,

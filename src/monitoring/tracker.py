@@ -187,6 +187,17 @@ def _is_valid_uuid(value: str) -> bool:
     except Exception:
         return False
 
+def _normalize_user_id(user_id: str) -> str:
+    """Extrait l'UUID pur d'un guest_id (ex: 'guest_abc-...' → 'abc-...').
+    Supabase exige un UUID valide dans la colonne user_id."""
+    if not user_id:
+        return user_id
+    if user_id.startswith("guest_"):
+        candidate = user_id[len("guest_"):]
+        if _is_valid_uuid(candidate):
+            return candidate
+    return user_id
+
 def _get_or_create_conversation(client, session_id: str, user_id: str) -> Optional[int]:
     try:
         if not _is_valid_uuid(session_id):
@@ -194,7 +205,8 @@ def _get_or_create_conversation(client, session_id: str, user_id: str) -> Option
         cid = _get_conv_id(client, session_id)
         if cid:
             return cid
-        inserted = client.table("conversations").insert({"session_id": session_id, "user_id": user_id}).execute()
+        normalized_uid = _normalize_user_id(user_id)
+        inserted = client.table("conversations").insert({"session_id": session_id, "user_id": normalized_uid}).execute()
         return inserted.data[0]["id"] if inserted.data else None
     except Exception as e:
         logger.warning(f"[MEMORY] _get_or_create_conversation : {e}")
@@ -255,8 +267,9 @@ def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
     if not client or not session_id or not user_id:
         return False
     try:
+        normalized_uid = _normalize_user_id(user_id)
         r = (client.table("conversations").select("id")
-             .eq("session_id", session_id).eq("user_id", user_id)
+             .eq("session_id", session_id).eq("user_id", normalized_uid)
              .limit(1).execute())
         return bool(r.data)
     except Exception as e:
@@ -270,6 +283,7 @@ def get_conversation_owner(session_id: str) -> str:
     try:
         r = (client.table("conversations").select("user_id")
              .eq("session_id", session_id).limit(1).execute())
+        # Retourne le UUID pur stocké en base
         return r.data[0].get("user_id", "") if r.data else ""
     except Exception as e:
         logger.warning(f"[MEMORY] get_conversation_owner : {e}")
@@ -293,11 +307,12 @@ def save_exchange(session_id: str, question: str, answer: str, user_id: str = ""
     if not client or not session_id:
         return
     try:
-        cid = _get_or_create_conversation(client, session_id, user_id)
+        normalized_uid = _normalize_user_id(user_id)
+        cid = _get_or_create_conversation(client, session_id, normalized_uid)
         if cid:
             client.table("messages").insert([
-                {"conversation_id": cid, "role": "user", "content": question, "user_id": user_id},
-                {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": user_id},
+                {"conversation_id": cid, "role": "user", "content": question, "user_id": normalized_uid},
+                {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": normalized_uid},
             ]).execute()
     except Exception as e:
         logger.warning(f"[MEMORY] save_exchange : {e}")
@@ -307,7 +322,8 @@ def get_user_summary(user_id: str) -> str:
     if not client or not user_id:
         return ""
     try:
-        r = client.table("user_memory").select("summary").eq("user_id", user_id).limit(1).execute()
+        normalized_uid = _normalize_user_id(user_id)
+        r = client.table("user_memory").select("summary").eq("user_id", normalized_uid).limit(1).execute()
         return r.data[0]["summary"] if r.data else ""
     except Exception as e:
         logger.warning(f"[MEMORY] get_user_summary : {e}")
@@ -318,8 +334,9 @@ def save_user_summary(user_id: str, summary: str) -> None:
     if not client or not user_id:
         return
     try:
-        client.table("user_memory").upsert({"user_id": user_id, "summary": summary}).execute()
-        logger.info(f"[MEMORY] Résumé mis à jour pour user '{user_id[:8]}…'")
+        normalized_uid = _normalize_user_id(user_id)
+        client.table("user_memory").upsert({"user_id": normalized_uid, "summary": summary}).execute()
+        logger.info(f"[MEMORY] Résumé mis à jour pour user '{normalized_uid[:8]}…'")
     except Exception as e:
         logger.warning(f"[MEMORY] save_user_summary : {e}")
 
@@ -331,10 +348,11 @@ def get_user_conversations(user_id: str) -> list:
     if not client or not user_id:
         return []
     try:
+        normalized_uid = _normalize_user_id(user_id)
         # One query: conversations with their first user message via FK join
         r = (client.table("conversations")
              .select("id, session_id, created_at, messages(content, role, created_at)")
-             .eq("user_id", user_id)
+             .eq("user_id", normalized_uid)
              .eq("messages.role", "user")
              .order("created_at", desc=True)
              .limit(50).execute())
@@ -359,8 +377,9 @@ def count_user_exchanges(user_id: str) -> int:
     if not client or not user_id:
         return 0
     try:
+        normalized_uid = _normalize_user_id(user_id)
         r = (client.table("messages").select("id", count="exact")
-             .eq("user_id", user_id).eq("role", "user").execute())
+             .eq("user_id", normalized_uid).eq("role", "user").execute())
         return r.count or 0
     except Exception as e:
         logger.warning(f"[MEMORY] count_user_exchanges : {e}")
