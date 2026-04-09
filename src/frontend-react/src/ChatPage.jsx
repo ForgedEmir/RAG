@@ -279,6 +279,12 @@ const MessageBubble = ({ msg, messages = [], index = -1 }) => {
           if (token) headers['Authorization'] = `Bearer ${token}`;
         }
       } catch (_) {}
+      if (!headers.Authorization) {
+        const guestId = localStorage.getItem('oracleGuestId') || '';
+        if (guestId.startsWith('guest_')) {
+          headers['x-local-guest-id'] = guestId;
+        }
+      }
       await fetch('/api/feedback', {
         method: 'POST',
         headers,

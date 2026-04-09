@@ -3,6 +3,7 @@ import os
 import logging
 import importlib
 import threading
+import uuid
 from collections import deque
 from typing import List, Optional, Iterator
 
@@ -265,11 +266,15 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
 
 def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
                    history: List[dict] = None, model_used: Optional[list] = None,
-                   user_summary: str = "", vector_memories: List[str] = None) -> Iterator[str]:
+                   user_summary: str = "", vector_memories: List[str] = None,
+                   trace_id_out: Optional[list] = None) -> Iterator[str]:
     """Streame la réponse token par token. Bascule sur le fallback si erreur."""
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
+    trace_id = str(uuid.uuid4())
+    if trace_id_out is not None:
+        trace_id_out.append(trace_id)
     cb = _callbacks("ask-stream", question=question[:80])
     if model_used is not None:
         model_used.append(_primary_model)

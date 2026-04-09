@@ -225,14 +225,14 @@ def _ensure_frontend_build() -> None:
 _ensure_frontend_build()
 
 _frontend_candidates = [
-    os.path.join(_root_dir, "frontend"),
-    os.path.join(_root_dir, "src", "frontend"),
     _frontend_react_dist,
+    os.path.join(_root_dir, "src", "frontend"),
+    os.path.join(_root_dir, "frontend"),
 ]
 
 _frontend = _frontend_candidates[0]
 for candidate in _frontend_candidates:
-    if os.path.isdir(candidate):
+    if os.path.isfile(os.path.join(candidate, "index.html")):
         _frontend = candidate
         break
 
