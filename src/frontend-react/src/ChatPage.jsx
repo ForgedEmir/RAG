@@ -170,7 +170,6 @@ const SidebarItem = ({ session, isActive, onClick, onDelete }) => {
           )}
         </div>
       </div>
-      <span className="text-[10px] text-white/20 pl-6">{session.messages.length} messages</span>
     </div>
   );
 };

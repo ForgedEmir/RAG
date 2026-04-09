@@ -11,8 +11,13 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
-_api_key        = os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_primary_model  = os.getenv("LLM_MODEL", "deepseek-chat")
+_openrouter_key = os.getenv("OPENROUTER_API_KEY")
+_llm_api_key    = os.getenv("LLM_API_KEY")
+_api_key        = _openrouter_key or _llm_api_key or os.getenv("OPENAI_API_KEY")
+_primary_model  = (
+    os.getenv("OPENROUTER_MODEL")
+    or ("meta-llama/llama-3.1-8b-instruct" if _openrouter_key else os.getenv("LLM_MODEL", "deepseek-chat"))
+)
 _fallback_key   = os.getenv("FALLBACK_API_KEY")
 _fallback_model = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 _CONV_DEPTH     = int(os.getenv("CONVERSATION_DEPTH", "5"))
@@ -30,7 +35,10 @@ _FREE_FALLBACK_MODEL    = "mistralai/mistral-7b-instruct:free"
 
 _llm: Optional[ChatOpenAI] = ChatOpenAI(
     model=_primary_model,
-    base_url=os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"),
+    base_url=(
+        os.getenv("OPENROUTER_BASE_URL")
+        or ("https://openrouter.ai/api/v1" if _openrouter_key else os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1"))
+    ),
     api_key=_api_key, temperature=0.2,
 ) if _api_key else None
 
@@ -59,13 +67,16 @@ _llm_free: Optional[ChatOpenAI] = ChatOpenAI(
 # Dedicated fast LLM for reformulation (cheap, low-latency ~500ms).
 # Uses Groq by default (llama-3.1-8b-instant). Falls back gracefully to
 # _llm_fallback then _llm so reformulation never breaks when Groq is unavailable.
-_reformulation_model = os.getenv("REFORMULATION_MODEL", "llama-3.1-8b-instant")
+_reformulation_model = (
+    os.getenv("OPENROUTER_REFORMULATION_MODEL")
+    or ("meta-llama/llama-3.1-8b-instruct" if _openrouter_key else os.getenv("REFORMULATION_MODEL", "llama-3.1-8b-instant"))
+)
 _llm_reformulation: Optional[ChatOpenAI] = ChatOpenAI(
     model=_reformulation_model,
-    base_url="https://api.groq.com/openai/v1",
-    api_key=_groq_api_key,
+    base_url=("https://openrouter.ai/api/v1" if _openrouter_key else "https://api.groq.com/openai/v1"),
+    api_key=(_openrouter_key or _groq_api_key),
     temperature=0.0,  # deterministic reformulation
-) if _groq_api_key else None
+) if (_openrouter_key or _groq_api_key) else None
 
 _LANGFUSE_LOGGED    = False
 _langfuse_client    = None

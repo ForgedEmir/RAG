@@ -39,10 +39,52 @@ _vector_size: Optional[int] = None
 def _get_embeddings() -> FastEmbedEmbeddings:
     global _embeddings
     if _embeddings is None:
-        model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
-        # FastEmbed uses ONNX — no PyTorch/GPU required, starts in ~3s
-        _embeddings = FastEmbedEmbeddings(model_name=model)
-        logger.info(f"FastEmbed embeddings chargé : {model}")
+        requested = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+        candidates = [
+            requested,
+            "BAAI/bge-small-en-v1.5",
+            "sentence-transformers/all-MiniLM-L6-v2",
+        ]
+
+        try:
+            from fastembed import TextEmbedding
+
+            supported = TextEmbedding.list_supported_models()
+            supported_names = {
+                m.get("model") for m in supported if isinstance(m, dict) and m.get("model")
+            }
+            if supported_names:
+                candidates = [m for m in candidates if m in supported_names] + [
+                    "BAAI/bge-small-en-v1.5"
+                    if "BAAI/bge-small-en-v1.5" in supported_names
+                    else next(iter(supported_names))
+                ]
+        except Exception as e:
+            logger.debug("Impossible de lire la liste des modèles fastembed supportés: %s", e)
+
+        last_error: Exception | None = None
+
+        for model in dict.fromkeys(candidates):
+            try:
+                # FastEmbed uses ONNX — no PyTorch/GPU required, starts in ~3s.
+                _embeddings = FastEmbedEmbeddings(model_name=model)
+                if model != requested:
+                    logger.warning(
+                        "Embedding model '%s' non supporté, fallback sur '%s'.",
+                        requested,
+                        model,
+                    )
+                logger.info("FastEmbed embeddings chargé : %s", model)
+                break
+            except Exception as e:
+                last_error = e
+                logger.warning("Impossible de charger le modèle embedding '%s': %s", model, e)
+
+        if _embeddings is None:
+            raise RuntimeError(
+                "Aucun modèle embedding FastEmbed compatible n'a pu être chargé. "
+                "Définis EMBEDDING_MODEL avec une valeur supportée."
+            ) from last_error
     return _embeddings
 
 
