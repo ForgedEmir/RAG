@@ -60,6 +60,18 @@ warnings.filterwarnings(
     category=DeprecationWarning,
     module=r"weasel\.util\.config",
 )
+warnings.filterwarnings(
+    "ignore",
+    message=r".*'timeout' parameter is deprecated.*",
+    category=DeprecationWarning,
+    module=r"supabase\._sync\.client",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*'verify' parameter is deprecated.*",
+    category=DeprecationWarning,
+    module=r"supabase\._sync\.client",
+)
 
 def _attach_buffer_handler_to_logger(logger_name: str) -> None:
     lg = logging.getLogger(logger_name)
@@ -67,10 +79,12 @@ def _attach_buffer_handler_to_logger(logger_name: str) -> None:
         lg.addHandler(_buf_handler)
 
 # Include web server logs in /api/monitoring/logs when available.
-for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "gunicorn", "gunicorn.error", "gunicorn.access", "py.warnings"):
+# uvicorn.access excluded — it logs every HTTP request and pollutes the monitoring buffer.
+for _name in ("uvicorn", "uvicorn.error", "gunicorn", "gunicorn.error", "gunicorn.access", "py.warnings"):
     _attach_buffer_handler_to_logger(_name)
 
 # Silencer les logs HTTP externes (Supabase, Qdrant, OpenRouter) — trop verbeux en prod
+logging.getLogger("src.security.pii_masker").setLevel(logging.DEBUG)  # TODO: retirer après debug
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("hpack").setLevel(logging.WARNING)
@@ -177,6 +191,15 @@ def _warmup() -> None:
         except Exception as e:
             logger.warning(f"[WARMUP] BM25 échoué : {e}")
 
+    def _load_redis():
+        t = time.monotonic()
+        try:
+            from src.caching.semantic_cache import _get_redis as _get_redis_cache
+            _get_redis_cache()
+            logger.info(f"[WARMUP] Redis prêt ({time.monotonic() - t:.1f}s)")
+        except Exception as e:
+            logger.warning(f"[WARMUP] Redis échoué : {e}")
+
     def _load_llm():
         t = time.monotonic()
         try:
@@ -188,6 +211,12 @@ def _warmup() -> None:
                 _gen._callbacks("startup-warmup")
             except Exception:
                 pass
+            # Prime la connexion HTTP Groq (reformulation) — évite le cold start ~3s sur la 1ère requête
+            if _gen._llm_reformulation:
+                try:
+                    _gen._llm_reformulation.invoke("ok", config={"max_tokens": 1})
+                except Exception:
+                    pass
             logger.info(f"[WARMUP] LLM + Langfuse prêts ({time.monotonic() - t:.1f}s)")
         except Exception as e:
             logger.warning(f"[WARMUP] LLM init échoué : {e}")
@@ -196,7 +225,8 @@ def _warmup() -> None:
     threads = [
         threading.Thread(target=_load_embeddings, daemon=True),
         threading.Thread(target=_load_reranker,   daemon=True),
-        threading.Thread(target=_load_llm,         daemon=True),
+        threading.Thread(target=_load_llm,        daemon=True),
+        threading.Thread(target=_load_redis,      daemon=True),
     ]
     for t in threads:
         t.start()
@@ -394,4 +424,5 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app", host="0.0.0.0", port=port, reload=_is_dev,
         reload_excludes=["*.lock", "*.pyc", "__pycache__"],
+        workers=1 if not _is_dev else None,
     )

@@ -61,6 +61,12 @@ def test_ask_question_valide(mock_stream, mock_rechercher, mock_index):
     assert meta is not None
     assert meta["sources"] == ["source1.md", "source2.md"]
 
+    done_evt = next((e for e in events if e.get("type") == "done"), None)
+    assert done_evt is not None
+    assert isinstance(done_evt.get("trace_id"), str)
+    assert len(done_evt["trace_id"]) >= 8
+    assert done_evt.get("question_for_feedback") == "Qui est le héros?"
+
     mock_rechercher.assert_called_once_with("Qui est le héros?")
 
 
@@ -179,3 +185,12 @@ def test_reindex_erreur(mock_index):
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 500
     assert "Erreur d'indexation" in response.json()["error"]
+
+
+@patch("src.api.auth._MONITORING_KEY", "test_key")
+@patch("src.monitoring.tracker.get_recent_feedback_events")
+def test_monitoring_feedbacks_endpoint(mock_feedbacks):
+    mock_feedbacks.return_value = [{"trace_id": "trace-1", "value": 1, "rating": 5}]
+    response = create_client().get("/api/monitoring/feedbacks?limit=10", headers={"X-Monitoring-Key": "test_key"})
+    assert response.status_code == 200
+    assert response.json()["feedbacks"][0]["trace_id"] == "trace-1"

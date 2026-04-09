@@ -158,7 +158,17 @@ export function useChat() {
     }
 
     _addMsg(sid, { role: 'user', content: question, id: Date.now() });
-    _addMsg(sid, { role: 'assistant', content: '', id: Date.now() + 1, streaming: true, sources: [], confidence: null });
+    _addMsg(sid, {
+      role: 'assistant',
+      content: '',
+      id: Date.now() + 1,
+      streaming: true,
+      sources: [],
+      confidence: null,
+      trace_id: null,
+      question_for_feedback: question,
+      answer_for_feedback: '',
+    });
 
     setStreaming(true);
     const controller = new AbortController();
@@ -200,7 +210,15 @@ export function useChat() {
               accumulated += evt.text;
               _patchLast(sid, { content: accumulated, sources, confidence });
             } else if (evt.type === 'done') {
-              _patchLast(sid, { content: accumulated, streaming: false, sources, confidence });
+              _patchLast(sid, {
+                content: accumulated,
+                streaming: false,
+                sources,
+                confidence,
+                trace_id: evt.trace_id || null,
+                question_for_feedback: evt.question_for_feedback || question,
+                answer_for_feedback: accumulated,
+              });
             } else if (evt.type === 'error') {
               _patchLast(sid, { content: evt.message || 'Erreur', streaming: false });
             }

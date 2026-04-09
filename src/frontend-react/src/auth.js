@@ -73,11 +73,19 @@ export function onAuthStateChange(callback) {
   return () => unsub();
 }
 
-/** Crée ou récupère un ID invité persistant en localStorage. */
+/** Crée ou récupère un ID invité persistant en localStorage.
+ *  Format : guest_<uuid-v4> pour garantir l'unicité et la compatibilité prod.
+ */
 export function getOrCreateGuestId() {
   let id = localStorage.getItem('oracleGuestId');
   if (!id) {
-    id = 'guest_' + Math.random().toString(36).slice(2, 11);
+    const uuid = crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    id = 'guest_' + uuid;
     localStorage.setItem('oracleGuestId', id);
   }
   return id;

@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from src.search.search import (
     rechercher_passages,
     _route,
+    _tokenize_bm25,
     CANDIDATES_SIMPLE,
     CANDIDATES_COMPLEX,
     get_runtime_switches,
@@ -234,3 +235,12 @@ def test_runtime_switches_snapshot_contains_expected_keys():
     assert "query_expansion_enabled" in sw
     assert "smart_rerank_enabled" in sw
     assert "reranker_model" in sw
+
+
+def test_bm25_tokenizer_normalise_accents_et_stopwords_fr():
+    tokens = _tokenize_bm25("L'épée de l'Oracle et des héros est dans la cité.")
+    assert "epee" in tokens
+    assert "oracle" in tokens
+    assert "heros" in tokens
+    assert "de" not in tokens
+    assert "et" not in tokens

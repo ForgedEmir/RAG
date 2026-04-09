@@ -186,8 +186,17 @@ async def search_lore(query: str, ctx: Context) -> SearchResult:
     await ctx.info(f"Recherche brute : {query!r}")
     try:
         from src.search.search import rechercher_passages
-        passages, sources, _ = rechercher_passages(query)
-        return SearchResult(passages=passages, sources=sources, total=len(passages))
+        passages, sources, conf_scores = rechercher_passages(query)
+        annotated = []
+        for passage, score in zip(passages, conf_scores):
+            if score >= 0.7:
+                label = "🟢 HIGH"
+            elif score >= 0.4:
+                label = "🟡 MEDIUM"
+            else:
+                label = "🔴 LOW"
+            annotated.append(f"[{label}] {passage}")
+        return SearchResult(passages=annotated, sources=sources, total=len(passages))
     except Exception as e:
         return SearchResult(passages=[f"Erreur : {e}"], sources=[], total=0)
 

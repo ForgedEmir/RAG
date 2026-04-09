@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageSquare, Zap, Database, Shield, FileText, ArrowUpDown, 
   BookOpen, RefreshCw, EyeOff, Scale, Star, BarChart2, Eye, 
-  Brain, Volume2, GitBranch, Trash2, UploadCloud, Play, 
-  Pause, Check, X, Search, Copy, TerminalSquare, Server
+  Volume2, GitBranch, Trash2, Play, Pause, TerminalSquare, Server
 } from 'lucide-react';
 
 // ============================================================================
@@ -96,15 +95,14 @@ function fmtMs(ms) {
 // ============================================================================
 
 const MOCK_DB = {
-  health: { status: "ok", checks: { llm_key: true, bm25_corpus: true, vector_memory: true, qdrant: true, supabase: true } },
+  health: { status: "ok", checks: { llm_key: true, bm25_corpus: true, qdrant: true, supabase: true } },
   stats: {
     total_questions: 14205, avg_latency_ms: 450, injections_blocked: 12, latency_p95: 1200, latency_p50: 380, questions_last_24h: 840, error_rate_pct: 0.5,
     last_events: Array(20).fill(0).map((_, i) => ({ type: i%5===0?'error':i%7===0?'injection_attempt':'question', detail: `Requête utilisateur #${Math.floor(Math.random()*1000)}`, latency_ms: Math.floor(Math.random() * 2000), created_at: new Date(Date.now() - i * 60000).toISOString() }))
   },
   cache: { status: "active", entries: 450, max: 1000, threshold: 0.85, ttl: 3600 },
-  pipeline: { total_queries: 14205, cache_hits: 8523, cache_misses: 5682, simple_queries: 10000, complex_queries: 4205, reranker_calls: 4205, bm25_active: 14205, last_query: "Comment intégrer le RAG avec MCP ?", last_mode: "complex", last_vector_count: 5, last_bm25_count: 10, cache_size: 150, bm25_chunks: 12500, bm25_loaded: true, reranker_enabled: true, cache_hit_rate: 60, qdrant_vectors: 45200, qdrant_dimensions: 1536 },
   features: {
-    vector: { ok: true, detail: "Qdrant en ligne (45.2k vecteurs)" }, bm25: { ok: true, detail: "Index chargé (12.5k chunks)" }, reranker: { ok: true, detail: "Modèle ONNX actif" }, contextual: { ok: true, detail: "Couverture 85%" }, reformulation: { ok: true, detail: "Activé" }, pii: { ok: true, detail: "Filtre regex + LLM" }, judge: { ok: true, detail: "Évaluation asynchrone" }, feedback: { ok: true, detail: "Table Supabase OK" }, confidence: { ok: true, detail: "Seuil dynamique actif" }, watchdog: { ok: true, detail: "Dossier synchronisé" }, memory: { ok: true, detail: "Sessions redis actives" }, tts: { ok: false, detail: "Clé API manquante" }, fallback: { ok: true, detail: "Mistral/Claude prêts" }
+    vector: { ok: true, detail: "Qdrant en ligne (45.2k vecteurs)" }, bm25: { ok: true, detail: "Index chargé (12.5k chunks)" }, reranker: { ok: true, detail: "Modèle ONNX actif" }, contextual: { ok: true, detail: "Couverture 85%" }, reformulation: { ok: true, detail: "Activé" }, pii: { ok: true, detail: "Filtre regex + LLM" }, judge: { ok: true, detail: "Évaluation asynchrone" }, feedback: { ok: true, detail: "Table Supabase OK" }, confidence: { ok: true, detail: "Seuil dynamique actif" }, watchdog: { ok: true, detail: "Dossier synchronisé" }, tts: { ok: false, detail: "Clé API manquante" }, fallback: { ok: true, detail: "Mistral/Claude prêts" }
   },
   contextual: { sample_size: 150, with_contextual_summary: 128, coverage_pct: 85, status: "healthy", debug_payload_keys: ['content', 'summary'], debug_metadata_keys: ['source', 'page'] },
   reformulation_enabled: true,
@@ -112,6 +110,14 @@ const MOCK_DB = {
   logs: Array(50).fill(0).map((_, i) => ({ time: new Date(Date.now() - i*10000).toISOString(), level: ['INFO', 'WARNING', 'ERROR', 'DEBUG'][Math.floor(Math.random()*4)], name: 'CoreEngine', msg: `Traitement du chunk #${Math.floor(Math.random()*1000)} effectué.` })),
   pii: [{ original: "Mon email est jean@test.com", masked: "Mon email est [EMAIL]", timestamp: new Date().toISOString() }],
   memories: [{ user_id: "usr_12345", summary: "Utilisateur intéressé par le développement React et l'architecture RAG.", updated_at: new Date().toISOString() }],
+  feedbacks: Array(8).fill(0).map((_, i) => ({
+    created_at: new Date(Date.now() - i * 420000).toISOString(),
+    source: i % 2 ? 'vote' : 'legacy',
+    value: i % 3 === 0 ? -1 : 1,
+    rating: i % 3 === 0 ? 1 : 5,
+    trace_id: `trace_${1000 + i}`,
+    question: i % 3 === 0 ? 'Réponse incomplète sur les factions' : 'Question lore classique',
+  })),
   sources: { files: ["manifeste_v1.md", "architecture_rag.pdf", "logs_systeme.csv"], total: 3 }
 };
 
@@ -125,7 +131,6 @@ async function apiFetch(path, monitoringKey, options = {}) {
     if (path === '/health') return MOCK_DB.health;
     if (path === '/api/monitoring/stats') return MOCK_DB.stats;
     if (path === '/api/cache/stats') return MOCK_DB.cache;
-    if (path === '/api/monitoring/pipeline') return MOCK_DB.pipeline;
     if (path === '/api/monitoring/features') return MOCK_DB.features;
     if (path === '/api/monitoring/contextual-retrieval') return MOCK_DB.contextual;
     if (path === '/api/monitoring/reformulation') return { enabled: MOCK_DB.reformulation_enabled };
@@ -133,6 +138,7 @@ async function apiFetch(path, monitoringKey, options = {}) {
     if (path === '/api/monitoring/logs') return { logs: MOCK_DB.logs };
     if (path === '/api/monitoring/pii') return { history: MOCK_DB.pii };
     if (path === '/api/monitoring/user-memories') return { memories: MOCK_DB.memories };
+    if (path.startsWith('/api/monitoring/feedbacks')) return { feedbacks: MOCK_DB.feedbacks };
     if (path === '/api/admin/sources') return MOCK_DB.sources;
     
     if (path === '/api/admin/delete' && options.method === 'DELETE') {
@@ -191,16 +197,17 @@ const KpiCard = ({ title, value, icon: Icon, delay }) => (
 
 // 1. VUE D'ENSEMBLE
 const OverviewTab = ({ apiKey }) => {
-  const [data, setData] = useState({ health: null, stats: null, cache: null, error: null });
+  const [data, setData] = useState({ health: null, stats: null, cache: null, feedbacks: [], error: null });
 
   const fetchData = useCallback(async () => {
     try {
-      const [health, stats, cache] = await Promise.all([
+      const [health, stats, cache, feedbacksResp] = await Promise.all([
         apiFetch('/health', apiKey),
         apiFetch('/api/monitoring/stats', apiKey),
-        apiFetch('/api/cache/stats', apiKey)
+        apiFetch('/api/cache/stats', apiKey),
+        apiFetch('/api/monitoring/feedbacks?limit=20', apiKey),
       ]);
-      setData({ health, stats, cache, error: null });
+      setData({ health, stats, cache, feedbacks: feedbacksResp.feedbacks || [], error: null });
     } catch (e) { setData(prev => ({ ...prev, error: e.message })); }
   }, [apiKey]);
 
@@ -210,6 +217,7 @@ const OverviewTab = ({ apiKey }) => {
   const h = data.health?.checks || {};
   const s = data.stats;
   const c = data.cache;
+  const feedbacks = data.feedbacks || [];
 
   return (
     <div className="space-y-6">
@@ -224,8 +232,7 @@ const OverviewTab = ({ apiKey }) => {
             { label: 'LLM API', ok: h.llm_key },
             { label: 'Corpus BM25', ok: h.bm25_corpus },
             { label: 'Qdrant DB', ok: h.qdrant },
-            { label: 'Supabase', ok: h.supabase },
-            { label: 'Vector Memory', ok: h.vector_memory }
+            { label: 'Supabase', ok: h.supabase }
           ].map((check, i) => (
             <div key={i} className="flex items-center gap-2">
               <div className={`w-1.5 h-1.5 rounded-full ${check.ok ? 'bg-[#5ed29c]' : 'bg-[#f87171]'}`} />
@@ -313,102 +320,32 @@ const OverviewTab = ({ apiKey }) => {
           ) : <Skeleton className="flex-1 w-full" />}
         </Card>
       </div>
-    </div>
-  );
-};
 
-// 2. PIPELINE
-const PipelineTab = ({ apiKey }) => {
-  const [data, setData] = useState(null);
-  const [refEnabled, setRefEnabled] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [pipe, ref] = await Promise.all([
-        apiFetch('/api/monitoring/pipeline', apiKey),
-        apiFetch('/api/monitoring/reformulation', apiKey)
-      ]);
-      setData(pipe);
-      setRefEnabled(ref.enabled);
-    } catch (e) { console.error(e); }
-  }, [apiKey]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-  useInterval(fetchData, 30000);
-
-  const toggleRef = async () => {
-    setRefEnabled(!refEnabled); // optimistic UI
-    if (!MOCK_MODE) {
-      await apiFetch('/api/monitoring/reformulation', apiKey, {
-        method: 'POST', body: JSON.stringify({ enabled: !refEnabled })
-      });
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Top controls */}
-      <Card delay={0} className="flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-serif-italic">Reformulation Auto (LLM)</h3>
-          <p className="text-xs text-white/40 mt-1">Réécrit la requête utilisateur pour optimiser la recherche vectorielle.</p>
+      <Card delay={0.35} className="flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white/40 text-xs uppercase tracking-widest">Derniers Feedbacks Utilisateur</h3>
+          <span className="text-[10px] text-white/30">{feedbacks.length} évènement(s)</span>
         </div>
-        <button 
-          onClick={toggleRef}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${refEnabled ? 'bg-[#5ed29c]' : 'bg-white/10'}`}
-        >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${refEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-        </button>
+        <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
+          {feedbacks.length === 0 && (
+            <div className="text-sm text-white/40">Aucun feedback récent.</div>
+          )}
+          {feedbacks.map((fb, i) => {
+            const good = Number(fb.value) > 0;
+            return (
+              <div key={`${fb.trace_id || 'fb'}-${i}`} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="min-w-0 pr-4">
+                  <div className="text-[11px] text-white/70 truncate">{fb.question || 'Sans contexte question'}</div>
+                  <div className="text-[10px] text-white/30 mt-1">{new Date(fb.created_at).toLocaleTimeString()} · {fb.source || 'vote'} · {fb.trace_id || '-'}</div>
+                </div>
+                <div className={`text-[11px] px-2 py-1 rounded-full border ${good ? 'text-[#5ed29c] border-[#5ed29c]/30 bg-[#5ed29c]/10' : 'text-[#f87171] border-[#f87171]/30 bg-[#f87171]/10'}`}>
+                  {good ? 'Utile' : 'Pas utile'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
-
-      {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card delay={0.1}>
-          <div className="text-white/40 text-xs uppercase tracking-widest mb-4">Distribution Requêtes</div>
-          {data ? (
-            <>
-              <div className="flex justify-between text-sm mb-2"><span className="text-[#60a5fa]">Simples</span><span className="text-[#fb923c]">Complexes</span></div>
-              <div className="flex h-3 rounded-full overflow-hidden bg-white/5 mb-4">
-                <div style={{ width: `${(data.simple_queries/data.total_queries)*100}%` }} className="bg-[#60a5fa]" />
-                <div style={{ width: `${(data.complex_queries/data.total_queries)*100}%` }} className="bg-[#fb923c]" />
-              </div>
-              <div className="flex justify-between text-xs text-white/50">
-                <span>{data.simple_queries} req.</span><span>{data.complex_queries} req.</span>
-              </div>
-            </>
-          ) : <Skeleton className="h-16 w-full" />}
-        </Card>
-
-        <KpiCard delay={0.15} title="Appels Reranker (ONNX)" value={data?.reranker_calls} icon={ArrowUpDown} />
-        <KpiCard delay={0.2} title="Taux de Cache (Hit Rate)" value={data ? `${data.cache_hit_rate}%` : null} icon={Database} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         {/* Last Query */}
-         <Card delay={0.25} className="flex flex-col justify-center text-center py-10">
-            <span className="text-white/30 text-[10px] uppercase tracking-widest mb-4">Dernière Requête Analysée</span>
-            <p className="text-2xl font-serif-italic text-[#5ed29c] mb-6">"{data?.last_query || '...'}"</p>
-            <div className="flex justify-center gap-4 text-xs">
-              <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">Mode: {data?.last_mode}</span>
-              <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">Vecteurs: {data?.last_vector_count}</span>
-              <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">BM25: {data?.last_bm25_count}</span>
-            </div>
-         </Card>
-
-         <Card delay={0.3}>
-           <h3 className="text-white/40 text-xs uppercase tracking-widest mb-6">État Qdrant & Lexical</h3>
-           <div className="space-y-6">
-             <div>
-               <div className="flex justify-between text-sm mb-1"><span className="text-white/70">Vecteurs Qdrant</span><span className="font-mono-custom">{data?.qdrant_vectors.toLocaleString()}</span></div>
-               <div className="text-[10px] text-white/30 uppercase">Dimensions : {data?.qdrant_dimensions}</div>
-             </div>
-             <div>
-               <div className="flex justify-between text-sm mb-1"><span className="text-white/70">Chunks BM25</span><span className="font-mono-custom">{data?.bm25_chunks.toLocaleString()}</span></div>
-               <div className="text-[10px] text-[#5ed29c] uppercase">Index Chargé en RAM</div>
-             </div>
-           </div>
-         </Card>
-      </div>
     </div>
   );
 };
@@ -433,14 +370,14 @@ const FeatureGridTab = ({ apiKey }) => {
   const icons = {
     vector: Database, bm25: FileText, reranker: ArrowUpDown, contextual: BookOpen,
     reformulation: RefreshCw, pii: EyeOff, judge: Scale, feedback: Star,
-    confidence: BarChart2, watchdog: Eye, memory: Brain, tts: Volume2, fallback: GitBranch
+    confidence: BarChart2, watchdog: Eye, tts: Volume2, fallback: GitBranch
   };
 
   const titles = {
     vector: "Recherche Vectorielle", bm25: "BM25 Lexical", reranker: "Reranker ONNX",
     contextual: "Contextual Retrieval", reformulation: "Reformulation LLM", pii: "Masquage PII",
     judge: "LLM-as-Judge", feedback: "Système Feedback", confidence: "Scores Confiance",
-    watchdog: "Watchdog Fichiers", memory: "Mémoire Vectorielle", tts: "Text-to-Speech", fallback: "Fallback Multi-LLM"
+    watchdog: "Watchdog Fichiers", tts: "Text-to-Speech", fallback: "Fallback Multi-LLM"
   };
 
   return (
@@ -474,7 +411,7 @@ const FeatureGridTab = ({ apiKey }) => {
 
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {data?.feat ? Object.entries(data.feat).map(([key, val], i) => {
+        {data?.feat ? Object.entries(data.feat).filter(([key]) => key !== 'memory').map(([key, val], i) => {
           const Icon = icons[key] || Database;
           return (
             <motion.div key={key} initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} transition={{delay: i*0.05}} className="liquid-glass p-5 rounded-2xl flex flex-col gap-3 border border-white/5 hover:bg-white/5 transition-colors">
@@ -499,10 +436,6 @@ const SourcesTab = ({ apiKey }) => {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState(null); // { ok: bool, text: string }
-  const [dragging, setDragging] = useState(false);
-  const fileInputRef = useRef(null);
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -519,39 +452,6 @@ const SourcesTab = ({ apiKey }) => {
     } else {
       setFiles(f => f.filter(name => name !== filename));
     }
-  };
-
-  const handleUpload = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    setUploadMsg(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: { 'X-Monitoring-Key': apiKey },
-        body: formData,
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUploadMsg({ ok: true, text: data.message || 'Fichier uploadé !' });
-        fetchFiles();
-      } else {
-        setUploadMsg({ ok: false, text: data.error || 'Erreur upload.' });
-      }
-    } catch(e) {
-      setUploadMsg({ ok: false, text: 'Erreur réseau.' });
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
   };
 
   const handleReindex = async () => {
@@ -575,8 +475,8 @@ const SourcesTab = ({ apiKey }) => {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-      <Card delay={0} className="xl:col-span-2 h-[500px] flex flex-col">
+    <div className="grid grid-cols-1 gap-6">
+      <Card delay={0} className="h-[540px] flex flex-col">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-white/40 text-xs uppercase tracking-widest">Fichiers Indexés ({files.length})</h3>
           <button onClick={handleReindex} disabled={reindexing} className="flex items-center gap-2 px-4 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold bg-[#5ed29c]/10 text-[#5ed29c] hover:bg-[#5ed29c]/20 transition-colors disabled:opacity-50">
@@ -600,32 +500,6 @@ const SourcesTab = ({ apiKey }) => {
             )
           })}
         </div>
-      </Card>
-
-      <Card delay={0.1}
-        className={`flex flex-col items-center justify-center border-dashed border-2 transition-colors cursor-pointer group text-center py-12 ${dragging ? 'border-[#5ed29c] bg-[#5ed29c]/5' : 'border-white/10 hover:border-[#5ed29c]/50'}`}
-        onClick={() => fileInputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-      >
-        <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.json,.pdf" className="hidden"
-          onChange={(e) => handleUpload(e.target.files[0])} />
-        <div className={`p-4 rounded-full mb-4 transition-colors ${dragging ? 'bg-[#5ed29c]/20' : 'bg-white/5 group-hover:bg-[#5ed29c]/10'}`}>
-          <UploadCloud size={32} className={`transition-colors ${dragging ? 'text-[#5ed29c]' : 'text-white/40 group-hover:text-[#5ed29c]'}`} />
-        </div>
-        <h4 className="text-lg font-serif-italic mb-2">
-          {uploading ? 'Upload en cours...' : 'Ajouter un document'}
-        </h4>
-        <p className="text-xs text-white/40 px-6">
-          {dragging ? 'Relâchez pour uploader' : 'Glissez-déposez vos fichiers ici ou cliquez pour parcourir.'}
-        </p>
-        {uploadMsg && (
-          <div className={`mt-4 text-xs px-4 py-2 rounded-lg ${uploadMsg.ok ? 'text-[#5ed29c] bg-[#5ed29c]/10' : 'text-[#f87171] bg-[#f87171]/10'}`}>
-            {uploadMsg.text}
-          </div>
-        )}
-        <div className="text-[10px] text-white/20 uppercase tracking-widest mt-4">.txt, .md, .csv, .json, .pdf</div>
       </Card>
     </div>
   );
@@ -698,16 +572,15 @@ const LogsTab = ({ apiKey }) => {
 // ============================================================================
 
 const MonitoringPage = ({ apiKey, onLogout }) => {
-  const tabs = ['Vue d\'ensemble', 'Pipeline', 'Features', 'Sources', 'Logs'];
+  const tabs = ['Vue d\'ensemble', 'Features', 'Sources', 'Logs'];
   const [activeTab, setActiveTab] = useState(tabs[0]);
 
   const renderTab = () => {
     switch(activeTab) {
       case tabs[0]: return <OverviewTab apiKey={apiKey} />;
-      case tabs[1]: return <PipelineTab apiKey={apiKey} />;
-      case tabs[2]: return <FeatureGridTab apiKey={apiKey} />;
-      case tabs[3]: return <SourcesTab apiKey={apiKey} />;
-      case tabs[4]: return <LogsTab apiKey={apiKey} />;
+      case tabs[1]: return <FeatureGridTab apiKey={apiKey} />;
+      case tabs[2]: return <SourcesTab apiKey={apiKey} />;
+      case tabs[3]: return <LogsTab apiKey={apiKey} />;
       default: return null;
     }
   };

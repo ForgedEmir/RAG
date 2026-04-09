@@ -168,6 +168,14 @@ def _build_messages(question: str, passages: List[str], sources: List[str],
     for ex in history[-_CONV_DEPTH:]:
         messages += [HumanMessage(content=ex["question"]), AIMessage(content=ex["answer"])]
     messages.append(HumanMessage(content=question))
+
+    # Estimation tokens (1 token ≈ 4 chars) — log si contexte > 50k tokens
+    estimated_tokens = sum(len(m.content) for m in messages) // 4
+    if estimated_tokens > 50_000:
+        logger.warning(f"[CONTEXT] Contexte large : ~{estimated_tokens} tokens estimés ({len(history)} msgs historique)")
+    else:
+        logger.debug(f"[CONTEXT] ~{estimated_tokens} tokens estimés")
+
     return messages
 
 
@@ -203,8 +211,10 @@ def reformuler_question(question: str, history: List[dict]) -> str:
         return question
     if not history:
         return question
-    # Skip reformulation pour questions courtes sans historique pertinent — économise un appel LLM
-    if len(question.split()) <= 5 and len(history) <= 1:
+    # Skip reformulation si la question est autonome (pas de pronom anaphorique ni référence floue)
+    if len(question.split()) <= 8 and not any(
+        w in question.lower() for w in ("il", "elle", "ils", "elles", "ce", "ça", "cela", "celui", "celle", "lui", "en", "y")
+    ):
         return question
     # Use fast dedicated model (Groq ~500ms), fall back to primary if unavailable
     llm = _llm_reformulation or _llm_fallback or _llm
@@ -214,8 +224,8 @@ def reformuler_question(question: str, history: List[dict]) -> str:
     try:
         result = llm.invoke([
             SystemMessage(content=(
-                "Reformule la question en version autonome et précise grâce à l'historique. "
-                "Retourne uniquement la question reformulée, sans explication."
+                "Tu es un assistant qui reformule des questions. "
+                "Retourne UNIQUEMENT la question reformulée en une seule phrase, sans répondre, sans explication, sans ponctuation finale."
             )),
             HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
         ], config={"callbacks": _callbacks("reformulation", model=_reformulation_model)})
@@ -234,22 +244,9 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
-    _sync_chain = [
-        (_llm,          _primary_model,       "ask"),
-        (_llm_fallback, _fallback_model,       "fallback"),
-        (_llm_groq,     _groq_model,           "groq-fallback"),
-        (_llm_free,     _FREE_FALLBACK_MODEL,  "free-fallback"),
-    ]
-    last_err: Exception = ValueError("No LLM available")
-    for fb_llm, fb_model, fb_label in _sync_chain:
-        if fb_llm is None:
-            continue
-        try:
-            return fb_llm.invoke(messages, config={"callbacks": _callbacks(fb_label, question=question[:80])}).content.strip()
-        except Exception as e:
-            logger.warning(f"generer_reponse: {fb_label} ({fb_model}) failed — {e}")
-            last_err = e
-    raise last_err
+    fallbacks = [llm for llm in [_llm_fallback, _llm_groq, _llm_free] if llm is not None]
+    chain = _llm.with_fallbacks(fallbacks)
+    return chain.invoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])}).content.strip()
 
 
 def stream_reponse(question: str, passages: List[str], sources: List[str] = None,

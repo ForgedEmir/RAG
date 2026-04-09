@@ -1,13 +1,13 @@
 """Pipeline de recherche hybride : vectorielle (Qdrant) + BM25, fusion RRF, reranking ONNX.
 Router adaptatif : active reranker + expansion uniquement sur les requêtes complexes.
-Cache TTL Redis (partagé entre workers) avec fallback mémoire si Redis indisponible.
 """
-import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
@@ -42,6 +42,16 @@ _SMART_RERANK_ENABLED    = env_bool("SMART_RERANK_ENABLED", True)
 _SMART_RERANK_TOP1_MIN   = float(os.getenv("SMART_RERANK_TOP1_MIN", "0.014"))
 _SMART_RERANK_GAP_MIN    = float(os.getenv("SMART_RERANK_GAP_MIN", "0.01"))
 _RERANK_SIMPLE_QUERIES   = env_bool("RERANK_SIMPLE_QUERIES", False)
+_BM25_FR_NORMALIZATION   = env_bool("BM25_FR_NORMALIZATION", True)
+
+_BM25_FR_STOPWORDS = {
+    "a", "ai", "as", "au", "aux", "avec", "ce", "ces", "cet", "cette",
+    "comme", "dans", "de", "des", "du", "elle", "en", "et", "est", "il",
+    "je", "la", "le", "les", "leur", "leurs", "lui", "ma", "mais", "me",
+    "mes", "moi", "mon", "ne", "nos", "notre", "nous", "on", "ou", "par",
+    "pas", "pour", "qu", "que", "qui", "sa", "se", "ses", "son", "sur",
+    "ta", "te", "tes", "toi", "ton", "tu", "un", "une", "vos", "votre", "vous",
+}
 
 _COMPLEX_SIGNALS = {
     "comment", "pourquoi", "différence", "difference", "compare", "comparer",
@@ -75,30 +85,6 @@ def get_runtime_switches() -> dict:
         "smart_rerank_gap_min": _SMART_RERANK_GAP_MIN,
     }
 
-# ── Redis cache (partagé entre workers) avec fallback mémoire ────────────────
-_redis_client = None
-_redis_lock   = threading.Lock()
-
-def _get_redis():
-    global _redis_client
-    if _redis_client is not None:
-        return _redis_client
-    with _redis_lock:
-        if _redis_client is None:
-            redis_url = os.getenv("REDIS_URL")
-            if redis_url:
-                try:
-                    import redis
-                    _redis_client = redis.from_url(redis_url, decode_responses=False, socket_connect_timeout=2)
-                    _redis_client.ping()
-                    logger.info("[CACHE] Redis connecté.")
-                except Exception as e:
-                    logger.warning(f"[CACHE] Redis indisponible, fallback mémoire : {e}")
-                    _redis_client = None
-    return _redis_client
-
-_search_cache: dict = {}  # fallback mémoire si Redis indisponible
-_cache_lock         = threading.Lock()
 
 _bm25_index:  Optional[BM25Okapi] = None
 _bm25_corpus: List[dict]          = []
@@ -109,59 +95,19 @@ _reranker     = None
 _reranker_lock = threading.Lock()
 
 
-# ── Cache Redis + fallback mémoire ────────────────────────────────────────────
+def _tokenize_bm25(text: str) -> List[str]:
+    if not text:
+        return []
+    normalized = text.lower()
+    if _BM25_FR_NORMALIZATION:
+        normalized = unicodedata.normalize("NFKD", normalized)
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if _BM25_FR_NORMALIZATION:
+        tokens = [t for t in tokens if t not in _BM25_FR_STOPWORDS and len(t) > 1]
+    return tokens
 
-_CACHE_PREFIX = "lk:search:"
 
-def _cache_key(q: str) -> str:
-    return _CACHE_PREFIX + hashlib.md5(q.lower().strip().encode()).hexdigest()
-
-def _get_cache(q: str):
-    key = _cache_key(q)
-    r = _get_redis()
-    if r:
-        try:
-            raw = r.get(key)
-            if raw:
-                data = json.loads(raw)
-                return data["passages"], data["sources"], data["scores"]
-            return None
-        except Exception:
-            pass
-    # Fallback mémoire
-    with _cache_lock:
-        e = _search_cache.get(key)
-        if e and (time.time() - e[0]) < _CACHE_TTL:
-            return e[1], e[2], e[3]
-    return None
-
-def _set_cache(q: str, passages: List[str], sources: List[str], scores: List[float]) -> None:
-    key = _cache_key(q)
-    r = _get_redis()
-    if r:
-        try:
-            r.setex(key, _CACHE_TTL, json.dumps({"passages": passages, "sources": sources, "scores": scores}))
-            return
-        except Exception:
-            pass
-    # Fallback mémoire
-    with _cache_lock:
-        if len(_search_cache) >= _CACHE_SIZE:
-            del _search_cache[min(_search_cache, key=lambda k: _search_cache[k][0])]
-        _search_cache[key] = (time.time(), passages, sources, scores)
-
-def invalidate_search_cache() -> None:
-    r = _get_redis()
-    if r:
-        try:
-            keys = r.keys(_CACHE_PREFIX + "*")
-            if keys:
-                r.delete(*keys)
-        except Exception:
-            pass
-    with _cache_lock:
-        _search_cache.clear()
-    logger.info("[CACHE] Cache de recherche invalidé.")
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -169,7 +115,6 @@ def invalidate_search_cache() -> None:
 def get_pipeline_stats() -> dict:
     return {
         **_pipeline_stats,
-        "cache_size":       len(_search_cache),
         "bm25_chunks":      len(_bm25_corpus),
         "bm25_loaded":      _bm25_loaded and _bm25_index is not None,
         "reranker_enabled": _RERANKER_ENABLED,
@@ -310,7 +255,14 @@ def _load_bm25() -> None:
                 data = json.load(f)
             _bm25_corpus = data if isinstance(data, list) else []
             if _bm25_corpus:
-                _bm25_index = BM25Okapi([d["text"].lower().split() for d in _bm25_corpus if "text" in d])
+                tokenized_corpus = []
+                for d in _bm25_corpus:
+                    text = d.get("text", "") if isinstance(d, dict) else ""
+                    tokens = _tokenize_bm25(text)
+                    if not tokens:
+                        tokens = ["_empty_"]
+                    tokenized_corpus.append(tokens)
+                _bm25_index = BM25Okapi(tokenized_corpus)
                 logger.info(f"BM25 chargé ({len(_bm25_corpus)} chunks).")
             _bm25_loaded = True
         except json.JSONDecodeError as e:
@@ -322,7 +274,6 @@ def invalidate_bm25_cache() -> None:
     global _bm25_loaded
     with _bm25_lock:
         _bm25_loaded = False
-    invalidate_search_cache()
 
 
 # ── RRF avec scores exposés ───────────────────────────────────────────────────
@@ -348,11 +299,6 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
     confidence_scores : liste de scores normalisés [0.0–1.0] pour chaque passage.
     """
     _pipeline_stats["total_queries"] += 1
-    cached = _get_cache(question)
-    if cached:
-        _pipeline_stats["cache_hits"] += 1
-        return cached  # passages, sources, scores
-    _pipeline_stats["cache_misses"] += 1
 
     plan = _route(question)
     _pipeline_stats["complex_queries" if plan.use_reranker or plan.k_candidates == CANDIDATES_COMPLEX else "simple_queries"] += 1
@@ -385,9 +331,11 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
     bm25_results: List[dict] = []
     run_bm25 = len(vector_results) < _MIN_VECTOR_BEFORE_BM25
     if _bm25_index and _bm25_corpus and run_bm25:
-        bm25_scores = _bm25_index.get_scores(question.lower().split())
-        top         = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
-        bm25_results = [_bm25_corpus[i] for i in top if bm25_scores[i] > 0]
+        query_tokens = _tokenize_bm25(question)
+        if query_tokens:
+            bm25_scores = _bm25_index.get_scores(query_tokens)
+            top = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
+            bm25_results = [_bm25_corpus[i] for i in top if bm25_scores[i] > 0]
 
     if bm25_results:
         combined, rrf_scores = _rrf(vector_results, bm25_results)
@@ -442,8 +390,6 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
     raw_scores  = [rrf_scores.get(d["id"], 0.0) for d in combined]
     max_score   = max(raw_scores, default=1.0) or 1.0
     conf_scores = [round(s / max_score, 3) for s in raw_scores]
-
-    _set_cache(question, passages, sources, conf_scores)
 
     mode = "complex" if plan.is_complex else "simple"
     if bm25_results:

@@ -29,6 +29,9 @@ SUPPORTED_EXTENSIONS = (".md", ".txt", ".json", ".csv", ".xlsx", ".xml", ".pdf")
 PARSER_MODE         = os.getenv("PARSER", "custom")
 _INGESTION_LORE_CLASSIFIER_ENABLED = env_bool("INGESTION_LORE_CLASSIFIER_ENABLED", True)
 _INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED = env_bool("INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED", True)
+_CHUNK_DEDUP_ENABLED = env_bool("CHUNK_DEDUP_ENABLED", True)
+_LATE_CHUNKING_ENABLED = env_bool("LATE_CHUNKING_ENABLED", True)
+_LATE_CHUNKING_WINDOW = max(1, int(os.getenv("LATE_CHUNKING_WINDOW", "3")))
 
 _CHUNK_CTX_REDIS_TTL = 86400   # 24h — clé "chunk_ctx:{md5_hash}"
 
@@ -225,11 +228,37 @@ def _get_doc_context(texte: str, nom: str) -> dict:
 
 # ── Pipeline d'indexation ────────────────────────────────────────────────────
 
+def _apply_late_chunking(chunks: List[str]) -> List[str]:
+    """Préfixe chaque chunk avec ses voisins précédents pour contextualiser l'embedding.
+
+    WHY: Un chunk embarqué seul perd le contexte du document. En préfixant les
+    _LATE_CHUNKING_WINDOW chunks précédents, le vecteur capture la continuité narrative —
+    améliore la précision sémantique sur les questions qui font référence à des éléments
+    mentionnés plus tôt dans le document.
+    Note: page_content stocke le texte original pour la génération ; le texte contextuel
+    n'est utilisé qu'au moment de l'embedding (via add_documents → embedder).
+    """
+    if not _LATE_CHUNKING_ENABLED or len(chunks) <= 1:
+        return chunks
+    contextual = []
+    for i, chunk in enumerate(chunks):
+        start = max(0, i - _LATE_CHUNKING_WINDOW)
+        context_parts = chunks[start:i]
+        if context_parts:
+            context = " ".join(context_parts)
+            contextual.append(f"Context: {context}\n\nChunk: {chunk}")
+        else:
+            contextual.append(chunk)
+    return contextual
+
+
 def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
     """Traite les fichiers et retourne des Documents prêts à indexer.
-    Pipeline : extraction → vérif hors-sujet → contexte doc → découpage → filtrage anti-injection
+    Pipeline : extraction → vérif hors-sujet → contexte doc → découpage → late chunking → filtrage
     """
     documents = []
+    seen_chunk_hashes: Set[str] = set()
+    dedup_skipped = 0
 
     for nom in noms_fichiers:
         chemin = os.path.join(DATA_FOLDER, nom)
@@ -255,24 +284,43 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
             # Contexte global du document (résumé + entités) injecté dans chaque chunk
             doc_context = _get_doc_context(texte, nom)
 
-            for chunk_idx, chunk in enumerate(split_into_chunks(texte)):
+            raw_chunks = split_into_chunks(texte)
+            # Late chunking : enrichit chaque chunk avec ses voisins pour l'embedding
+            contextual_chunks = _apply_late_chunking(raw_chunks)
+
+            for chunk_idx, (chunk, contextual_chunk) in enumerate(zip(raw_chunks, contextual_chunks)):
                 if not check_patterns(chunk)["valid"]:
                     logger.warning(f"Chunk suspect ignoré dans '{nom}'.")
                     continue
+                # SHA256 sur le chunk original (pas contextuel) pour une dedup stable
+                normalized_chunk = " ".join(chunk.split()).strip().lower()
+                chunk_sha256 = hashlib.sha256(normalized_chunk.encode("utf-8")).hexdigest()
+                if _CHUNK_DEDUP_ENABLED and chunk_sha256 in seen_chunk_hashes:
+                    dedup_skipped += 1
+                    continue
+                seen_chunk_hashes.add(chunk_sha256)
                 chunk_id = f"{nom}_{chunk_idx}"
                 documents.append(Document(
-                    page_content=chunk,
+                    # page_content = texte contextuel → vecteur capte le contexte voisin
+                    # Le texte original est conservé dans metadata pour la génération
+                    page_content=contextual_chunk,
                     metadata={
-                        "fichier":     nom,
-                        "chunk_id":    chunk_id,
-                        "doc_summary": doc_context.get("doc_summary", ""),
-                        "entities":    doc_context.get("entities", []),
+                        "fichier":        nom,
+                        "chunk_id":       chunk_id,
+                        "chunk_sha256":   chunk_sha256,
+                        "original_text":  chunk,
+                        "doc_summary":    doc_context.get("doc_summary", ""),
+                        "entities":       doc_context.get("entities", []),
                     },
                 ))
 
         except Exception as e:
             logger.error(f"Erreur sur '{nom}' : {e}")
 
+    if dedup_skipped:
+        logger.info(f"Dedup chunks: {dedup_skipped} doublon(s) ignoré(s).")
+    if _LATE_CHUNKING_ENABLED:
+        logger.info(f"Late chunking actif (window={_LATE_CHUNKING_WINDOW}).")
     return documents
 
 

@@ -1,31 +1,43 @@
-"""Masquage PII avant envoi au LLM.
+"""Masquage PII avant envoi au LLM — regex uniquement.
 
-Approche regex uniquement (pas de NLP) — notre app traite du lore fictif,
-les données personnelles sensibles ne devraient pas y figurer.
-Couvre : email, téléphone, IP, numéro de carte bancaire.
+Couvre les données structurées : email, téléphone, IP, carte bancaire.
+Les noms propres (personnages fictifs) ne sont PAS masqués intentionnellement
+car ce RAG traite du lore de jeu où les noms propres sont des entités métier.
 """
 import logging
 import re
-from typing import Optional
-
-logger = logging.getLogger(__name__)
-
 import time
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 _pii_history: deque = deque(maxlen=50)
 
 def get_pii_history() -> list:
     return list(_pii_history)
 
-# Patterns PII réels à masquer
-# WHY: L'ordre compte — la carte bancaire (16 chiffres) doit être évaluée AVANT le
-# téléphone pour éviter qu'un groupe de 4 chiffres soit capturé comme numéro de tél.
+# Patterns PII réels à masquer.
+# WHY ordre : carte bancaire (16 chiffres) avant téléphone pour éviter
+# qu'un groupe de 4 chiffres soit capturé par le pattern téléphone.
 _PII_PATTERNS: list[tuple[str, str, str]] = [
-    ("email",      r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",       "[EMAIL]"),
-    ("carte",      r"\b(?:\d{4}[\s\-]?){3}\d{4}\b",                              "[CARTE]"),
-    ("ip",         r"\b(?:\d{1,3}\.){3}\d{1,3}\b",                              "[IP]"),
-    ("telephone",  r"(?<!\d)(\+?[\d\s\-\(\)]{7,15})(?!\d)",                     "[TEL]"),
+    ("email",
+     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+     "[EMAIL]"),
+
+    ("carte",
+     r"\b(?:\d{4}[\s\-]?){3}\d{4}\b",
+     "[CARTE]"),
+
+    ("ip",
+     r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+     "[IP]"),
+
+    # Téléphone : doit commencer par + ou 0, puis avoir 7–14 chiffres supplémentaires.
+    # WHY: évite les faux positifs sur les nombres du lore ("l'an 1234567", "niveau 42").
+    # Couvre : +33 6 12 34 56 78 | 06 12 34 56 78 | +1-800-555-0199 | 0033612345678
+    ("telephone",
+     r"(?<!\d)(\+\d[\d\s\-\(\)]{6,14}|0\d[\d\s\-\(\)]{6,13})(?!\d)",
+     "[TEL]"),
 ]
 
 _COMPILED_PII = [
@@ -35,7 +47,7 @@ _COMPILED_PII = [
 
 
 def masquer(texte: str) -> str:
-    """Remplace les PII par des tokens neutres. Retourne le texte original si aucun PII trouvé."""
+    """Remplace les PII structurés (email, téléphone, IP, carte) par des tokens neutres."""
     if not texte:
         return texte
 
@@ -49,11 +61,11 @@ def masquer(texte: str) -> str:
             modified = new_text
 
     if found_types:
-        # Stocke le texte masqué (pas le PII original) pour le monitoring
+        logger.debug(f"[PII] Source text (100c): {texte[:100]!r}")
         _pii_history.append({
             "time": time.strftime("%H:%M:%S"),
             "types": found_types,
-            "masked_text": modified[:200],  # texte avec [EMAIL] etc., pas le vrai PII
+            "masked_text": modified[:200],
         })
         _log_anonymisation(found_types)
 

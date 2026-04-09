@@ -148,29 +148,56 @@ const SidebarItem = ({ session, isActive, onClick, onDelete }) => {
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col gap-1 px-3 py-2.5 mx-3 rounded-xl cursor-pointer transition-all ${isActive ? 'bg-white/[0.06] border-l-2 border-l-[#5ed29c]' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'}`}
+      className={`group relative flex items-center gap-2.5 px-3 py-2.5 mx-3 rounded-xl cursor-pointer transition-all ${isActive ? 'bg-white/[0.06] border-l-2 border-l-[#5ed29c]' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'}`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 overflow-hidden flex-1">
-          <MessageSquare size={14} className={isActive ? 'text-white' : 'text-white/30'} />
-          <span className={`text-[12px] truncate ${isActive ? 'text-white font-medium' : 'text-white/60'}`}>{session.title}</span>
-        </div>
+      <MessageSquare size={14} className={`shrink-0 ${isActive ? 'text-white' : 'text-white/30'}`} />
 
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-          {confirm ? (
-            <div className="flex items-center gap-2 bg-black rounded px-2 py-1 absolute right-2 top-1/2 -translate-y-1/2 border border-[#f87171]/20">
-              <span className="text-[9px] text-[#f87171] uppercase tracking-widest">Sûr ?</span>
-              <button onClick={(e) => { e.stopPropagation(); onDelete(session.id); }} className="text-white hover:text-[#f87171]"><Check size={12}/></button>
-              <button onClick={(e) => { e.stopPropagation(); setConfirm(false); }} className="text-white/40 hover:text-white"><X size={12}/></button>
+      <AnimatePresence mode="wait" initial={false}>
+        {confirm ? (
+          <motion.div
+            key="confirm"
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.92 }}
+            transition={{ duration: 0.12 }}
+            className="flex-1 flex items-center justify-between gap-2"
+            onClick={e => e.stopPropagation()}
+          >
+            <span className="text-[10px] text-[#f87171]/80 tracking-widest uppercase">Supprimer ?</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}
+                className="w-6 h-6 rounded-lg bg-[#f87171]/10 hover:bg-[#f87171]/20 border border-[#f87171]/20 flex items-center justify-center text-[#f87171] transition-all"
+              >
+                <Check size={11} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirm(false); }}
+                className="w-6 h-6 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 flex items-center justify-center text-white/40 hover:text-white transition-all"
+              >
+                <X size={11} />
+              </button>
             </div>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); setConfirm(true); }} className="text-white/20 hover:text-[#f87171] p-1">
-              <Trash2 size={14} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="normal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
+            className="flex-1 flex items-center justify-between gap-2 overflow-hidden"
+          >
+            <span className={`text-[12px] truncate ${isActive ? 'text-white font-medium' : 'text-white/60'}`}>{session.title}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirm(true); }}
+              className="opacity-0 group-hover:opacity-100 shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-white/20 hover:text-[#f87171] hover:bg-[#f87171]/10 transition-all"
+            >
+              <Trash2 size={13} />
             </button>
-          )}
-        </div>
-      </div>
-      <span className="text-[10px] text-white/20 pl-6">{session.messages.length} messages</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -259,8 +286,10 @@ const MessageBubble = ({ msg, sessionId }) => {
     const newVote = vote === direction ? null : direction;
     setVote(newVote);
     if (!newVote || !sessionId) return;
-    // pouce haut = 5 (bon) → pas de judge ; pouce bas = 1 (mauvais) → déclenche le judge LLM
+
+    // pouce haut = 5 (bon) ; pouce bas = 1 (mauvais)
     const rating = newVote === 'up' ? 5 : 1;
+    const voteValue = newVote === 'up' ? 1 : -1;
     try {
       const headers = { 'Content-Type': 'application/json' };
       try {
@@ -271,6 +300,24 @@ const MessageBubble = ({ msg, sessionId }) => {
           if (token) headers['Authorization'] = `Bearer ${token}`;
         }
       } catch (_) {}
+
+      const traceId = msg.trace_id || '';
+      if (traceId) {
+        const voteResp = await fetch('/api/feedback/vote', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            trace_id: traceId,
+            value: voteValue,
+            session_id: sessionId,
+            question: msg.question_for_feedback || '',
+            answer: msg.answer_for_feedback || msg.content || '',
+          }),
+        });
+
+        if (voteResp.ok) return;
+      }
+
       await fetch('/api/feedback', {
         method: 'POST',
         headers,

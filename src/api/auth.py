@@ -20,6 +20,9 @@ _JWT_CACHE_TTL_SECONDS = int(os.getenv("JWT_CACHE_TTL_SECONDS", "60"))
 _JWT_CACHE_MAX_SIZE = int(os.getenv("JWT_CACHE_MAX_SIZE", "512"))
 _APP_ENV = os.getenv("APP_ENV", "development").lower()
 _ALLOW_LOCAL_GUEST_HEADER = os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true"
+# ALLOW_GUEST_MODE=true permet aux invités de fonctionner en production.
+# Mettre à false pour désactiver totalement le mode invité.
+_ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "true").lower() == "true"
 _security = HTTPBearer(auto_error=False)
 _jwt_cache: OrderedDict[str, tuple[float, Optional[str]]] = OrderedDict()
 _jwt_cache_lock = threading.Lock()
@@ -91,8 +94,10 @@ async def get_current_user(
     Lève 401 si le token est absent ou invalide.
     """
     if not credentials:
-        # Mode local/dev : accepte un identifiant invité envoyé par le frontend.
-        if _APP_ENV != "production" and _ALLOW_LOCAL_GUEST_HEADER:
+        # Mode invité : accepté si ALLOW_GUEST_MODE=true (dev + prod).
+        # En dev, ALLOW_LOCAL_GUEST_HEADER suffit (rétrocompat).
+        guest_allowed = _ALLOW_GUEST_MODE or (_APP_ENV != "production" and _ALLOW_LOCAL_GUEST_HEADER)
+        if guest_allowed:
             guest_id = (request.headers.get("x-local-guest-id") or "").strip()
             if guest_id.startswith("guest_"):
                 return guest_id

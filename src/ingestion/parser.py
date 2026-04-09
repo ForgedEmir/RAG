@@ -51,13 +51,35 @@ def clean_text(raw_text: str) -> str:
     return "\n\n".join(paragraphs)
 
 
-def extract_text_from_file(filepath: str) -> Optional[str]:
-    """Lit un fichier selon son extension et retourne son contenu en texte brut."""
-    if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable : {filepath}")
+def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
+    """Fallback PDF via unstructured si LlamaParse indisponible."""
+    try:
+        from unstructured.partition.auto import partition
+        elements = partition(filename=filepath)
+        return "\n".join(str(el) for el in elements if str(el).strip())
+    except ImportError:
+        logger.warning("unstructured non installé — pip install unstructured")
+        return None
+    except Exception as e:
+        logger.error(f"unstructured échoué pour {filepath} : {e}")
         return None
 
+
+def _parse_pdf(filepath: str) -> Optional[str]:
+    """Parse un PDF : LlamaParse si disponible, sinon unstructured."""
+    result = _parse_pdf_llamaparse(filepath)
+    if result:
+        return result
+    return _parse_pdf_unstructured(filepath)
+
+
+def extract_text_from_file(filepath: str) -> Optional[str]:
+    """Lit un fichier selon son extension et retourne son contenu en texte brut."""
     if not isinstance(filepath, str):
+        return None
+
+    if not os.path.exists(filepath):
+        logger.error(f"Fichier introuvable : {filepath}")
         return None
 
     ext = os.path.splitext(filepath)[1].lower()
@@ -68,7 +90,7 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         '.csv': _read_csv,
         '.xlsx': _xlsx_to_text,
         '.xml': _xml_to_text,
-        '.pdf': _parse_pdf_llamaparse,
+        '.pdf': _parse_pdf,
     }
     loader = loaders.get(ext)
     if not loader:
@@ -150,12 +172,14 @@ def _json_to_text(data, niveau: int = 0) -> str:
 
 
 def _xml_to_text(filepath: str) -> str:
-    """Extrait tout le texte d'un fichier XML (ignore les balises)."""
-    import xml.etree.ElementTree as ET
+    """Extrait le texte d'un XML via unstructured (gère namespaces, attributs, hiérarchie)."""
     try:
-        root = ET.parse(filepath).getroot()
-        lignes = [elem.text.strip() for elem in root.iter() if elem.text and elem.text.strip()]
-        return "\n".join(lignes)
-    except ET.ParseError as e:
-        logger.error(f"XML corrompu {filepath} : {e}")
+        from unstructured.partition.auto import partition
+        elements = partition(filename=filepath)
+        return "\n".join(str(el) for el in elements if str(el).strip())
+    except ImportError:
+        logger.warning("unstructured non installé — pip install unstructured")
+        return ""
+    except Exception as e:
+        logger.error(f"Erreur XML {filepath} : {e}")
         return ""

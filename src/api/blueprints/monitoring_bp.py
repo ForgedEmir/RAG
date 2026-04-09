@@ -253,6 +253,17 @@ async def monitoring_user_memories(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@monitoring_router.get("/api/monitoring/feedbacks")
+async def monitoring_feedbacks(request: Request, limit: int = 50):
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import get_recent_feedback_events
+
+        return {"feedbacks": get_recent_feedback_events(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @monitoring_router.get("/api/monitoring/pii")
 async def monitoring_pii(request: Request):
     require_monitoring(request)

@@ -10,13 +10,20 @@ from langchain_core.messages import AIMessage
 
 # ===== TESTS POUR generer_reponse =====
 
+def _mock_llm_with_fallbacks(mock_llm, ai_response: str):
+    """Configure mock_llm.with_fallbacks().invoke() pour retourner ai_response."""
+    chain_mock = MagicMock()
+    chain_mock.invoke.return_value = AIMessage(content=ai_response)
+    mock_llm.with_fallbacks.return_value = chain_mock
+    return chain_mock
+
+
 @patch('src.generation.generator._llm')
 def test_generation_simple(mock_llm):
     """On peut generer une reponse simple avec l'IA."""
     from src.generation.generator import generer_reponse
 
-    # On simule la reponse LangChain
-    mock_llm.invoke.return_value = AIMessage(content="  Reponse de l'IA  ")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "  Reponse de l'IA  ")
 
     question = "Qui est le heros?"
     passages = ["Le heros s'appelle Arthur."]
@@ -24,7 +31,6 @@ def test_generation_simple(mock_llm):
 
     resultat = generer_reponse(question, passages, sources)
 
-    # On verifie le resultat (les espaces sont enleves)
     assert resultat == "Reponse de l'IA"
 
 
@@ -33,7 +39,7 @@ def test_plusieurs_passages(mock_llm):
     """On peut generer une reponse avec plusieurs passages."""
     from src.generation.generator import generer_reponse
 
-    mock_llm.invoke.return_value = AIMessage(content="Reponse complete")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "Reponse complete")
 
     question = "Decris le royaume"
     passages = [
@@ -46,8 +52,8 @@ def test_plusieurs_passages(mock_llm):
     resultat = generer_reponse(question, passages, sources)
 
     # On verifie que les passages ont ete envoyes dans le message system
-    appel = mock_llm.invoke.call_args
-    messages = appel[0][0]  # Premier argument positionnel = liste de messages
+    appel = chain_mock.invoke.call_args
+    messages = appel[0][0]
     system_content = messages[0].content
 
     assert "Le royaume est grand." in system_content
@@ -59,13 +65,12 @@ def test_sans_sources(mock_llm):
     """Si aucune source n'est fournie, ca marche quand meme."""
     from src.generation.generator import generer_reponse
 
-    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "Reponse")
 
     resultat = generer_reponse("Question", ["Passage"], sources=None)
 
     assert resultat == "Reponse"
-    # On verifie que "sources inconnues" apparait dans le prompt
-    appel = mock_llm.invoke.call_args
+    appel = chain_mock.invoke.call_args
     messages = appel[0][0]
     assert "sources inconnues" in messages[0].content
 
@@ -87,15 +92,13 @@ def test_parametres_llm(mock_llm):
     """On verifie que le LLM est appele avec les bons messages."""
     from src.generation.generator import generer_reponse
 
-    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "Reponse")
 
     generer_reponse("Question", ["Passage"], ["test.md"])
 
-    # On recupere les arguments de l'appel
-    appel = mock_llm.invoke.call_args
+    appel = chain_mock.invoke.call_args
     messages = appel[0][0]
 
-    # On verifie : 2 messages (System + Human)
     assert len(messages) == 2
     assert messages[0].__class__.__name__ == "SystemMessage"
     assert messages[1].__class__.__name__ == "HumanMessage"
@@ -107,15 +110,14 @@ def test_contexte_formate(mock_llm):
     """Les passages sont separes par des doubles sauts de ligne."""
     from src.generation.generator import generer_reponse
 
-    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "Reponse")
 
     passages = ["Passage 1", "Passage 2", "Passage 3"]
     generer_reponse("Question", passages, ["test.md"])
 
-    appel = mock_llm.invoke.call_args
+    appel = chain_mock.invoke.call_args
     system_message = appel[0][0][0].content
 
-    # Les passages doivent etre separes par \n\n
     assert "Passage 1\n\nPassage 2\n\nPassage 3" in system_message
 
 
@@ -124,14 +126,13 @@ def test_instructions_rag(mock_llm):
     """Le prompt contient les instructions RAG."""
     from src.generation.generator import generer_reponse
 
-    mock_llm.invoke.return_value = AIMessage(content="Reponse")
+    chain_mock = _mock_llm_with_fallbacks(mock_llm, "Reponse")
 
     generer_reponse("Question", ["Passage"], ["test.md"])
 
-    appel = mock_llm.invoke.call_args
+    appel = chain_mock.invoke.call_args
     system_message = appel[0][0][0].content
 
-    # Verifier que les instructions importantes sont la
     assert "Aethelgard Online" in system_message
     assert "uniquement en te basant" in system_message
     assert "N'invente" in system_message

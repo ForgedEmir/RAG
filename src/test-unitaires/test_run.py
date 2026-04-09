@@ -78,7 +78,9 @@ def test_list_current_files_ok(mock_getmtime, mock_listdir, mock_exists):
 @patch('src.ingestion.run.extract_text_from_file')
 @patch('src.ingestion.run.clean_text')
 @patch('src.ingestion.run.split_into_chunks')
-def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists):
+@patch('src.ingestion.run._get_doc_context', return_value={"doc_summary": "", "entities": []})
+@patch('src.ingestion.run._is_lore_content', return_value=True)
+def test_prepare_files_ok(mock_is_lore, mock_ctx, mock_split, mock_clean, mock_extract, mock_exists):
     """On peut preparer des fichiers: extraction, nettoyage, decoupage."""
     mock_exists.return_value = True
     mock_extract.return_value = "Texte brut du fichier"
@@ -89,12 +91,36 @@ def test_prepare_files_ok(mock_split, mock_clean, mock_extract, mock_exists):
 
     assert len(documents) == 2
     assert isinstance(documents[0], Document)
-    assert documents[0].page_content == "Chunk 1"
+    # page_content = texte contextuel (late chunking) ; original_text = chunk brut
+    assert documents[0].metadata["original_text"] == "Chunk 1"
     assert documents[0].metadata["fichier"] == "file.md"
     assert documents[0].metadata["chunk_id"] == "file.md_0"
-    assert documents[1].page_content == "Chunk 2"
+    assert documents[1].metadata["original_text"] == "Chunk 2"
     assert documents[1].metadata["fichier"] == "file.md"
     assert documents[1].metadata["chunk_id"] == "file.md_1"
+    assert "chunk_sha256" in documents[0].metadata
+
+
+@patch('src.ingestion.run.PARSER_MODE', 'custom')
+@patch('os.path.exists')
+@patch('src.ingestion.run.extract_text_from_file')
+@patch('src.ingestion.run.clean_text')
+@patch('src.ingestion.run.split_into_chunks')
+@patch('src.ingestion.run._get_doc_context', return_value={"doc_summary": "", "entities": []})
+@patch('src.ingestion.run._is_lore_content', return_value=True)
+def test_prepare_files_dedup_sha256(mock_is_lore, mock_ctx, mock_split, mock_clean, mock_extract, mock_exists):
+    """Deux chunks identiques ne doivent être indexés qu'une seule fois."""
+    mock_exists.return_value = True
+    mock_extract.return_value = "Texte brut"
+    mock_clean.return_value = "Texte nettoye"
+    mock_split.return_value = ["Chunk identique", "Chunk identique", "Chunk unique"]
+
+    documents = prepare_files_for_ai({"file.md"})
+
+    assert len(documents) == 2
+    assert documents[0].metadata["original_text"] == "Chunk identique"
+    assert documents[1].metadata["original_text"] == "Chunk unique"
+    assert documents[0].metadata["chunk_sha256"] != ""
 
 
 # ===== TESTS POUR index_data =====

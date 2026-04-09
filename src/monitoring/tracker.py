@@ -4,6 +4,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from collections import OrderedDict, deque
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,16 @@ HISTORY_LIMIT      = 10
 STATS_LATENCY_LIMIT = 100
 STATS_EVENTS_LIMIT  = 200
 TRACKING_ENABLED    = os.getenv("TRACKING_ENABLED", "true").lower() != "false"
+TRACE_CONTEXT_TTL_SECONDS = max(60, int(os.getenv("TRACE_CONTEXT_TTL_SECONDS", "7200")))
+TRACE_CONTEXT_MAX_SIZE = max(200, int(os.getenv("TRACE_CONTEXT_MAX_SIZE", "5000")))
+FEEDBACK_EVENTS_BUFFER_SIZE = max(100, int(os.getenv("FEEDBACK_EVENTS_BUFFER_SIZE", "500")))
 
 _client      = None
 _client_lock = threading.Lock()
+_trace_context: dict[str, dict] = {}
+_trace_lock = threading.Lock()
+_feedback_events: deque = deque(maxlen=FEEDBACK_EVENTS_BUFFER_SIZE)
+_feedback_lock = threading.Lock()
 
 def _get_client():
     global _client
@@ -47,6 +55,106 @@ def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -
             _check_injection_spike(client)
     except Exception as e:
         logger.warning(f"[MONITORING] Supabase : {e}")
+
+
+def _prune_trace_context(now_ts: float) -> None:
+    cutoff = now_ts - TRACE_CONTEXT_TTL_SECONDS
+    stale_keys = [
+        trace_id for trace_id, payload in _trace_context.items()
+        if payload.get("_ts", 0.0) < cutoff
+    ]
+    for trace_id in stale_keys:
+        _trace_context.pop(trace_id, None)
+
+    overflow = len(_trace_context) - TRACE_CONTEXT_MAX_SIZE
+    if overflow > 0:
+        oldest = sorted(_trace_context.items(), key=lambda item: item[1].get("_ts", 0.0))[:overflow]
+        for trace_id, _ in oldest:
+            _trace_context.pop(trace_id, None)
+
+
+def register_trace_context(
+    trace_id: str,
+    question: str,
+    answer: str,
+    session_id: str = "",
+    user_id: str = "",
+) -> None:
+    if not trace_id:
+        return
+
+    now_ts = datetime.now(timezone.utc).timestamp()
+    entry = {
+        "trace_id": str(trace_id)[:128],
+        "question": (question or "")[:2000],
+        "answer": (answer or "")[:6000],
+        "session_id": (session_id or "")[:64],
+        "user_id": (user_id or "")[:64],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "_ts": now_ts,
+    }
+
+    with _trace_lock:
+        _trace_context[entry["trace_id"]] = entry
+        _prune_trace_context(now_ts)
+
+
+def get_trace_context(trace_id: str) -> dict:
+    if not trace_id:
+        return {}
+    with _trace_lock:
+        payload = _trace_context.get(str(trace_id)[:128])
+        if not payload:
+            return {}
+        return {
+            "trace_id": payload.get("trace_id", ""),
+            "question": payload.get("question", ""),
+            "answer": payload.get("answer", ""),
+            "session_id": payload.get("session_id", ""),
+            "user_id": payload.get("user_id", ""),
+            "created_at": payload.get("created_at", ""),
+        }
+
+
+def record_feedback_event(
+    *,
+    value: int,
+    rating: int,
+    user_id: str,
+    source: str,
+    trace_id: str = "",
+    session_id: str = "",
+    question: str = "",
+    answer: str = "",
+    comment: str = "",
+    judge_score: Optional[float] = None,
+) -> None:
+    event = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source": source[:32],
+        "trace_id": (trace_id or "")[:128],
+        "session_id": (session_id or "")[:64],
+        "user_id": (user_id or "")[:64],
+        "value": int(value),
+        "rating": int(rating),
+        "judge_score": float(judge_score) if judge_score is not None else None,
+        "question": (question or "")[:400],
+        "answer": (answer or "")[:800],
+        "comment": (comment or "")[:300],
+    }
+
+    with _feedback_lock:
+        _feedback_events.append(event)
+
+
+def get_recent_feedback_events(limit: int = 50) -> list:
+    safe_limit = max(1, min(int(limit or 50), FEEDBACK_EVENTS_BUFFER_SIZE))
+    with _feedback_lock:
+        events = list(_feedback_events)
+    if safe_limit < len(events):
+        events = events[-safe_limit:]
+    events.reverse()
+    return events
 
 def _check_injection_spike(client) -> None:
     try:
@@ -263,7 +371,11 @@ def get_stats() -> dict:
     if not client:
         return {"error": "Supabase non configuré", "counts": {}, "events": []}
     try:
-        event_types = ["question", "injection_regex", "injection_lakera", "rate_limit", "error", "voice", "tts", "upload", "upload_blocked", "reindex", "fallback"]
+        event_types = [
+            "question", "injection_regex", "injection_lakera", "rate_limit", "error",
+            "voice", "tts", "upload", "upload_blocked", "reindex", "fallback",
+            "feedback_vote", "feedback_legacy",
+        ]
         counts = {t: client.table("events").select("id", count="exact").eq("type", t).execute().count or 0 for t in event_types}
 
         latency_r = (client.table("events").select("latency_ms").eq("type", "question")

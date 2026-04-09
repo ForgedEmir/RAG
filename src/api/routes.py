@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from typing import Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,7 +23,8 @@ from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
     conversation_belongs_to_user, count_user_exchanges, delete_conversation, get_conversation,
-    get_conversation_owner, get_history, get_user_conversations, get_user_summary, save_exchange,
+    get_conversation_owner, get_history, get_trace_context, get_user_conversations,
+    get_user_summary, record_feedback_event, register_trace_context, save_exchange,
     save_user_summary, track,
 )
 from src.search.search import rechercher_passages
@@ -81,6 +83,58 @@ def _run_background_summary(uid: str, history: list) -> None:
         lock.release()
 
 
+def _is_uuid(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        uuid.UUID(str(value))
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_feedback_context(session_id: str = "", question: str = "", answer: str = "") -> tuple[str, str]:
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if (q and a) or not session_id:
+        return q, a
+
+    history = get_history(session_id)
+    if not history:
+        return q, a
+
+    last = history[-1]
+    return q or (last.get("question") or ""), a or (last.get("answer") or "")
+
+
+def _evaluate_feedback_quality(question: str, answer: str) -> tuple[Optional[float], Optional[dict]]:
+    if not question or not answer:
+        return None, None
+    try:
+        from src.security.judge import evaluer_reponse, evaluer_reponse_multi
+
+        details = evaluer_reponse_multi(question, answer)
+        if details is not None:
+            return float(details.get("overall", 0.0)), details
+        return evaluer_reponse(question, answer), None
+    except Exception as e:
+        logger.warning(f"[JUDGE] evaluation failed: {e}")
+        return None, None
+
+
+def _track_judge_metrics(session_ref: str, details: dict) -> None:
+    track(
+        "judge_metrics",
+        detail=(
+            f"session:{session_ref[:8]} "
+            f"cr:{details.get('context_relevance', 0.0):.2f} "
+            f"fa:{details.get('faithfulness', 0.0):.2f} "
+            f"ar:{details.get('answer_relevance', 0.0):.2f} "
+            f"cc:{details.get('context_coverage', 0.0):.2f}"
+        ),
+    )
+
+
 class AskBody(BaseModel):
     question: str
     session_id: str = ""
@@ -91,6 +145,15 @@ class ReindexBody(BaseModel):
 class FeedbackBody(BaseModel):
     session_id: str
     rating: int          # 1-5
+    comment: str = ""
+
+
+class FeedbackVoteBody(BaseModel):
+    trace_id: str
+    value: int           # -1 or +1
+    session_id: str = ""
+    question: str = ""
+    answer: str = ""
     comment: str = ""
 
 
@@ -146,7 +209,8 @@ async def get_user_identity(user_id: str = Depends(get_current_user)):
 @router.post("/api/ask")
 @limiter.limit("2/5seconds;30/minute;500/day")
 async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get_current_user)):
-    req_id  = str(uuid.uuid4())[:8]
+    trace_id = str(uuid.uuid4())
+    req_id  = trace_id[:8]
     start   = time.time()
     question = body.question.strip()
 
@@ -179,7 +243,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n",
-                  f"data: {json.dumps({'type': 'done'})}\n\n"]),
+                  f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -188,11 +252,12 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     cached = cache_check(question)
     if cached is not None:
         cached_text = cached[0] if isinstance(cached, tuple) else cached
+        register_trace_context(trace_id, question, cached_text, body.session_id, user_id)
         logger.info(f"[{req_id}] Cached response returned")
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': cached_text})}\n\n",
-                  f"data: {json.dumps({'type': 'done', 'model': 'cache'})}\n\n"]),
+                  f"data: {json.dumps({'type': 'done', 'model': 'cache', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -214,18 +279,20 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         memories = []
 
     t_ref = time.time()
-    query = reformuler_question(question, history)
+    query = await asyncio.to_thread(reformuler_question, question, history)
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, sources, conf_scores = rechercher_passages(query)
+    passages, sources, conf_scores = await asyncio.to_thread(rechercher_passages, query)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
+        no_data_msg = "Les archives ne contiennent aucune information sur ce sujet."
+        register_trace_context(trace_id, question, no_data_msg, body.session_id, user_id)
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
-                  f"data: {json.dumps({'type': 'text', 'text': 'Les archives ne contiennent aucune information sur ce sujet.'})}\n\n",
-                  f"data: {json.dumps({'type': 'done'})}\n\n"]),
+                  f"data: {json.dumps({'type': 'text', 'text': no_data_msg})}\n\n",
+                  f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -284,10 +351,12 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             if timed_out:
                 yield f"data: {json.dumps({'type': 'text', 'text': ' [Reponse interrompue pour respecter la latence cible.]'})}\n\n"
                 model_name = f"{model_name} [timeout]"
-            yield f"data: {json.dumps({'type': 'done', 'model': model_name})}\n\n"
+
+            answer = "".join(accumulated)
+            register_trace_context(trace_id, question, answer, body.session_id, user_id)
+            yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"
 
             if body.session_id:
-                answer = "".join(accumulated)
                 save_exchange(body.session_id, question, answer, user_id)
                 cache_store(question, answer)
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
@@ -325,36 +394,118 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
     def _persist_and_judge():
         from src.monitoring.tracker import _get_client
         judge_score = None
+        judge_details = None
+        question, answer = "", ""
 
         if body.rating <= 2:
-            try:
-                from src.security.judge import evaluer_reponse
-                # WHY: On récupère la dernière réponse de la conversation pour la juger.
-                history = get_history(body.session_id)
-                if history:
-                    last = history[-1]
-                    judge_score = evaluer_reponse(last["question"], last["answer"])
-                    if judge_score is not None and judge_score < 0.5:
-                        track("judge_flag", detail=f"session:{body.session_id} score:{judge_score:.2f}")
-                        logger.warning(f"[JUDGE] Score faible ({judge_score:.2f}) pour session {body.session_id[:8]}")
-            except Exception as e:
-                logger.warning(f"[JUDGE] Évaluation échouée : {e}")
+            question, answer = _resolve_feedback_context(body.session_id)
+            judge_score, judge_details = _evaluate_feedback_quality(question, answer)
+            if judge_details:
+                _track_judge_metrics(body.session_id or "legacy", judge_details)
+            if judge_score is not None and judge_score < 0.5:
+                track("judge_flag", detail=f"session:{body.session_id} score:{judge_score:.2f}")
+                logger.warning(f"[JUDGE] Low score ({judge_score:.2f}) for session {body.session_id[:8]}")
 
         client = _get_client()
-        if not client:
-            return
-        try:
-            client.table("feedback").insert({
-                "session_id":  body.session_id,
-                "user_id":     user_id,
-                "rating":      body.rating,
-                "comment":     body.comment[:500] if body.comment else "",
-                "judge_score": judge_score,
-            }).execute()
-        except Exception as e:
-            logger.warning(f"[FEEDBACK] Stockage échoué : {e}")
+        if client and _is_uuid(body.session_id):
+            try:
+                client.table("feedback").insert({
+                    "session_id":  body.session_id,
+                    "user_id":     user_id,
+                    "rating":      body.rating,
+                    "comment":     body.comment[:500] if body.comment else "",
+                    "judge_score": judge_score,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"[FEEDBACK] Storage failed: {e}")
+
+        value = 1 if body.rating >= 4 else (-1 if body.rating <= 2 else 0)
+        record_feedback_event(
+            value=value,
+            rating=body.rating,
+            user_id=user_id,
+            source="legacy",
+            session_id=body.session_id,
+            question=question,
+            answer=answer,
+            comment=body.comment,
+            judge_score=judge_score,
+        )
+        track("feedback_legacy", detail=f"rating:{body.rating} session:{body.session_id[:8]}")
 
     _executor.submit(_persist_and_judge)
+    return {"ok": True}
+
+
+@router.post("/api/feedback/vote")
+async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(get_current_user)):
+    trace_id = (body.trace_id or "").strip()
+    if not trace_id:
+        return JSONResponse({"error": "trace_id requis"}, status_code=400)
+    if body.value not in (-1, 1):
+        return JSONResponse({"error": "value doit etre -1 ou 1"}, status_code=400)
+
+    context = get_trace_context(trace_id)
+    trace_owner = (context.get("user_id") or "").strip()
+    if trace_owner and trace_owner != user_id:
+        return JSONResponse({"error": "Acces refuse"}, status_code=403)
+
+    session_id = (body.session_id or context.get("session_id") or "").strip()
+    if session_id:
+        owner = get_conversation_owner(session_id)
+        if owner and owner != user_id:
+            return JSONResponse({"error": "Acces refuse"}, status_code=403)
+
+    question, answer = _resolve_feedback_context(
+        session_id,
+        question=body.question or context.get("question", ""),
+        answer=body.answer or context.get("answer", ""),
+    )
+    rating = 5 if body.value > 0 else 1
+
+    def _persist_vote():
+        from src.monitoring.tracker import _get_client
+
+        judge_score = None
+        judge_details = None
+        if body.value < 0:
+            judge_score, judge_details = _evaluate_feedback_quality(question, answer)
+            if judge_details:
+                _track_judge_metrics(session_id or trace_id, judge_details)
+            if judge_score is not None and judge_score < 0.5:
+                ref = session_id or trace_id
+                track("judge_flag", detail=f"session:{ref} score:{judge_score:.2f}")
+
+        client = _get_client()
+        safe_comment = body.comment[:500] if body.comment else ""
+        db_comment = (f"[trace:{trace_id[:16]}] {safe_comment}").strip()
+        if client and _is_uuid(session_id):
+            try:
+                client.table("feedback").insert({
+                    "session_id":  session_id,
+                    "user_id":     user_id,
+                    "rating":      rating,
+                    "comment":     db_comment,
+                    "judge_score": judge_score,
+                }).execute()
+            except Exception as e:
+                logger.warning(f"[FEEDBACK] Vote storage failed: {e}")
+
+        record_feedback_event(
+            value=body.value,
+            rating=rating,
+            user_id=user_id,
+            source="vote",
+            trace_id=trace_id,
+            session_id=session_id,
+            question=question,
+            answer=answer,
+            comment=body.comment,
+            judge_score=judge_score,
+        )
+        track("feedback_vote", detail=f"value:{body.value} trace:{trace_id[:8]} session:{session_id[:8]}")
+
+    _executor.submit(_persist_vote)
     return {"ok": True}
 
 
