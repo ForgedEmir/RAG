@@ -140,7 +140,7 @@ async def health_check():
     from src.monitoring.tracker import _get_client as get_supabase
 
     checks = {
-        "llm_key":      bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")),
+        "llm_key":      bool(os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")),
         "bm25_corpus":  os.path.exists(BM25_CORPUS_FILE),
         "vector_memory": os.getenv("VECTOR_MEMORY_ENABLED", "false").lower() != "false",
     }

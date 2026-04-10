@@ -646,7 +646,7 @@ export default function MonitoringRoute() {
     setError('');
     setLoading(true);
     try {
-      await apiFetch('/health', inputKey); // Test de la clé
+      await apiFetch('/api/monitoring/stats', inputKey); // Test de la clé (endpoint protégé)
       sessionStorage.setItem('lk_monitor_key', inputKey);
       setApiKey(inputKey);
     } catch(err) {
