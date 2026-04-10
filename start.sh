@@ -27,6 +27,6 @@ gunicorn main:app \
   --timeout "$GUNICORN_TIMEOUT" \
   --graceful-timeout "$GUNICORN_GRACEFUL_TIMEOUT" \
   --keep-alive "$GUNICORN_KEEPALIVE" \
-  --max-requests 500 \
-  --max-requests-jitter 50 \
+  --max-requests 2000 \
+  --max-requests-jitter 200 \
   --log-level info
