@@ -86,6 +86,7 @@ Client → POST /api/ask
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ and npm (required to build the frontend)
 - Docker (recommended for production-like local run)
 - API keys: Cerebras (LLM), Qdrant (vector DB), Supabase (auth/data)
 
@@ -102,6 +103,9 @@ venv\Scripts\activate
 source venv/bin/activate
 
 pip install -r requirements.txt
+
+# Build the frontend (requires Node.js 18+)
+cd src/frontend-react && npm install && npm run build && cd ../..
 ```
 
 ### 2. Configure
