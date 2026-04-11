@@ -24,12 +24,13 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-_MODE        = os.getenv("SECURITY_VALIDATOR", "rules").lower()
-_LAKERA_KEY  = os.getenv("LAKERA_API_KEY")
-_LAKERA_URL  = "https://api.lakera.ai/v2/guard"
-_LAKERA_PRJ  = os.getenv("LAKERA_PROJECT_ID")
-_LAKERA_MODE = os.getenv("LAKERA_MODE", "enforce").lower()   # enforce | shadow | disabled
-_CACHE_TTL   = int(os.getenv("LAKERA_CACHE_TTL", "60"))
+_MODE             = os.getenv("SECURITY_VALIDATOR", "rules").lower()
+_LAKERA_KEY       = os.getenv("LAKERA_API_KEY")
+_LAKERA_URL       = "https://api.lakera.ai/v2/guard"
+_LAKERA_PRJ       = os.getenv("LAKERA_PROJECT_ID")
+_LAKERA_MODE      = os.getenv("LAKERA_MODE", "enforce").lower()   # enforce | shadow | disabled
+_CACHE_TTL        = int(os.getenv("LAKERA_CACHE_TTL", "60"))
+_LAKERA_THRESHOLD = float(os.getenv("LAKERA_THRESHOLD", "0.8"))   # 0.0 (très sensible) → 1.0 (peu sensible)
 
 _HTTP_SESSION = requests.Session()
 
@@ -144,16 +145,16 @@ def valider_entree(texte: str) -> ValidationResult:
     if not texte or not texte.strip():
         return {"valid": False, "type": "prompt_injection", "reason": "Entrée vide"}
 
-    # Couche 2 : regex d'injection
-    result = check_patterns(texte)
-    if not result["valid"]:
-        logger.warning(f"[REGEX] Injection détectée : {result['reason']}")
-        return result
-
+    # Couche 1 : regex (uniquement si mode "rules_only", sinon Lakera seul suffit)
     if _MODE in ("rules", "rules_only"):
+        result = check_patterns(texte)
+        if not result["valid"]:
+            logger.warning(f"[REGEX] Injection détectée : {result['reason']}")
+            return result
         return {"valid": True, "type": "ok", "reason": "Validation par règles OK"}
-    lakera_result = _valider_lakera(texte)
-    return lakera_result
+
+    # Couche 2 : Lakera Guard (classifieur IA, moins de faux positifs)
+    return _valider_lakera(texte)
 
 
 def check_patterns(texte: str) -> ValidationResult:
@@ -229,9 +230,14 @@ def _valider_lakera(texte: str) -> ValidationResult:
             # car le PII est déjà géré par pii_masker.py et les questions lore contiennent
             # des prénoms légitimes ("Qui est Lucas ?") qui déclenchent sinon pii/name.
             attack_detected = any(
-                item.get("detector_type") == "prompt_attack" and item.get("detected", False)
+                item.get("detector_type") == "prompt_attack"
+                and item.get("detected", False)
+                and item.get("score", 1.0) >= _LAKERA_THRESHOLD
                 for item in breakdown
             )
+            if any(item.get("detector_type") == "prompt_attack" for item in breakdown):
+                score = next((item.get("score", 0) for item in breakdown if item.get("detector_type") == "prompt_attack"), 0)
+                logger.debug(f"[LAKERA] prompt_attack score={score:.3f} (seuil={_LAKERA_THRESHOLD})")
 
             if not attack_detected:
                 logger.info(f"[LAKERA] Flagged mais prompt_attack=False (PII/content seulement) — autorisé.")

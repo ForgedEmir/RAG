@@ -293,8 +293,17 @@ register_routes(app, _log_buffer)
 
 # Fichiers statiques (frontend) — no-cache en dev pour éviter les versions périmées
 _root_dir = os.path.dirname(__file__)
-_frontend_react_dir = os.path.join(_root_dir, "src", "frontend-react")
+_frontend_react_candidates = [
+    os.path.join(_root_dir, "src", "frontend", "frontend-react"),
+    os.path.join(_root_dir, "src", "frontend-react"),
+]
+_frontend_react_dir = next((p for p in _frontend_react_candidates if os.path.isdir(p)), _frontend_react_candidates[0])
 _frontend_react_dist = os.path.join(_frontend_react_dir, "dist")
+_frontend_build_candidates = [
+    _frontend_react_dist,
+    os.path.join(_root_dir, "src", "frontend"),
+    os.path.join(_root_dir, "frontend"),
+]
 
 
 def _ensure_frontend_build() -> None:
@@ -302,9 +311,9 @@ def _ensure_frontend_build() -> None:
     if _is_dev:
         return
 
-    index_file = os.path.join(_frontend_react_dist, "index.html")
-    if os.path.isfile(index_file):
-        return
+    for build_dir in _frontend_build_candidates:
+        if os.path.isfile(os.path.join(build_dir, "index.html")):
+            return
 
     package_json = os.path.join(_frontend_react_dir, "package.json")
     if not os.path.isfile(package_json):
@@ -339,7 +348,7 @@ def _ensure_frontend_build() -> None:
 
     logger.warning(
         "Build frontend automatique impossible. Installez Node.js/npm ou lancez manuellement: "
-        "cd src/frontend-react && npm install && npm run build"
+        f"cd {os.path.relpath(_frontend_react_dir, _root_dir)} && npm install && npm run build"
         + (f" | Détail: {last_error}" if last_error else "")
     )
 
@@ -347,9 +356,7 @@ def _ensure_frontend_build() -> None:
 _ensure_frontend_build()
 
 _frontend_candidates = [
-    os.path.join(_root_dir, "frontend"),
-    os.path.join(_root_dir, "src", "frontend"),
-    _frontend_react_dist,
+    *_frontend_build_candidates,
 ]
 
 _frontend = _frontend_candidates[0]

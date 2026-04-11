@@ -18,7 +18,7 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
-from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse
+from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
@@ -297,6 +297,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     async def event_stream():
         accumulated, model_used = [], []
+        langfuse_trace_id = None
         timed_out = False
         try:
             yield f"data: {json.dumps({'type': 'meta', 'sources': sources, 'passages': passages, 'confidence': confidence_pct})}\n\n"
@@ -306,14 +307,18 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             def produce():
                 # WHY: stream_reponse est synchrone, la queue évite de bloquer la boucle événementielle.
+                langfuse_ids = []
                 try:
                     for chunk in stream_reponse(question, passages, sources, history,
                                                 model_used=model_used, user_summary=summary,
-                                                vector_memories=memories):
+                                                vector_memories=memories,
+                                                langfuse_trace_ids=langfuse_ids):
                         loop.call_soon_threadsafe(queue.put_nowait, ("text", chunk))
                 except Exception as e:
                     loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
                 finally:
+                    if langfuse_ids:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("langfuse_id", langfuse_ids[0]))
                     loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
 
             _executor.submit(produce)
@@ -335,6 +340,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                     kind, data = await queue.get()
                 if kind == "done":
                     break
+                if kind == "langfuse_id":
+                    langfuse_trace_id = data
+                    continue
                 if kind == "error":
                     track("error", detail=data[:200])
                     yield f"data: {json.dumps({'type': 'error', 'message': data})}\n\n"
@@ -348,7 +356,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                 model_name = f"{model_name} [timeout]"
 
             answer = "".join(accumulated)
-            register_trace_context(trace_id, question, answer, body.session_id, user_id)
+            register_trace_context(trace_id, question, answer, body.session_id, user_id,
+                                   langfuse_trace_id=langfuse_trace_id)
             yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"
 
             if body.session_id:
@@ -388,9 +397,7 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
 
     def _persist_and_judge():
         from src.monitoring.tracker import _get_client
-        question, answer = "", ""
-        if body.rating <= 2:
-            question, answer = _resolve_feedback_context(body.session_id)
+        question, answer = _resolve_feedback_context(body.session_id)
 
         client = _get_client()
         if client and _is_uuid(body.session_id):
@@ -422,6 +429,7 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
 
 
 @router.post("/api/feedback/vote")
+
 async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(get_current_user)):
     trace_id = (body.trace_id or "").strip()
     if not trace_id:
@@ -477,6 +485,7 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
             comment=body.comment,
         )
         track("feedback_vote", detail=f"value:{body.value} trace:{trace_id[:8]} session:{session_id[:8]}")
+        send_langfuse_score(trace_id, body.value, body.comment)
 
     _executor.submit(_persist_vote)
     return {"ok": True}

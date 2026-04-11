@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageSquare, Zap, Database, Shield, FileText, ArrowUpDown, 
   BookOpen, RefreshCw, EyeOff, Scale, Star, BarChart2, Eye, 
-  Volume2, GitBranch, Trash2, Play, Pause, TerminalSquare, Server
+  Brain, Volume2, GitBranch, Trash2, UploadCloud, Play, 
+  Pause, Check, X, Search, Copy, TerminalSquare, Server, Pencil
 } from 'lucide-react';
 
 // ============================================================================
@@ -168,12 +169,13 @@ const Skeleton = ({ className }) => (
   <div className={`animate-pulse bg-white/5 rounded ${className}`}></div>
 );
 
-const Card = ({ children, className = "", delay = 0 }) => (
+const Card = ({ children, className = "", delay = 0, ...props }) => (
   <motion.div 
     initial={{ opacity: 0, y: 12 }} 
     animate={{ opacity: 1, y: 0 }} 
     transition={{ duration: 0.3, delay }}
     className={`liquid-glass rounded-[16px] p-6 ${className}`}
+    {...props}
   >
     {children}
   </motion.div>
@@ -436,6 +438,16 @@ const SourcesTab = ({ apiKey }) => {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState(null); // { ok: bool, text: string }
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
+  const [replaceTarget, setReplaceTarget] = useState('');
+  const replaceTargetRef = useRef('');
+  const ignoreNextUploadZoneClickRef = useRef(false);
+  const MAX_UPLOAD_SIZE_BYTES = 500 * 1024;
+  const ALLOWED_UPLOAD_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'xml', 'xlsx', 'pdf']);
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -446,12 +458,119 @@ const SourcesTab = ({ apiKey }) => {
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
+  useEffect(() => {
+    const preventBrowserDrop = (e) => {
+      // Empêche le navigateur d'ouvrir le fichier déposé hors de la zone d'upload.
+      e.preventDefault();
+    };
+
+    window.addEventListener('dragover', preventBrowserDrop);
+    window.addEventListener('drop', preventBrowserDrop);
+    return () => {
+      window.removeEventListener('dragover', preventBrowserDrop);
+      window.removeEventListener('drop', preventBrowserDrop);
+    };
+  }, []);
+
   const handleDelete = async (filename) => {
-    if(!MOCK_MODE) {
-      await apiFetch('/api/admin/delete', apiKey, { method: 'DELETE', body: JSON.stringify({ filename }) });
-    } else {
-      setFiles(f => f.filter(name => name !== filename));
+    try {
+      if(!MOCK_MODE) {
+        const res = await apiFetch('/api/admin/delete', apiKey, { method: 'DELETE', body: JSON.stringify({ filename }) });
+        const details = res.ingestion?.summary ? ` ${res.ingestion.summary}` : '';
+        setUploadMsg({ ok: true, text: `${res.message || 'Fichier supprimé.'}${details}`.trim() });
+        await fetchFiles();
+      } else {
+        setFiles(f => f.filter(name => name !== filename));
+        setUploadMsg({ ok: true, text: 'Fichier supprimé.' });
+      }
+    } catch (e) {
+      setUploadMsg({ ok: false, text: e.message || 'Suppression impossible.' });
     }
+  };
+
+  const openReplacePicker = (filename) => {
+    replaceTargetRef.current = filename;
+    setReplaceTarget(filename);
+    if (replaceInputRef.current) {
+      // Important: reset value so selecting the same file still triggers onChange.
+      replaceInputRef.current.value = '';
+      replaceInputRef.current.dataset.targetFilename = filename;
+    }
+    ignoreNextUploadZoneClickRef.current = true;
+    setUploadMsg({ ok: true, text: `Sélectionne le fichier de remplacement pour '${filename}'.` });
+    replaceInputRef.current?.click();
+  };
+
+  const validateUploadFile = (file) => {
+    if (!file) return { ok: false, error: 'Aucun fichier sélectionné.' };
+    const name = (file.name || '').trim();
+    if (!name || name.includes('..') || /[\\/]/.test(name)) {
+      return { ok: false, error: 'Nom de fichier invalide.' };
+    }
+
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+      return { ok: false, error: 'Extension non supportée.' };
+    }
+
+    if (!file.size || file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return { ok: false, error: 'Fichier vide ou trop volumineux (max 500 Ko).' };
+    }
+
+    return { ok: true };
+  };
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    const check = validateUploadFile(file);
+    if (!check.ok) {
+      setUploadMsg({ ok: false, text: check.error });
+      return;
+    }
+
+    setUploading(true);
+    setUploadMsg(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'X-Monitoring-Key': apiKey },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const details = data.ingestion?.summary ? ` ${data.ingestion.summary}` : '';
+        setUploadMsg({ ok: true, text: `${data.message || 'Fichier uploadé !'}${details}`.trim() });
+        fetchFiles();
+      } else {
+        setUploadMsg({ ok: false, text: data.error || 'Erreur upload.' });
+      }
+    } catch(e) {
+      setUploadMsg({ ok: false, text: 'Erreur réseau.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDragging(false);
+
+    const items = Array.from(e.dataTransfer?.items || []);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (items.length && items.some((item) => item.kind !== 'file')) {
+      setUploadMsg({ ok: false, text: 'Dépose uniquement des fichiers.' });
+      return;
+    }
+    if (files.length !== 1) {
+      setUploadMsg({ ok: false, text: 'Dépose un seul fichier à la fois.' });
+      return;
+    }
+
+    const file = files[0];
+    if (file) handleUpload(file);
   };
 
   const handleReindex = async () => {
@@ -462,6 +581,59 @@ const SourcesTab = ({ apiKey }) => {
       await new Promise(r => setTimeout(r, 2000));
     }
     setReindexing(false);
+  };
+
+  const handleReplace = async (file, targetFilename) => {
+    if (!file) {
+      // User closed the picker without selecting a file.
+      return;
+    }
+    const effectiveTarget = targetFilename || replaceTargetRef.current;
+    if (!effectiveTarget) {
+      setUploadMsg({ ok: false, text: 'Fichier cible introuvable pour le remplacement.' });
+      return;
+    }
+    const check = validateUploadFile(file);
+    if (!check.ok) {
+      setUploadMsg({ ok: false, text: check.error });
+      return;
+    }
+
+    setUploading(true);
+    setUploadMsg(null);
+    try {
+      const formData = new FormData();
+      // Reuse /upload upsert path and force the backend-visible filename.
+      formData.append('file', file, effectiveTarget);
+
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'X-Monitoring-Key': apiKey },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const details = data.ingestion?.summary ? ` ${data.ingestion.summary}` : '';
+        setUploadMsg({ ok: true, text: `${data.message || 'Fichier remplacé !'}${details}`.trim() });
+        await fetchFiles();
+      } else {
+        setUploadMsg({ ok: false, text: data.error || 'Erreur remplacement.' });
+      }
+    } catch (e) {
+      setUploadMsg({ ok: false, text: 'Erreur réseau.' });
+    } finally {
+      setUploading(false);
+      setReplaceTarget('');
+      replaceTargetRef.current = '';
+      if (replaceInputRef.current) {
+        replaceInputRef.current.value = '';
+        replaceInputRef.current.dataset.targetFilename = '';
+      }
+      // Ignore one accidental click on the upload zone when the OS file picker closes.
+      setTimeout(() => {
+        ignoreNextUploadZoneClickRef.current = false;
+      }, 100);
+    }
   };
 
   const getExtColor = (ext) => {
@@ -475,8 +647,8 @@ const SourcesTab = ({ apiKey }) => {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6">
-      <Card delay={0} className="h-[540px] flex flex-col">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <Card delay={0} className="xl:col-span-2 h-[500px] flex flex-col">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-white/40 text-xs uppercase tracking-widest">Fichiers Indexés ({files.length})</h3>
           <button onClick={handleReindex} disabled={reindexing} className="flex items-center gap-2 px-4 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold bg-[#5ed29c]/10 text-[#5ed29c] hover:bg-[#5ed29c]/20 transition-colors disabled:opacity-50">
@@ -493,13 +665,63 @@ const SourcesTab = ({ apiKey }) => {
                   <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border ${getExtColor(ext)}`}>{ext}</span>
                   <span className="text-sm text-white/80">{file}</span>
                 </div>
-                <button onClick={() => handleDelete(file)} className="p-2 text-white/20 hover:text-[#f87171] transition-colors opacity-0 group-hover:opacity-100">
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openReplacePicker(file); }}
+                    className="p-2 text-white/20 hover:text-[#5ed29c] transition-colors"
+                    title="Modifier ce fichier"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(file); }}
+                    className="p-2 text-white/20 hover:text-[#f87171] transition-colors"
+                    title="Supprimer ce fichier"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </motion.div>
             )
           })}
         </div>
+      </Card>
+
+      <Card delay={0.1}
+        className={`flex flex-col items-center justify-center border-dashed border-2 transition-colors cursor-pointer group text-center py-12 ${dragging ? 'border-[#5ed29c] bg-[#5ed29c]/5' : 'border-white/10 hover:border-[#5ed29c]/50'}`}
+        onClick={() => {
+          if (ignoreNextUploadZoneClickRef.current) return;
+          fileInputRef.current?.click();
+        }}
+        onDragEnter={(e) => { e.stopPropagation(); e.preventDefault(); setDragging(true); }}
+        onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragging(true); }}
+        onDragLeave={(e) => { e.stopPropagation(); e.preventDefault(); setDragging(false); }}
+        onDrop={handleDrop}
+      >
+        <input ref={fileInputRef} type="file" accept=".txt,.md,.csv,.json,.xml,.xlsx,.pdf" className="hidden"
+          onChange={(e) => handleUpload(e.target.files[0])} />
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept=".txt,.md,.csv,.json,.xml,.xlsx,.pdf"
+          className="hidden"
+          onChange={(e) => handleReplace(e.target.files[0], e.target.dataset.targetFilename || replaceTargetRef.current || replaceTarget)}
+        />
+        <div className={`p-4 rounded-full mb-4 transition-colors ${dragging ? 'bg-[#5ed29c]/20' : 'bg-white/5 group-hover:bg-[#5ed29c]/10'}`}>
+          <UploadCloud size={32} className={`transition-colors ${dragging ? 'text-[#5ed29c]' : 'text-white/40 group-hover:text-[#5ed29c]'}`} />
+        </div>
+        <h4 className="text-lg font-serif-italic mb-2">
+          {uploading ? 'Upload en cours...' : 'Ajouter un document'}
+        </h4>
+        <p className="text-xs text-white/40 px-6">
+          {dragging ? 'Relâchez pour uploader' : 'Glissez-déposez vos fichiers ici ou cliquez pour parcourir.'}
+        </p>
+        {uploadMsg && (
+          <div className={`mt-4 text-xs px-4 py-2 rounded-lg ${uploadMsg.ok ? 'text-[#5ed29c] bg-[#5ed29c]/10' : 'text-[#f87171] bg-[#f87171]/10'}`}>
+            {uploadMsg.text}
+          </div>
+        )}
+        <div className="text-[10px] text-white/20 uppercase tracking-widest mt-4">.txt, .md, .csv, .json, .xml, .xlsx, .pdf</div>
       </Card>
     </div>
   );

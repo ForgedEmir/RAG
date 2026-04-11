@@ -79,6 +79,7 @@ def register_trace_context(
     answer: str,
     session_id: str = "",
     user_id: str = "",
+    langfuse_trace_id: str = None,
 ) -> None:
     if not trace_id:
         return
@@ -90,6 +91,7 @@ def register_trace_context(
         "answer": (answer or "")[:6000],
         "session_id": (session_id or "")[:64],
         "user_id": (user_id or "")[:64],
+        "langfuse_trace_id": (langfuse_trace_id or "")[:128],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "_ts": now_ts,
     }
@@ -112,6 +114,7 @@ def get_trace_context(trace_id: str) -> dict:
             "answer": payload.get("answer", ""),
             "session_id": payload.get("session_id", ""),
             "user_id": payload.get("user_id", ""),
+            "langfuse_trace_id": payload.get("langfuse_trace_id", ""),
             "created_at": payload.get("created_at", ""),
         }
 

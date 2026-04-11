@@ -218,7 +218,7 @@ const EmptyState = ({ onSuggest }) => {
   ];
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center h-full max-w-3xl mx-auto px-6 w-full text-center mt-10">
+    <div className="flex-1 flex flex-col items-center justify-center h-full max-w-3xl mx-auto px-6 w-full text-center">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -251,6 +251,28 @@ const EmptyState = ({ onSuggest }) => {
     </div>
   );
 };
+
+// ── Animated placeholder hook ─────────────────────────────────────────────
+const PLACEHOLDERS = [
+  'Interroger LoreKeeper…',
+  'Qui sont les personnages principaux ?',
+  'Décris le système de magie runique…',
+  'Résume les factions du monde…',
+  'Quels artefacts légendaires existent ?',
+];
+
+function useAnimatedPlaceholder() {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => { setIndex(i => (i + 1) % PLACEHOLDERS.length); setVisible(true); }, 340);
+    }, 3400);
+    return () => clearInterval(t);
+  }, []);
+  return { text: PLACEHOLDERS[index], visible };
+}
 
 // ── TTS hook ────────────────────────────────────────────────────────────────
 function useTTS() {
@@ -466,6 +488,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
   const scrollContainerRef = useRef(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const initTriggered = useRef(false);
+  const { text: animatedPlaceholder, visible: placeholderVisible } = useAnimatedPlaceholder();
 
   // ── STT (Speech-to-Text via Web Speech API) ───────────────────────────────
   const [recording, setRecording] = useState(false);
@@ -700,21 +723,68 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
 
         <div className="w-full px-4 md:px-8 py-6 shrink-0 relative z-20">
           <div className="max-w-[760px] mx-auto">
-            <div className="liquid-glass rounded-[48px] p-2 bg-black/60 border border-white/10 shadow-2xl flex items-end gap-2 focus-within:border-white/20 focus-within:bg-black/80 transition-all">
-              <div className="flex-1 flex flex-col justify-center min-h-[56px] pl-6 pr-2 py-2">
+
+            {/* Action chips — follow-up suggestions when conversation active */}
+            <AnimatePresence>
+              {!streaming && activeSession?.messages?.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-center gap-2 mb-3 flex-wrap"
+                >
+                  {['Développe ce point', 'Donne des exemples', 'Simplifie', 'Quels personnages ?'].map((chip, i) => (
+                    <motion.button
+                      key={chip}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.04 }}
+                      whileHover={{ y: -1 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => { send(chip, activeId || undefined); setAutoScroll(true); }}
+                      className="px-3.5 py-1.5 rounded-full text-[11px] transition-all duration-150"
+                      style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.35)' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.14)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.35)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}
+                    >
+                      {chip}
+                    </motion.button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Input — animated border glow when streaming */}
+            <div
+              className="liquid-glass rounded-[48px] p-2 shadow-2xl flex items-end gap-2 transition-all duration-300"
+              style={{
+                background: streaming ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.6)',
+                border: streaming ? '1px solid rgba(94,210,156,0.32)' : '1px solid rgba(255,255,255,0.1)',
+                boxShadow: streaming ? '0 0 0 3px rgba(94,210,156,0.07), 0 20px 60px rgba(0,0,0,0.5)' : '0 20px 60px rgba(0,0,0,0.4)',
+              }}
+            >
+              <div className="flex-1 flex items-center min-h-[56px] pl-6 pr-2">
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
-                  placeholder={recording ? 'Écoute en cours...' : 'Interroger LoreKeeper...'}
-                  className="w-full bg-transparent border-none outline-none text-white/90 text-[16px] leading-[1.5] resize-none placeholder:text-white/20 hide-scrollbar font-light"
+                  placeholder={recording ? 'Écoute en cours...' : animatedPlaceholder}
+                  className="w-full bg-transparent border-none outline-none text-white/90 text-[16px] leading-[1.5] resize-none hide-scrollbar font-light self-center"
+                  style={{
+                    caretColor: '#5ed29c',
+                    opacity: !placeholderVisible && !input ? 0.85 : 1,
+                    transition: 'opacity 0.3s',
+                    paddingTop: 0,
+                    paddingBottom: 0,
+                    margin: 0,
+                  }}
                   rows={1}
                 />
               </div>
 
               <div className="shrink-0 flex items-center gap-1 p-2">
-                {/* Bouton micro STT */}
                 {!streaming && (
                   <button
                     onClick={toggleRecording}
@@ -729,29 +799,34 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
                   </button>
                 )}
 
-                {/* Bouton envoyer / stop */}
                 {streaming ? (
-                  <button onClick={abort} className="flex items-center justify-center w-12 h-12 rounded-full bg-white/[0.06] border border-white/10 hover:bg-white/10 text-white/70 hover:text-white transition-colors">
+                  <motion.button
+                    onClick={abort}
+                    whileHover={{ scale: 1.06 }}
+                    whileTap={{ scale: 0.92 }}
+                    className="flex items-center justify-center w-12 h-12 rounded-full transition-colors"
+                    style={{ background: 'rgba(94,210,156,0.1)', border: '1px solid rgba(94,210,156,0.25)', color: '#5ed29c' }}
+                  >
                     <Square size={14} fill="currentColor" />
-                  </button>
+                  </motion.button>
                 ) : (
-                  <button
+                  <motion.button
                     onClick={handleSubmit}
                     disabled={!input.trim()}
-                    className="flex items-center justify-center w-12 h-12 rounded-full bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95 transition-transform shadow-lg"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.93 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                    className="flex items-center justify-center w-12 h-12 rounded-full bg-white text-black disabled:opacity-30 disabled:cursor-not-allowed shadow-lg"
                   >
                     <ArrowUpRight size={22} strokeWidth={2} />
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </div>
 
-            <div className="flex justify-between items-center px-6 mt-3">
-              <div className="text-[10px] text-white/30 uppercase tracking-widest flex items-center gap-1.5">
-                <Sparkles size={10} className="text-[#5ed29c]" /> Propulsé par LoreKeeper RAG
-              </div>
-              <div className="text-[9px] text-white/20 uppercase tracking-widest">
-                Réponses à titre indicatif
+            <div className="flex justify-center items-center px-6 mt-3">
+              <div className="text-[10px] text-white/20 uppercase tracking-widest flex items-center gap-1.5">
+                <Sparkles size={10} className="text-[#5ed29c]/50" /> Propulsé par LoreKeeper RAG
               </div>
             </div>
           </div>

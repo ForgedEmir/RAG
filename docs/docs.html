@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oracle LoreKeeper — Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --amber: #f59e0b;
+      --amber-light: #fef3c7;
+      --amber-dark: #d97706;
+      --sidebar-bg: #0f172a;
+      --sidebar-text: #94a3b8;
+      --sidebar-active: #f59e0b;
+      --sidebar-hover: #1e293b;
+      --header-h: 60px;
+      --sidebar-w: 268px;
+      --toc-w: 220px;
+      --content-max: 760px;
+      --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-400: #94a3b8;
+      --slate-500: #64748b;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-900: #0f172a;
+      --green: #10b981;
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --red: #ef4444;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #fff;
+      color: var(--slate-700);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--header-h);
+      background: #fff;
+      border-bottom: 1px solid var(--slate-200);
+      display: flex; align-items: center; padding: 0 24px;
+      gap: 24px;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 16px; color: var(--slate-900);
+      text-decoration: none; white-space: nowrap;
+    }
+
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+
+    .logo-sep { color: var(--slate-300); margin: 0 4px; }
+
+    nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+
+    nav a {
+      font-size: 14px; font-weight: 500;
+      color: var(--slate-500);
+      text-decoration: none;
+      padding: 6px 12px; border-radius: 6px;
+      transition: background .15s, color .15s;
+    }
+
+    nav a:hover { background: var(--slate-100); color: var(--slate-900); }
+
+    .btn-primary {
+      background: var(--amber); color: #fff !important;
+      font-weight: 600 !important; border-radius: 6px;
+    }
+
+    .btn-primary:hover { background: var(--amber-dark) !important; }
+
+    /* ─── SIDEBAR ─── */
+    aside {
+      position: fixed; top: var(--header-h); left: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--sidebar-bg);
+      overflow-y: auto; overflow-x: hidden;
+      padding: 20px 0 40px;
+      scrollbar-width: thin; scrollbar-color: #1e293b transparent;
+    }
+
+    aside::-webkit-scrollbar { width: 4px; }
+    aside::-webkit-scrollbar-track { background: transparent; }
+    aside::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+
+    .nav-section { margin-bottom: 8px; }
+
+    .nav-section-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #475569;
+      padding: 12px 20px 4px;
+    }
+
+    .nav-item {
+      display: block;
+      font-size: 13.5px; font-weight: 450;
+      color: var(--sidebar-text);
+      text-decoration: none;
+      padding: 5px 20px;
+      border-left: 2px solid transparent;
+      transition: all .15s;
+    }
+
+    .nav-item:hover { color: #e2e8f0; background: var(--sidebar-hover); }
+
+    .nav-item.active {
+      color: var(--amber);
+      border-left-color: var(--amber);
+      background: rgba(245,158,11,.08);
+      font-weight: 500;
+    }
+
+    .nav-sub {
+      display: block;
+      font-size: 13px; font-weight: 400;
+      color: #64748b;
+      text-decoration: none;
+      padding: 4px 20px 4px 32px;
+      border-left: 2px solid transparent;
+      transition: all .15s;
+    }
+
+    .nav-sub:hover { color: #cbd5e1; background: var(--sidebar-hover); }
+    .nav-sub.active { color: var(--amber); border-left-color: var(--amber); }
+
+    /* ─── MAIN ─── */
+    main {
+      margin-left: var(--sidebar-w);
+      margin-top: var(--header-h);
+      padding: 48px 40px 80px;
+      max-width: calc(var(--sidebar-w) + var(--content-max) + var(--toc-w) + 80px);
+    }
+
+    .content-wrap {
+      max-width: var(--content-max);
+    }
+
+    /* ─── TOC ─── */
+    .toc {
+      position: fixed;
+      top: calc(var(--header-h) + 40px);
+      right: 0;
+      width: var(--toc-w);
+      padding: 0 24px;
+      max-height: calc(100vh - var(--header-h) - 60px);
+      overflow-y: auto;
+    }
+
+    .toc-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--slate-400);
+      margin-bottom: 8px;
+    }
+
+    .toc a {
+      display: block;
+      font-size: 12.5px; color: var(--slate-500);
+      text-decoration: none;
+      padding: 3px 0;
+      border-left: 2px solid var(--slate-200);
+      padding-left: 10px;
+      transition: all .15s;
+    }
+
+    .toc a:hover { color: var(--slate-900); border-left-color: var(--amber); }
+    .toc a.active { color: var(--amber); border-left-color: var(--amber); font-weight: 500; }
+
+    .toc a.toc-sub { padding-left: 22px; font-size: 12px; }
+
+    /* ─── CONTENT TYPOGRAPHY ─── */
+    .section { margin-bottom: 72px; }
+
+    h1 {
+      font-size: 32px; font-weight: 700;
+      color: var(--slate-900); line-height: 1.25;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-size: 24px; font-weight: 700;
+      color: var(--slate-900); line-height: 1.3;
+      margin-top: 56px; margin-bottom: 16px;
+      padding-top: 8px;
+      border-top: 1px solid var(--slate-200);
+      scroll-margin-top: 80px;
+    }
+
+    h3 {
+      font-size: 18px; font-weight: 600;
+      color: var(--slate-800); line-height: 1.4;
+      margin-top: 32px; margin-bottom: 12px;
+      scroll-margin-top: 80px;
+    }
+
+    h4 {
+      font-size: 15px; font-weight: 600;
+      color: var(--slate-700);
+      margin-top: 20px; margin-bottom: 8px;
+    }
+
+    p { margin-bottom: 16px; color: var(--slate-600); }
+
+    a { color: var(--amber-dark); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    ul, ol { margin: 0 0 16px 20px; color: var(--slate-600); }
+    li { margin-bottom: 4px; }
+
+    strong { color: var(--slate-800); font-weight: 600; }
+
+    /* ─── CODE ─── */
+    pre {
+      background: #0d1117;
+      border-radius: 10px;
+      padding: 20px;
+      overflow-x: auto;
+      margin: 16px 0 24px;
+      font-size: 13px;
+      line-height: 1.6;
+      border: 1px solid #1e293b;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+    }
+
+    p code, li code, td code {
+      background: var(--slate-100);
+      color: #c7254e;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12.5px;
+    }
+
+    /* ─── TABLES ─── */
+    .table-wrap { overflow-x: auto; margin: 16px 0 24px; }
+
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th {
+      background: var(--slate-50);
+      text-align: left; font-weight: 600;
+      color: var(--slate-700);
+      padding: 10px 14px;
+      border-bottom: 2px solid var(--slate-200);
+    }
+
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--slate-100);
+      color: var(--slate-600);
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--slate-50); }
+
+    /* ─── BADGES ─── */
+    .badge {
+      display: inline-block;
+      font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+
+    .badge-get { background: #dbeafe; color: #1d4ed8; }
+    .badge-post { background: #dcfce7; color: #15803d; }
+    .badge-delete { background: #fee2e2; color: #b91c1c; }
+    .badge-opt { background: var(--slate-100); color: var(--slate-500); }
+    .badge-required { background: #fef3c7; color: #92400e; }
+
+    /* ─── CALLOUTS ─── */
+    .callout {
+      display: flex; gap: 12px;
+      padding: 14px 16px; border-radius: 8px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    .callout-icon { flex-shrink: 0; font-size: 16px; margin-top: 1px; }
+
+    .callout-info { background: #eff6ff; border-left: 3px solid #3b82f6; }
+    .callout-info .callout-body { color: #1e40af; }
+
+    .callout-warn { background: #fffbeb; border-left: 3px solid #f59e0b; }
+    .callout-warn .callout-body { color: #92400e; }
+
+    .callout-tip { background: #f0fdf4; border-left: 3px solid #10b981; }
+    .callout-tip .callout-body { color: #065f46; }
+
+    /* ─── PIPELINE DIAGRAM ─── */
+    .pipeline {
+      background: #0d1117;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 20px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: #e2e8f0;
+      line-height: 1.8;
+      overflow-x: auto;
+      margin: 16px 0 24px;
+    }
+
+    .pipeline .comment { color: #6b7280; }
+    .pipeline .step { color: #f59e0b; font-weight: 500; }
+    .pipeline .arrow { color: #64748b; }
+    .pipeline .sub { color: #94a3b8; padding-left: 16px; }
+
+    /* ─── STACK GRID ─── */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px; margin: 16px 0 24px;
+    }
+
+    .stack-card {
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .stack-card-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--slate-400); margin-bottom: 6px;
+    }
+
+    .stack-card-value {
+      font-size: 13.5px; font-weight: 500;
+      color: var(--slate-800);
+    }
+
+    .stack-card-sub { font-size: 12px; color: var(--slate-500); margin-top: 2px; }
+
+    /* ─── FEATURE LIST ─── */
+    .feature-list { list-style: none; margin: 0 0 24px; padding: 0; }
+
+    .feature-list li {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--slate-100);
+      font-size: 14px; color: var(--slate-600);
+    }
+
+    .feature-list li:last-child { border-bottom: none; }
+    .feature-check { color: var(--green); font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ─── ENDPOINT CARD ─── */
+    .endpoint-card {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+
+    .endpoint-header {
+      background: var(--slate-50);
+      padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+
+    .endpoint-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; font-weight: 600;
+      color: var(--slate-800);
+    }
+
+    .endpoint-desc { font-size: 13px; color: var(--slate-500); margin-left: auto; }
+    .endpoint-body { padding: 18px; }
+
+    /* ─── PROFILE CARDS ─── */
+    .profiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 24px; }
+
+    .profile-card {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px; padding: 16px;
+      text-align: center;
+    }
+
+    .profile-card.recommended {
+      border-color: var(--amber);
+      background: #fffbeb;
+    }
+
+    .profile-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px; font-weight: 600;
+      color: var(--slate-800); margin-bottom: 8px;
+    }
+
+    .profile-tag {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .04em;
+      color: var(--amber-dark); margin-bottom: 8px;
+    }
+
+    .profile-desc { font-size: 12.5px; color: var(--slate-500); }
+
+    /* ─── TEAM ─── */
+    .team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin: 20px 0; }
+
+    .team-card {
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 10px; padding: 20px 16px;
+      text-align: center;
+    }
+
+    .team-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--amber), #d97706);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 700; color: #fff;
+      margin: 0 auto 10px;
+    }
+
+    .team-name { font-size: 14px; font-weight: 600; color: var(--slate-800); }
+    .team-role { font-size: 12px; color: var(--slate-500); margin-top: 2px; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      margin-left: var(--sidebar-w);
+      padding: 20px 40px;
+      border-top: 1px solid var(--slate-200);
+      font-size: 13px; color: var(--slate-400);
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 1200px) {
+      .toc { display: none; }
+    }
+
+    @media (max-width: 768px) {
+      aside { transform: translateX(-100%); transition: transform .25s; z-index: 50; }
+      aside.open { transform: translateX(0); }
+      main { margin-left: 0; padding: 24px 20px 60px; }
+      footer { margin-left: 0; }
+      .profiles { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<header>
+  <a href="#" class="logo">
+    <div class="logo-icon">⚡</div>
+    Oracle LoreKeeper
+    <span class="logo-sep">/</span>
+    <span style="font-weight:400;color:#64748b;">Docs</span>
+  </a>
+
+  <nav>
+    <a href="#vue-ensemble">Vue d'ensemble</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#api">API</a>
+    <a href="#deploiement">Déploiement</a>
+    <a href="#" class="btn-primary">Accéder au Chat →</a>
+  </nav>
+</header>
+
+<!-- ═══════════════════════════ SIDEBAR ═══════════════════════════ -->
+<aside id="sidebar">
+
+  <div class="nav-section">
+    <div class="nav-section-title">Démarrage</div>
+    <a class="nav-item active" href="#vue-ensemble">Vue d'ensemble</a>
+    <a class="nav-sub" href="#intro">Introduction</a>
+    <a class="nav-sub" href="#rag">Qu'est-ce qu'un RAG ?</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Architecture</div>
+    <a class="nav-item" href="#architecture">Architecture globale</a>
+    <a class="nav-sub" href="#pipeline">Pipeline complet</a>
+    <a class="nav-sub" href="#stack">Stack technique</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Composants</div>
+    <a class="nav-item" href="#ingestion">Ingestion</a>
+    <a class="nav-item" href="#recherche">Recherche Hybride</a>
+    <a class="nav-item" href="#cache">Cache Sémantique</a>
+    <a class="nav-item" href="#generation">Génération LLM</a>
+    <a class="nav-item" href="#securite">Sécurité</a>
+    <a class="nav-sub" href="#validation">Validation & Injection</a>
+    <a class="nav-sub" href="#pii">Masquage PII</a>
+    <a class="nav-item" href="#memoire">Mémoire Utilisateur</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Observabilité</div>
+    <a class="nav-item" href="#monitoring">Monitoring</a>
+    <a class="nav-sub" href="#dashboard">Dashboard React</a>
+    <a class="nav-sub" href="#langfuse">Langfuse (LLM Tracing)</a>
+    <a class="nav-sub" href="#events">Événements & Logs</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">API Reference</div>
+    <a class="nav-item" href="#api">Endpoints</a>
+    <a class="nav-sub" href="#api-ask">POST /api/ask</a>
+    <a class="nav-sub" href="#api-feedback">POST /api/feedback</a>
+    <a class="nav-sub" href="#api-health">GET /health</a>
+    <a class="nav-sub" href="#api-monitoring">GET /api/monitoring/*</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Déploiement</div>
+    <a class="nav-item" href="#deploiement">Docker</a>
+    <a class="nav-item" href="#env">Variables d'environnement</a>
+    <a class="nav-item" href="#tests">Tests</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Intégrations</div>
+    <a class="nav-item" href="#mcp">MCP Server</a>
+    <a class="nav-item" href="#supabase">Supabase</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">Projet</div>
+    <a class="nav-item" href="#equipe">Équipe</a>
+    <a class="nav-sub" href="#decisions">Décisions techniques</a>
+    <a class="nav-sub" href="#workflow">Workflow Git</a>
+  </div>
+
+</aside>
+
+<!-- ═══════════════════════════ MAIN ═══════════════════════════ -->
+<main>
+<div class="content-wrap">
+
+<!-- ──────────────────── VUE D'ENSEMBLE ──────────────────── -->
+<div class="section" id="vue-ensemble">
+
+  <h1 id="intro">Oracle LoreKeeper</h1>
+  <p style="font-size:18px;color:#475569;margin-bottom:24px;">Backend RAG production-grade pour répondre aux questions des joueurs sur le lore d'<strong>Aethelgard Online</strong>, un MMORPG fantasy.</p>
+
+  <div class="stack-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));">
+    <div class="stack-card">
+      <div class="stack-card-label">Framework</div>
+      <div class="stack-card-value">FastAPI</div>
+      <div class="stack-card-sub">Python 3.11+</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-card-label">Vector DB</div>
+      <div class="stack-card-value">Qdrant</div>
+      <div class="stack-card-sub">Cloud ou local</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-card-label">LLM Primary</div>
+      <div class="stack-card-value">Cerebras</div>
+      <div class="stack-card-sub">llama3.1-8b</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-card-label">Cache</div>
+      <div class="stack-card-value">Redis</div>
+      <div class="stack-card-sub">Sémantique 92%</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-card-label">Auth & BDD</div>
+      <div class="stack-card-value">Supabase</div>
+      <div class="stack-card-sub">JWT + PostgreSQL</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-card-label">Tests</div>
+      <div class="stack-card-value">131 tests</div>
+      <div class="stack-card-sub">pytest + Locust</div>
+    </div>
+  </div>
+
+  <h2 id="rag">Qu'est-ce qu'un RAG ?</h2>
+  <p>
+    <strong>RAG (Retrieval-Augmented Generation)</strong> est une architecture IA qui résout deux problèmes fondamentaux des LLMs : l'<em>hallucination</em> (ils inventent des réponses plausibles) et le <em>manque d'accès aux données privées</em> (ils ne connaissent pas votre base documentaire).
+  </p>
+
+  <div class="callout callout-info">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>Analogie simple :</strong> Plutôt que de demander à un expert de répondre de mémoire, on lui donne d'abord les documents pertinents, puis on lui pose la question. Les réponses sont sourcées, vérifiables, et toujours ancrées dans la réalité.
+    </div>
+  </div>
+
+  <div class="pipeline">
+    <span class="step">Question utilisateur</span>
+    <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="arrow">↓</span>
+    <br><span class="comment">┌─────────────────────────────────────────────────────┐</span>
+    <br><span class="comment">│</span>&nbsp;<span class="step">[RETRIEVE]</span>&nbsp;<span style="color:#e2e8f0;">→ Chercher les passages pertinents</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">│</span>
+    <br><span class="comment">│</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dans la base documentaire indexée&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">│</span>
+    <br><span class="comment">│</span>
+    <br><span class="comment">│</span>&nbsp;<span class="step">[AUGMENT]</span>&nbsp;&nbsp;<span style="color:#e2e8f0;">→ Injecter ces passages dans le prompt</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">│</span>
+    <br><span class="comment">│</span>
+    <br><span class="comment">│</span>&nbsp;<span class="step">[GENERATE]</span>&nbsp;<span style="color:#e2e8f0;">→ Le LLM répond en se basant sur les docs</span>&nbsp;&nbsp;&nbsp;<span class="comment">│</span>
+    <br><span class="comment">└─────────────────────────────────────────────────────┘</span>
+    <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="arrow">↓</span>
+    <br><span class="step">Réponse sourcée et fiable</span>
+  </div>
+
+  <p><strong>Avantages concrets :</strong></p>
+  <ul>
+    <li>Les réponses citent toujours des documents réels — <strong>zéro hallucination</strong></li>
+    <li>La base peut être <strong>mise à jour sans ré-entraîner</strong> le modèle</li>
+    <li>On garde le <strong>contrôle total sur les données</strong> indexées</li>
+    <li>Fonctionne avec n'importe quel LLM (OpenAI, Cerebras, Groq…)</li>
+  </ul>
+
+</div>
+
+<!-- ──────────────────── ARCHITECTURE ──────────────────── -->
+<div class="section" id="architecture">
+  <h2>Architecture</h2>
+
+  <h3 id="pipeline">Pipeline complet — requête /api/ask</h3>
+
+  <div class="pipeline">
+<span style="color:#f59e0b;font-weight:600;">POST /api/ask</span>
+<span class="arrow">
+│
+├──</span> <span class="step">1. Authentification</span>
+<span class="sub">│&nbsp;&nbsp; JWT Supabase → user_id</span>
+<span class="sub">│&nbsp;&nbsp; ou guest_&lt;uuid&gt; (mode anonyme)</span>
+<span class="arrow">│
+├──</span> <span class="step">2. Masquage PII</span> <span class="comment">(pii_masker.py)</span>
+<span class="sub">│&nbsp;&nbsp; Email, téléphone, IP, carte bancaire → [EMAIL], [TEL]…</span>
+<span class="arrow">│
+├──</span> <span class="step">3. Validation sécurité</span> <span class="comment">(validator.py)</span>
+<span class="sub">│&nbsp;&nbsp; Regex : 70+ patterns injection/jailbreak → &lt;1ms</span>
+<span class="sub">│&nbsp;&nbsp; Lakera Guard (optionnel) → classifieur IA → &lt;50ms</span>
+<span class="arrow">│
+├──</span> <span class="step">4. Cache sémantique</span> <span class="comment">(semantic_cache.py)</span>
+<span class="sub">│&nbsp;&nbsp; Similarité ≥ 92% → réponse Redis servie directement</span>
+<span class="arrow">│
+├──</span> <span class="step">5. Contexte utilisateur</span>
+<span class="sub">│&nbsp;&nbsp; Historique conversation (5 derniers échanges)</span>
+<span class="sub">│&nbsp;&nbsp; Résumé utilisateur LLM (profil 150 mots)</span>
+<span class="sub">│&nbsp;&nbsp; Mémoire vectorielle long-terme (optionnel)</span>
+<span class="arrow">│
+├──</span> <span class="step">6. Reformulation</span> <span class="comment">(generator.py)</span>
+<span class="sub">│&nbsp;&nbsp; Question ambiguë → réécrite avec contexte de l'historique</span>
+<span class="arrow">│
+├──</span> <span class="step">7. Recherche hybride</span> <span class="comment">(search.py)</span>
+<span class="sub">│&nbsp;&nbsp; Vectorielle (FastEmbed ONNX 384-dim)</span>
+<span class="sub">│&nbsp;&nbsp; + BM25 lexicale (stopwords français)</span>
+<span class="sub">│&nbsp;&nbsp; → Fusion RRF (k=60)</span>
+<span class="sub">│&nbsp;&nbsp; → Reranker cross-encoder (Xenova/ms-marco)</span>
+<span class="sub">│&nbsp;&nbsp; → HyDE fallback (si résultats insuffisants)</span>
+<span class="arrow">│
+├──</span> <span class="step">8. Génération LLM</span> <span class="comment">(generator.py)</span>
+<span class="sub">│&nbsp;&nbsp; Cerebras llama3.1-8b (primaire, ~500ms)</span>
+<span class="sub">│&nbsp;&nbsp; → Groq llama-3.3-70b (fallback auto sur 429)</span>
+<span class="sub">│&nbsp;&nbsp; → Streaming SSE token par token</span>
+<span class="arrow">│
+└──</span> <span class="step">9. Tâches de fond</span>
+<span class="sub">&nbsp;&nbsp;&nbsp; Persistance Supabase, mise à jour cache, tracking événement</span>
+  </div>
+
+  <h3 id="stack">Stack technique</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Couche</th><th>Technologie</th><th>Rôle</th></tr></thead>
+      <tbody>
+        <tr><td><strong>API</strong></td><td><code>FastAPI 0.115+</code></td><td>Endpoints REST + SSE streaming</td></tr>
+        <tr><td><strong>Serveur</strong></td><td><code>Gunicorn + Uvicorn</code></td><td>4 workers, rotation 2000 req</td></tr>
+        <tr><td><strong>Frontend</strong></td><td><code>React 19 + Vite + Tailwind</code></td><td>Chat UI + Monitoring dashboard</td></tr>
+        <tr><td><strong>Vector DB</strong></td><td><code>Qdrant</code></td><td>Stockage + recherche vectorielle</td></tr>
+        <tr><td><strong>Embeddings</strong></td><td><code>FastEmbed ONNX</code></td><td>384-dim, sans PyTorch, multilingual</td></tr>
+        <tr><td><strong>Reranker</strong></td><td><code>Xenova/ms-marco</code></td><td>Cross-encoder, activation intelligente</td></tr>
+        <tr><td><strong>LLM primaire</strong></td><td><code>Cerebras</code></td><td>llama3.1-8b, ~500ms</td></tr>
+        <tr><td><strong>LLM fallback</strong></td><td><code>Groq</code></td><td>llama-3.3-70b-versatile</td></tr>
+        <tr><td><strong>Cache</strong></td><td><code>Redis</code></td><td>Réponses sémantiques + rate limiting</td></tr>
+        <tr><td><strong>Auth & BDD</strong></td><td><code>Supabase</code></td><td>JWT + PostgreSQL (events, conversations)</td></tr>
+        <tr><td><strong>LLM Tracing</strong></td><td><code>Langfuse</code></td><td>Traces complètes, LLM-as-Judge</td></tr>
+        <tr><td><strong>Erreurs</strong></td><td><code>Sentry</code></td><td>Error tracking production</td></tr>
+        <tr><td><strong>Infra</strong></td><td><code>Docker + docker-compose</code></td><td>App + Redis containerisés</td></tr>
+        <tr><td><strong>Tests</strong></td><td><code>pytest + Locust</code></td><td>131 tests unitaires + load tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ──────────────────── INGESTION ──────────────────── -->
+<div class="section" id="ingestion">
+  <h2>Ingestion</h2>
+  <p>Le pipeline d'ingestion transforme des fichiers bruts en vecteurs indexés dans Qdrant, prêts à être récupérés lors d'une recherche.</p>
+
+  <h3>Formats supportés</h3>
+  <p>
+    <code>.md</code> &nbsp;<code>.txt</code> &nbsp;<code>.pdf</code> &nbsp;<code>.csv</code> &nbsp;<code>.xlsx</code> &nbsp;<code>.json</code> &nbsp;<code>.xml</code>
+  </p>
+
+  <h3>Pipeline d'indexation</h3>
+  <div class="pipeline">
+<span style="color:#94a3b8;">data/sample/</span> <span class="comment">(fichiers sources)</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Discovery</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">→ Scan récursif par extension</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Parsing</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">→ Unstructured (défaut) ou LlamaParse (PDF complexes)</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Chunking</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">→ Sémantique (LLM-based) ou taille fixe avec overlap</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Late Chunking</span>&nbsp;<span class="comment">→ Chaque chunk préfixé de ses N voisins précédents</span>
+&nbsp;&nbsp;<span class="sub">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(contexte pour l'embedding uniquement)</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Enrichissement</span>&nbsp;<span class="comment">→ Résumé doc ajouté à chaque chunk (doc_summary)</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Déduplication</span>&nbsp;<span class="comment">→ Hash-based, ignore les chunks déjà indexés</span>
+&nbsp;&nbsp;<span class="arrow">│</span>
+&nbsp;&nbsp;<span class="step">Indexation</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">→ FastEmbed → Qdrant (vecteurs) + BM25 corpus JSON</span>
+  </div>
+
+  <h3>Déclenchement du réindexage</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Déclencheur</th><th>Mécanisme</th></tr></thead>
+      <tbody>
+        <tr><td>Manuel</td><td><code>POST /api/reindex</code> ou <code>make index</code></td></tr>
+        <tr><td>Démarrage</td><td>Automatique si <code>STARTUP_INDEX_ENABLED=true</code></td></tr>
+        <tr><td>Changement fichier</td><td>Watchdog détecte les modifications si <code>WATCHDOG_ENABLED=true</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-tip">
+    <span class="callout-icon">✅</span>
+    <div class="callout-body">
+      <strong>Ajouter du contenu :</strong> Déposez un fichier dans <code>data/sample/</code> et le Watchdog re-indexe automatiquement. Le nouveau contenu est immédiatement interrogeable.
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────── RECHERCHE HYBRIDE ──────────────────── -->
+<div class="section" id="recherche">
+  <h2>Recherche Hybride</h2>
+  <p>Un RAG basique ne fait que de la recherche vectorielle. Oracle combine quatre mécanismes pour maximiser la pertinence des résultats.</p>
+
+  <h3>Les quatre couches</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Mécanisme</th><th>Description</th><th>Quand actif</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>1</strong></td>
+          <td><strong>Vectorielle</strong></td>
+          <td>FastEmbed ONNX, 384-dim, similarité cosinus sur Qdrant</td>
+          <td>Toujours</td>
+        </tr>
+        <tr>
+          <td><strong>2</strong></td>
+          <td><strong>BM25 lexicale</strong></td>
+          <td>Précision sur termes exacts, noms propres, jargon. Corpus JSON in-memory, stopwords français.</td>
+          <td>Si vecteurs &lt; 3 résultats</td>
+        </tr>
+        <tr>
+          <td><strong>3</strong></td>
+          <td><strong>Fusion RRF</strong></td>
+          <td>Reciprocal Rank Fusion (k=60) — combine les classements vectoriel + BM25 en un score unifié</td>
+          <td>Toujours (si BM25 actif)</td>
+        </tr>
+        <tr>
+          <td><strong>4</strong></td>
+          <td><strong>Reranker cross-encoder</strong></td>
+          <td>Xenova/ms-marco-MiniLM-L-6-v2 — re-classe les 6 meilleurs candidats. Activation intelligente : score trop bas OU écart insuffisant entre top-1 et top-2.</td>
+          <td>Conditionnellement</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Fallback HyDE</h3>
+  <p>Si tous les scores restent sous le seuil de confiance, Oracle génère 3 <em>documents hypothétiques</em> via le LLM, les embed, puis relance la recherche Qdrant avec ces embeddings. Cela permet de trouver des passages sémantiquement proches même lorsque la question est formulée très différemment des documents.</p>
+
+  <h3>Profils d'exécution</h3>
+  <div class="profiles">
+    <div class="profile-card">
+      <div class="profile-name">fast</div>
+      <div class="profile-desc">Pas de reranker, pas de reformulation. Latence minimale.</div>
+    </div>
+    <div class="profile-card recommended">
+      <div class="profile-name">balanced</div>
+      <div class="profile-tag">⭐ Recommandé</div>
+      <div class="profile-desc">Reranker intelligent + reformulation + HyDE. Production.</div>
+    </div>
+    <div class="profile-card">
+      <div class="profile-name">quality</div>
+      <div class="profile-desc">Tout activé, candidats maximum. Meilleure précision.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────── CACHE ──────────────────── -->
+<div class="section" id="cache">
+  <h2>Cache Sémantique</h2>
+  <p>Le cache sémantique évite les appels LLM redondants en détectant des questions <em>similaires</em>, pas seulement identiques.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Paramètre</th><th>Valeur</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Backend</td><td>Redis</td><td>Stockage clé-valeur distribué</td></tr>
+        <tr><td>Seuil de similarité</td><td>92%</td><td>Similarité cosinus entre embeddings</td></tr>
+        <tr><td>TTL</td><td>1 heure</td><td>Durée de vie des entrées en cache</td></tr>
+        <tr><td>Scope</td><td>Toutes sessions</td><td>Cache partagé entre utilisateurs</td></tr>
+        <tr><td>Fallback</td><td>Fail-open</td><td>Si Redis indisponible → bypass transparent</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-info">
+    <span class="callout-icon">📊</span>
+    <div class="callout-body">
+      Le taux de cache hits est visible en temps réel sur le dashboard <code>/monitoring</code> et via <code>GET /api/monitoring/pipeline</code>.
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────── GÉNÉRATION ──────────────────── -->
+<div class="section" id="generation">
+  <h2>Génération LLM</h2>
+
+  <h3>Providers & fallback</h3>
+  <p>Le système est entièrement piloté par configuration — aucun provider n'est hardcodé.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Rôle</th><th>Provider</th><th>Modèle</th><th>Latence</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Primaire</strong></td><td>Cerebras</td><td>llama3.1-8b</td><td>~500ms</td></tr>
+        <tr><td><strong>Fallback</strong></td><td>Groq</td><td>llama-3.3-70b-versatile</td><td>~1-2s</td></tr>
+        <tr><td><strong>Reformulation</strong></td><td>Configurable</td><td>Hérite du primaire si non défini</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Le basculement sur le fallback est <strong>automatique et transparent</strong> lors d'une erreur 429 (rate limit) du provider primaire.</p>
+
+  <h3>Streaming SSE</h3>
+  <p>Les réponses sont streamed token par token via <strong>Server-Sent Events</strong>. Le client voit la réponse s'afficher progressivement, sans attendre la fin de la génération — essentiel pour l'UX sur des réponses longues.</p>
+
+  <h3>Reformulation de requête</h3>
+  <p>Avant la recherche, Oracle détecte si la question est ambiguë (pronoms, références implicites à l'historique) et la réécrit pour qu'elle soit autonome et précise. Cela améliore significativement la qualité des résultats de recherche.</p>
+
+  <h3>Résumés utilisateur</h3>
+  <p>Tous les 5 échanges, Oracle génère un profil utilisateur de 150 mots via LLM et l'injecte dans le prompt système. Cela permet des réponses personnalisées sans surcharger le contexte avec l'historique complet.</p>
+</div>
+
+<!-- ──────────────────── SÉCURITÉ ──────────────────── -->
+<div class="section" id="securite">
+  <h2>Sécurité</h2>
+  <p>Trois couches de protection indépendantes pour un système IA exposé en production.</p>
+
+  <h3 id="validation">Validation & Détection d'injection</h3>
+
+  <h4>Couche 1 — Regex (toujours actif, &lt;1ms)</h4>
+  <p>70+ patterns couvrant : prompt injection, jailbreak, extraction de system prompt, attaques roleplay, encodages hex/base64. Retourne une 403 avec <code>reason: "injection_regex"</code>.</p>
+
+  <h4>Couche 2 — Lakera Guard (optionnel, &lt;50ms)</h4>
+  <p>Classifieur IA externe pour les injections subtiles non couvertes par regex. Trois modes :</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mode</th><th>Comportement</th></tr></thead>
+      <tbody>
+        <tr><td><code>enforce</code></td><td>Bloque les requêtes détectées</td></tr>
+        <tr><td><code>shadow</code></td><td>Laisse passer mais log l'événement (monitoring)</td></tr>
+        <tr><td><code>disabled</code></td><td>Désactivé</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Détection de spike</h4>
+  <p>Si plus de <strong>10 tentatives d'injection</strong> sont détectées en une fenêtre de 5 minutes, une alerte automatique est émise via Sentry et surfacée dans <code>GET /api/monitoring/stats</code>.</p>
+
+  <h3 id="pii">Masquage PII</h3>
+  <p>Appliqué <strong>avant tout appel LLM</strong>. Les données sensibles sont remplacées par des tokens avant d'être envoyées au modèle.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type de donnée</th><th>Token de remplacement</th></tr></thead>
+      <tbody>
+        <tr><td>Adresse email</td><td><code>[EMAIL]</code></td></tr>
+        <tr><td>Numéro de téléphone</td><td><code>[TEL]</code></td></tr>
+        <tr><td>Adresse IP</td><td><code>[IP]</code></td></tr>
+        <tr><td>Numéro de carte bancaire</td><td><code>[CARTE]</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>L'historique des 50 derniers masquages est consultable via <code>GET /api/monitoring/pii</code>.</p>
+
+  <h3>Rate Limiting</h3>
+  <p>Géré par <strong>SlowAPI + Redis</strong> par user ID. Limites par défaut :</p>
+  <ul>
+    <li>2 requêtes / 5 secondes</li>
+    <li>30 requêtes / minute</li>
+    <li>500 requêtes / jour</li>
+  </ul>
+  <p>Fail-open si Redis est indisponible (aucun blocage illégitime).</p>
+</div>
+
+<!-- ──────────────────── MÉMOIRE ──────────────────── -->
+<div class="section" id="memoire">
+  <h2>Mémoire Utilisateur</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Stockage</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Historique court-terme</strong></td>
+          <td>Supabase</td>
+          <td>5 derniers échanges par session, injectés dans chaque requête</td>
+        </tr>
+        <tr>
+          <td><strong>Résumé utilisateur</strong></td>
+          <td>Supabase</td>
+          <td>Profil LLM de 150 mots, mis à jour tous les 5 échanges</td>
+        </tr>
+        <tr>
+          <td><strong>Mémoire vectorielle</strong></td>
+          <td>Qdrant</td>
+          <td>Q&R importants stockés comme vecteurs, récupérés par similarité sémantique. Optionnel, max 500 par user.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ──────────────────── MONITORING ──────────────────── -->
+<div class="section" id="monitoring">
+  <h2>Monitoring & Observabilité</h2>
+  <p>Visibilité complète sur ce qui se passe en production, sans accès SSH requis.</p>
+
+  <h3 id="dashboard">Dashboard React temps réel</h3>
+  <p>Accessible à <code>/monitoring</code> dans l'interface, le dashboard affiche :</p>
+  <ul class="feature-list">
+    <li><span class="feature-check">✓</span> Nombre total de questions, taux de cache hit, latence moyenne</li>
+    <li><span class="feature-check">✓</span> Événements de sécurité (injections, PII) par période</li>
+    <li><span class="feature-check">✓</span> Historique des reformulations (20 dernières)</li>
+    <li><span class="feature-check">✓</span> Profil d'exécution actif (fast / balanced / quality)</li>
+    <li><span class="feature-check">✓</span> Statistiques du pipeline de recherche</li>
+    <li><span class="feature-check">✓</span> Feedbacks récents des utilisateurs</li>
+  </ul>
+
+  <h3 id="langfuse">Langfuse — LLM Tracing</h3>
+  <p>Chaque appel LLM est tracé avec son contexte complet, ses sources récupérées et un score automatique.</p>
+
+  <div class="callout callout-info">
+    <span class="callout-icon">🔍</span>
+    <div class="callout-body">
+      <strong>LLM-as-Judge :</strong> Langfuse évalue automatiquement <strong>chaque réponse</strong> sur 3 dimensions — Correctness, Context Relevance, Hallucination — sans intervention humaine.
+    </div>
+  </div>
+
+  <h3 id="events">Événements & Logs</h3>
+  <p>Tous les événements significatifs sont persistés dans Supabase :</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Événement</th><th>Déclencheur</th></tr></thead>
+      <tbody>
+        <tr><td><code>question</code></td><td>Appel réussi à <code>/api/ask</code></td></tr>
+        <tr><td><code>injection_regex</code></td><td>Pattern regex détecté</td></tr>
+        <tr><td><code>injection_lakera</code></td><td>Lakera Guard déclenché</td></tr>
+        <tr><td><code>cache_hit</code></td><td>Réponse servie depuis Redis</td></tr>
+        <tr><td><code>fallback</code></td><td>LLM primaire en erreur → bascule Groq</td></tr>
+        <tr><td><code>rate_limit</code></td><td>Utilisateur a dépassé la limite</td></tr>
+        <tr><td><code>feedback_vote</code></td><td>Vote thumbs up/down reçu</td></tr>
+        <tr><td><code>error</code></td><td>Exception non gérée dans le pipeline</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Un buffer de <strong>1000 logs in-memory</strong> est également accessible via <code>GET /api/monitoring/logs</code> (clé monitoring requise).</p>
+</div>
+
+<!-- ──────────────────── API REFERENCE ──────────────────── -->
+<div class="section" id="api">
+  <h2>API Reference</h2>
+
+  <!-- POST /api/ask -->
+  <div id="api-ask" style="scroll-margin-top:80px;">
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="badge badge-post">POST</span>
+        <span class="endpoint-path">/api/ask</span>
+        <span class="endpoint-desc">Endpoint RAG principal — stream SSE</span>
+      </div>
+      <div class="endpoint-body">
+        <p>Accepte une question, exécute le pipeline RAG complet et retourne un <strong>Server-Sent Events stream</strong>.</p>
+
+        <h4>Request body</h4>
+        <pre><code class="language-json">{
+  "question": "Qui est Alaric le Déchu ?",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "guest_550e8400-e29b-41d4-a716-446655440001"
+}</code></pre>
+
+        <h4>Response — SSE Stream</h4>
+        <pre><code class="language-text">data: {"type": "text", "text": "Alaric était un général renommé"}
+data: {"type": "text", "text": " de la Troisième Ère qui..."}
+data: {"type": "done", "trace_id": "abc123", "model": "llama3.1-8b"}</code></pre>
+
+        <h4>Auth</h4>
+        <p>Header <code>Authorization: Bearer &lt;jwt&gt;</code> (Supabase) ou mode guest si <code>ALLOW_GUEST_MODE=true</code>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /api/feedback -->
+  <div id="api-feedback" style="scroll-margin-top:80px;">
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="badge badge-post">POST</span>
+        <span class="endpoint-path">/api/feedback</span>
+        <span class="endpoint-desc">Note de qualité 1-5</span>
+      </div>
+      <div class="endpoint-body">
+        <pre><code class="language-json">{ "session_id": "uuid", "rating": 4, "comment": "Bonne réponse" }</code></pre>
+        <p>Alternative : <code>POST /api/feedback/vote</code> avec <code>trace_id</code> et <code>value: 1</code> (positif) ou <code>-1</code> (négatif).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- GET /health -->
+  <div id="api-health" style="scroll-margin-top:80px;">
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="badge badge-get">GET</span>
+        <span class="endpoint-path">/health</span>
+        <span class="endpoint-desc">Statut de tous les composants</span>
+      </div>
+      <div class="endpoint-body">
+        <pre><code class="language-json">{
+  "status": "ok",
+  "components": {
+    "llm": "ok",
+    "qdrant": "ok",
+    "supabase": "ok",
+    "bm25": "ok",
+    "redis": "ok"
+  }
+}</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monitoring endpoints -->
+  <div id="api-monitoring" style="scroll-margin-top:80px;">
+    <h3>Endpoints Monitoring</h3>
+    <p>Tous requièrent le header <code>x-monitoring-key: &lt;MONITORING_KEY&gt;</code>.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/monitoring/stats</code></td><td>Statistiques globales (événements, latence)</td></tr>
+          <tr><td><code>GET /api/monitoring/pipeline</code></td><td>Détails pipeline (cache hits, reranker, Qdrant)</td></tr>
+          <tr><td><code>GET /api/monitoring/features</code></td><td>Dashboard santé complet de tous les composants</td></tr>
+          <tr><td><code>GET /api/monitoring/logs</code></td><td>Buffer de logs in-memory (1000 entrées)</td></tr>
+          <tr><td><code>GET /api/monitoring/pii</code></td><td>Historique des masquages PII</td></tr>
+          <tr><td><code>GET /api/monitoring/feedbacks</code></td><td>Feedbacks récents utilisateurs</td></tr>
+          <tr><td><code>GET /api/monitoring/reformulation/history</code></td><td>20 dernières reformulations</td></tr>
+          <tr><td><code>POST /api/monitoring/reformulation</code></td><td>Toggle reformulation à chaud <code>{"enabled": true}</code></td></tr>
+          <tr><td><code>GET /api/cache/stats</code></td><td>Statistiques du cache sémantique</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────── DÉPLOIEMENT ──────────────────── -->
+<div class="section" id="deploiement">
+  <h2>Déploiement</h2>
+
+  <h3>Docker Compose</h3>
+  <p>Un seul fichier orchestre l'application + Redis. Le Dockerfile est multi-stage : build Node.js (frontend React) puis runtime Python (API).</p>
+
+  <pre><code class="language-bash"># Démarrage complet
+docker compose up --build -d
+
+# API disponible sur :8000
+# MCP SSE disponible sur :8001
+# Health check : GET /health</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Service</th><th>Image</th><th>Port</th></tr></thead>
+      <tbody>
+        <tr><td><code>app</code></td><td>Dockerfile custom (Python 3.11 + Node)</td><td>8000</td></tr>
+        <tr><td><code>redis</code></td><td>redis:7-alpine</td><td>interne</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body">
+      <strong>Windows :</strong> Gunicorn ne supporte pas Windows nativement. Utilisez Docker pour simuler un environnement production, ou <code>python main.py</code> pour le développement (1 worker Uvicorn).
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────── ENV VARS ──────────────────── -->
+<div class="section" id="env">
+  <h2>Variables d'environnement</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variable</th><th>Exemple</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>LLM_API_KEY</code></td><td><code>csk_...</code></td><td>Clé API Cerebras (LLM primaire)</td></tr>
+        <tr><td><code>LLM_BASE_URL</code></td><td><code>https://api.cerebras.ai/v1</code></td><td>URL du provider LLM</td></tr>
+        <tr><td><code>LLM_MODEL</code></td><td><code>llama3.1-8b</code></td><td>Modèle à utiliser</td></tr>
+        <tr><td><code>FALLBACK_API_KEY</code></td><td><code>gsk_...</code></td><td>Clé Groq (fallback)</td></tr>
+        <tr><td><code>QDRANT_URL</code></td><td><code>https://...</code></td><td>URL Qdrant Cloud</td></tr>
+        <tr><td><code>QDRANT_API_KEY</code></td><td><code>...</code></td><td>Clé Qdrant</td></tr>
+        <tr><td><code>SUPABASE_URL</code></td><td><code>https://...supabase.co</code></td><td>URL projet Supabase</td></tr>
+        <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td><code>eyJ...</code></td><td>Clé admin Supabase</td></tr>
+        <tr><td><code>REDIS_URL</code></td><td><code>redis://redis:6379</code></td><td>URL Redis (vide = in-memory)</td></tr>
+        <tr><td><code>MONITORING_KEY</code></td><td><code>secret-key</code></td><td>Clé d'accès aux endpoints monitoring</td></tr>
+        <tr><td><code>RAG_PROFILE</code></td><td><code>balanced</code></td><td><code>fast</code> / <code>balanced</code> / <code>quality</code></td></tr>
+        <tr><td><code>WEB_CONCURRENCY</code></td><td><code>4</code></td><td>Nombre de workers Gunicorn</td></tr>
+        <tr><td><code>LANGFUSE_PUBLIC_KEY</code></td><td><code>pk-lf-...</code></td><td>Tracing LLM (optionnel)</td></tr>
+        <tr><td><code>SENTRY_DSN</code></td><td><code>https://...</code></td><td>Error tracking (optionnel)</td></tr>
+        <tr><td><code>LAKERA_API_KEY</code></td><td><code>...</code></td><td>Guard IA (optionnel)</td></tr>
+        <tr><td><code>ALLOW_GUEST_MODE</code></td><td><code>true</code></td><td>Accès sans compte</td></tr>
+        <tr><td><code>WATCHDOG_ENABLED</code></td><td><code>true</code></td><td>Réindexage automatique</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ──────────────────── TESTS ──────────────────── -->
+<div class="section" id="tests">
+  <h2>Tests</h2>
+
+  <h3>Suite unitaire — 131 tests</h3>
+  <pre><code class="language-bash"># Tous les tests
+python -m pytest src/test-unitaires -q
+
+# Tests rapides après modification
+python -m pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fichier de test</th><th>Couverture</th></tr></thead>
+      <tbody>
+        <tr><td><code>test_routes.py</code></td><td>Endpoints API, auth, streaming</td></tr>
+        <tr><td><code>test_search.py</code></td><td>Recherche hybride, RRF, reranker</td></tr>
+        <tr><td><code>test_validator.py</code></td><td>Regex patterns, Lakera Guard</td></tr>
+        <tr><td><code>test_pii_masker.py</code></td><td>Détection et masquage PII</td></tr>
+        <tr><td><code>test_chunker.py</code></td><td>Chunking sémantique et contextuel</td></tr>
+        <tr><td><code>test_watchdog.py</code></td><td>Réindexage automatique</td></tr>
+        <tr><td><code>test_auth_flow.py</code></td><td>JWT + mode guest</td></tr>
+        <tr><td><code>test_tracker.py</code></td><td>Tracking Supabase, détection spike</td></tr>
+        <tr><td><code>test_integration.py</code></td><td>Pipeline complet end-to-end</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Tests de charge — Locust</h3>
+  <pre><code class="language-bash"># Interface web Locust
+locust -f locustfile.py --host http://localhost:8000
+
+# Mode headless (CI)
+locust -f locustfile.py --host http://localhost:8000 \
+  --users 20 --spawn-rate 4 --run-time 60s --headless</code></pre>
+</div>
+
+<!-- ──────────────────── MCP ──────────────────── -->
+<div class="section" id="mcp">
+  <h2>MCP Server</h2>
+  <p>Oracle LoreKeeper expose un serveur <strong>Model Context Protocol</strong> permettant à Claude Desktop (et tout client MCP compatible) d'interroger le lore directement depuis l'IDE.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Outil</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>ask_lore</code></td><td>Poser une question et recevoir une réponse sourcée</td></tr>
+        <tr><td><code>search_lore</code></td><td>Rechercher des passages bruts sans génération</td></tr>
+        <tr><td><code>list_save_files</code></td><td>Lister les fichiers sources indexés</td></tr>
+        <tr><td><code>read_log_file</code></td><td>Lire les logs système en sandbox</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Démarrage</h3>
+  <pre><code class="language-bash"># Mode stdio (Claude Desktop local)
+python mcp_server.py
+
+# Mode SSE (client distant)
+MCP_TRANSPORT=sse MCP_PORT=8001 python mcp_server.py</code></pre>
+
+  <h3>Configuration Claude Desktop</h3>
+  <pre><code class="language-json">{
+  "mcpServers": {
+    "lorekeeper": {
+      "command": "python",
+      "args": ["C:/path/to/mcp_server.py"],
+      "env": {
+        "LLM_API_KEY": "csk_...",
+        "QDRANT_URL": "https://...",
+        "SUPABASE_URL": "https://..."
+      }
+    }
+  }
+}</code></pre>
+</div>
+
+<!-- ──────────────────── SUPABASE ──────────────────── -->
+<div class="section" id="supabase">
+  <h2>Supabase</h2>
+  <p>Supabase joue deux rôles dans Oracle LoreKeeper :</p>
+  <ul>
+    <li><strong>Authentification</strong> — JWT tokens validés par l'API, mode guest pour les utilisateurs anonymes</li>
+    <li><strong>Base de données PostgreSQL</strong> — conversations, feedbacks, events de monitoring, résumés utilisateurs</li>
+  </ul>
+  <p>Le schéma complet est disponible dans <code>docs/supabase_schema.sql</code>. Pour initialiser un nouveau projet : coller le contenu dans l'éditeur SQL Supabase.</p>
+</div>
+
+<!-- ──────────────────── ÉQUIPE ──────────────────── -->
+<div class="section" id="equipe">
+  <h2>Équipe</h2>
+
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-avatar">L</div>
+      <div class="team-name">Lucas</div>
+      <div class="team-role">Ingestion & Chunking</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">E</div>
+      <div class="team-name">Emir</div>
+      <div class="team-role">API & Architecture</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">?</div>
+      <div class="team-name">Membre 3</div>
+      <div class="team-role">Sécurité & Monitoring</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">?</div>
+      <div class="team-name">Membre 4</div>
+      <div class="team-role">Frontend & Tests</div>
+    </div>
+  </div>
+
+  <h3 id="decisions">Décisions techniques</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Décision</th><th>Choix</th><th>Raison</th></tr></thead>
+      <tbody>
+        <tr><td>Embeddings sans GPU</td><td>FastEmbed ONNX</td><td>Déploiement simplifié, pas de dépendance PyTorch</td></tr>
+        <tr><td>Recherche hybride</td><td>Vector + BM25 + RRF</td><td>BM25 compense les faiblesses sémantiques sur les noms propres</td></tr>
+        <tr><td>Reranker conditionnel</td><td>Smart activation</td><td>Économise la latence quand les résultats sont déjà bons</td></tr>
+        <tr><td>LLM-as-Judge</td><td>Délégué à Langfuse</td><td>Pas de coût supplémentaire, évaluation sur chaque réponse</td></tr>
+        <tr><td>Cache sémantique</td><td>92% threshold</td><td>Évite les faux positifs tout en captant les reformulations similaires</td></tr>
+        <tr><td>Fallback LLM</td><td>Cerebras → Groq</td><td>Haute disponibilité sans intervention manuelle</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="workflow">Workflow Git</h3>
+  <p>Travail en branches feature avec commits conventionnels pour un historique lisible et filtrable :</p>
+  <pre><code class="language-text">feat: suggest lore questions when off-topic question is asked
+fix:  restrict Oracle to lore-only, politely reject off-topic
+fix:  block monitoring access without valid key
+feat: improve chat platform reliability and observability
+refactor: migrate judge to Langfuse, fix guest UUID</code></pre>
+
+  <div class="callout callout-tip">
+    <span class="callout-icon">🔒</span>
+    <div class="callout-body">
+      Les fichiers sensibles (<code>.env</code>, clés API, données personnelles) sont exclus via <code>.gitignore</code>. Le fichier <code>.env.example</code> documente toutes les variables sans exposer les secrets.
+    </div>
+  </div>
+</div>
+
+</div><!-- end content-wrap -->
+</main>
+
+<!-- ═══════════════════════════ TOC ═══════════════════════════ -->
+<div class="toc">
+  <div class="toc-title">Sur cette page</div>
+  <a href="#intro">Introduction</a>
+  <a href="#rag">Qu'est-ce qu'un RAG ?</a>
+  <a href="#pipeline" class="toc-sub">Pipeline complet</a>
+  <a href="#stack" class="toc-sub">Stack technique</a>
+  <a href="#ingestion">Ingestion</a>
+  <a href="#recherche">Recherche Hybride</a>
+  <a href="#cache">Cache Sémantique</a>
+  <a href="#generation">Génération LLM</a>
+  <a href="#securite">Sécurité</a>
+  <a href="#validation" class="toc-sub">Validation</a>
+  <a href="#pii" class="toc-sub">PII Masking</a>
+  <a href="#memoire">Mémoire Utilisateur</a>
+  <a href="#monitoring">Monitoring</a>
+  <a href="#dashboard" class="toc-sub">Dashboard</a>
+  <a href="#langfuse" class="toc-sub">Langfuse</a>
+  <a href="#events" class="toc-sub">Événements & Logs</a>
+  <a href="#api">API Reference</a>
+  <a href="#api-ask" class="toc-sub">POST /api/ask</a>
+  <a href="#api-feedback" class="toc-sub">POST /api/feedback</a>
+  <a href="#api-health" class="toc-sub">GET /health</a>
+  <a href="#api-monitoring" class="toc-sub">GET /api/monitoring/*</a>
+  <a href="#deploiement">Déploiement</a>
+  <a href="#env">Variables d'env</a>
+  <a href="#tests">Tests</a>
+  <a href="#mcp">MCP Server</a>
+  <a href="#supabase">Supabase</a>
+  <a href="#equipe">Équipe</a>
+</div>
+
+<!-- ═══════════════════════════ FOOTER ═══════════════════════════ -->
+<footer>
+  Oracle LoreKeeper — Documentation &nbsp;·&nbsp; Projet étudiant &nbsp;·&nbsp; 2025
+</footer>
+
+<script>
+  // ─── Highlight.js ───
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+  });
+
+  // ─── Active sidebar + TOC on scroll ───
+  const sections = document.querySelectorAll('[id]');
+  const navItems = document.querySelectorAll('.nav-item, .nav-sub');
+  const tocLinks = document.querySelectorAll('.toc a');
+
+  function updateActive() {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY + 100 >= s.offsetTop) current = s.id;
+    });
+
+    navItems.forEach(a => {
+      const href = a.getAttribute('href').slice(1);
+      a.classList.toggle('active', href === current);
+    });
+
+    tocLinks.forEach(a => {
+      const href = a.getAttribute('href').slice(1);
+      a.classList.toggle('active', href === current);
+    });
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+</script>
+
+</body>
+</html>

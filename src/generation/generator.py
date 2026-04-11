@@ -123,6 +123,34 @@ def _callbacks(name: str = "lorekeeper", **meta) -> list:
     return [h] if h else []
 
 
+def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> None:
+    """Envoie un score human_feedback sur la trace Langfuse liée à notre trace_id interne."""
+    if not trace_id:
+        return
+    try:
+        # Résoudre le vrai trace_id Langfuse (récupéré après le stream via handler.get_trace_id())
+        from src.monitoring.tracker import get_trace_context
+        ctx = get_trace_context(trace_id)
+        langfuse_id = ctx.get("langfuse_trace_id") or ""
+
+        if not langfuse_id:
+            logger.debug(f"[LANGFUSE] Pas de trace Langfuse liée à {trace_id[:8]} — score ignoré.")
+            return
+
+        if _langfuse_client is None:
+            _langfuse_handler()
+        if _langfuse_client:
+            _langfuse_client.score(
+                trace_id=langfuse_id,
+                name="human_feedback",
+                value=float(value),
+                comment=comment or None,
+            )
+            logger.debug(f"[LANGFUSE] Score human_feedback={value} sur trace Langfuse {langfuse_id[:8]}")
+    except Exception as e:
+        logger.debug(f"[LANGFUSE] Score failed: {e}")
+
+
 # ── Messages ──────────────────────────────────────────────────────────────────
 
 def _build_messages(question: str, passages: List[str], sources: List[str],
@@ -242,14 +270,17 @@ def generer_reponse(question: str, passages: List[str], sources: List[str] = Non
 
 def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
                    history: List[dict] = None, model_used: Optional[list] = None,
-                   user_summary: str = "", vector_memories: List[str] = None) -> Iterator[str]:
+                   user_summary: str = "", vector_memories: List[str] = None,
+                   langfuse_trace_ids: Optional[list] = None) -> Iterator[str]:
     """Streame la réponse token par token. Bascule sur le fallback si erreur."""
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
     cb = _callbacks("ask-stream", question=question[:80])
+    handler = cb[0] if cb else None
     if model_used is not None:
         model_used.append(_primary_model)
+
     def _track_fallback(from_model: str, to_model: str, err: Exception) -> None:
         try:
             from src.monitoring.tracker import track
@@ -278,8 +309,17 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
                 for chunk in fb_llm.stream(messages, config={"callbacks": _callbacks(fb_label)}):
                     if chunk.content:
                         yield chunk.content
-                return  # success — stop iterating the chain
+                return
             except Exception as fb_err:
                 last_err = fb_err
                 logger.warning(f"{fb_label} also failed: {fb_err}")
         raise last_err
+    finally:
+        # Récupère l'ID de trace Langfuse généré par le handler (v4 API)
+        if langfuse_trace_ids is not None and handler is not None:
+            try:
+                lf_id = handler.get_trace_id()
+                if lf_id:
+                    langfuse_trace_ids.append(str(lf_id))
+            except Exception:
+                pass

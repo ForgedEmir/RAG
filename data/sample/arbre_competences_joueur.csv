@@ -1,0 +1,5 @@
+niveau_requis;nom_competence;categorie;description;impact_exploration;lore
+2;Frappe Lourdes;Combat;Une attaque chargée infligeant 150% de dégâts.;Peut briser les petits rochers bloquant les chemins de la forêt.;Technique de base des bûcherons d'Aethelgard.
+6;Oeil du Nyx;Survie;Permet de voir dans le noir absolu.;Rend l'exploration des Cavernes d'Oubli possible sans torche.;Une mutation oculaire causée par la magie résiduelle de Kaelen.
+12;Saut Éthéré;Mouvement;Téléportation sur 5 mètres.;Permet de traverser les gouffres des Ruines de l'Ancien Empire.;Magie volée aux spectres du Roi Fou.
+16;Absorption du Vide;Passif;Réduit les dégâts magiques de 30%.;Nécessaire pour survivre à l'Aura de Mort de la Citadelle Volante.;Le corps du héros s'adapte à la corruption de l'Archimage Vyn.

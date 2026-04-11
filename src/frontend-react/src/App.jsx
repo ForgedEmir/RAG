@@ -8,6 +8,8 @@ import {
 } from './auth.js';
 import ChatPage from './ChatPage.jsx';
 import MonitoringRoute from './MonitoringPage.jsx';
+import { MeshGradient } from '@paper-design/shaders-react';
+import RadialOrbitalTimeline from './RadialOrbitalTimeline.jsx';
 
 // Brand icons not available in lucide-react
 const LinkedinIcon = ({ className }) => (
@@ -148,6 +150,52 @@ body {
 }
 `;
 
+// --- MeshGradientBg ---
+const MeshGradientBg = () => (
+  <MeshGradient
+    colors={['#060503', '#0c1a0f', '#1a3020', '#071208', '#030804']}
+    distortion={0.28}
+    swirl={0.06}
+    speed={0.28}
+    style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', opacity: 0.65, pointerEvents: 'none', zIndex: 0 }}
+  />
+);
+
+// --- HoverScrambleText ---
+const HoverScrambleText = ({ text, className, style }) => {
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%';
+  const [display, setDisplay] = useState(text);
+  const rafRef = useRef(null);
+  const scramble = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    const letters = text.split('');
+    const posMap = new Map();
+    let pos = 0;
+    letters.forEach((c, i) => { if (c !== ' ' && c !== '\n') posMap.set(i, pos++); });
+    const total = pos;
+    const fpc = Math.max(1, 38 / 16);
+    let frame = 0;
+    const rand = () => CHARS[Math.floor(Math.random() * CHARS.length)];
+    const tick = () => {
+      setDisplay(letters.map((char, i) => {
+        if (char === ' ' || char === '\n') return char;
+        const p = posMap.get(i);
+        return frame >= p * fpc ? char : rand();
+      }).join(''));
+      frame++;
+      if (frame < total * fpc) rafRef.current = requestAnimationFrame(tick);
+      else setDisplay(text);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }, [text]);
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  return (
+    <span className={className} style={{ ...style, cursor: 'default' }} onMouseEnter={scramble}>
+      {display}
+    </span>
+  );
+};
+
 // --- TiltedCard ---
 const TiltedCard = ({
   imageSrc,
@@ -272,75 +320,109 @@ const LoginModal = ({ isOpen, onClose, onAuthSuccess }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center p-6">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleClose} className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 md:p-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleClose} className="absolute inset-0 bg-black/80 backdrop-blur-xl" />
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-md liquid-glass bg-black/60 rounded-[40px] p-10 shadow-2xl border border-white/10"
+            exit={{ opacity: 0, scale: 0.92, y: 20 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 25 }}
+            className="relative w-full max-w-[860px] flex overflow-hidden rounded-[40px] shadow-2xl border border-white/10"
+            style={{ background: 'rgba(6,5,4,0.97)' }}
           >
-            <button onClick={handleClose} className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/5 transition-colors text-white/40 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-            <div className="text-center mb-8">
-              <h2 className="text-4xl font-serif-custom italic text-white mb-2">Rejoindre le Savoir</h2>
-              <p className="text-white/40 text-sm">Connectez-vous pour accéder à LoreKeeper.</p>
+            {/* Left panel — branding */}
+            <div className="hidden md:flex flex-col justify-between w-[340px] shrink-0 p-10 border-r border-white/[0.06]" style={{ background: 'linear-gradient(160deg, rgba(26,48,32,0.9) 0%, rgba(6,5,4,0.95) 100%)' }}>
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.3em] text-[#5ed29c]/60 mb-8">LoreKeeper</div>
+                <h2 className="text-3xl font-serif-custom italic text-white leading-tight mb-4">Rejoindre<br />le Savoir</h2>
+                <p className="text-white/35 text-xs leading-relaxed">
+                  Accédez à l'Oracle RAG et interrogez votre lore avec une précision absolue.
+                </p>
+              </div>
+              <div className="space-y-4">
+                {[
+                  { Icon: Shield, label: 'Données 100% privées' },
+                  { Icon: Zap, label: 'Réponses en &lt; 700ms' },
+                  { Icon: Search, label: 'Recherche hybride BM25' },
+                  { Icon: Brain, label: 'Mémoire long-terme' },
+                ].map(({ Icon, label }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(94,210,156,0.08)', border: '1px solid rgba(94,210,156,0.15)' }}>
+                      <Icon size={13} color="#5ed29c" />
+                    </div>
+                    <span className="text-[11px] text-white/40" dangerouslySetInnerHTML={{ __html: label }} />
+                  </div>
+                ))}
+                <div className="pt-4 border-t border-white/[0.06]">
+                  <p className="text-[11px] text-white/25 italic leading-relaxed">"L'Oracle ne devine pas. Il consulte."</p>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {/* Toggle login / signup */}
-              <div className="flex rounded-full liquid-glass border border-white/5 p-1 mb-2">
-                {['login', 'signup'].map(m => (
-                  <button key={m} onClick={() => { setMode(m); setStatus(''); }}
-                    className={`flex-1 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold transition-all ${mode === m ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
-                    {m === 'login' ? 'Connexion' : 'Inscription'}
-                  </button>
-                ))}
-              </div>
-
-              <div className="liquid-glass bg-black/40 rounded-full px-6 py-3 border border-white/5">
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="nom@exemple.com"
-                  className="w-full bg-transparent border-none outline-none text-white placeholder:text-white/20 text-sm" />
-              </div>
-
-              <div className="liquid-glass bg-black/40 rounded-full px-6 py-3 border border-white/5">
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="Mot de passe"
-                  onKeyDown={e => e.key === 'Enter' && handleEmail()}
-                  className="w-full bg-transparent border-none outline-none text-white placeholder:text-white/20 text-sm" />
-              </div>
-
-              {status && <p className="text-[11px] text-center px-2" style={{ color: status.includes('créé') ? '#5ed29c' : '#f87171' }}>{status}</p>}
-
-              <button onClick={handleEmail} disabled={loading}
-                className="w-full bg-white text-black font-bold py-4 rounded-full hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest shadow-xl disabled:opacity-50">
-                {loading ? '...' : mode === 'login' ? 'Se connecter' : "S'inscrire"}
+            {/* Right panel — form */}
+            <div className="flex-1 p-8 md:p-10 flex flex-col justify-center">
+              <button onClick={handleClose} className="absolute top-5 right-5 p-2 rounded-full hover:bg-white/5 transition-colors text-white/30 hover:text-white">
+                <X className="w-4 h-4" />
               </button>
 
-              <div className="relative py-2 flex items-center gap-4">
-                <div className="flex-1 h-px bg-white/5" />
-                <span className="text-[10px] text-white/20 uppercase tracking-widest">ou</span>
-                <div className="flex-1 h-px bg-white/5" />
+              <div className="mb-8 md:hidden">
+                <h2 className="text-3xl font-serif-custom italic text-white mb-1">Rejoindre le Savoir</h2>
+                <p className="text-white/40 text-xs">Connectez-vous pour accéder à LoreKeeper.</p>
               </div>
 
-              <button onClick={handleGoogle} disabled={loading}
-                className="w-full liquid-glass bg-black/40 border border-white/10 flex items-center justify-center gap-3 py-4 rounded-full hover:bg-white/10 transition-all group text-white disabled:opacity-50">
-                <GoogleIcon className="w-5 h-5" />
-                <span className="text-sm font-medium">Continuer avec Google</span>
-              </button>
+              <div className="space-y-3">
+                <div className="flex rounded-full border border-white/[0.07] p-1 mb-2" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  {['login', 'signup'].map(m => (
+                    <button key={m} onClick={() => { setMode(m); setStatus(''); }}
+                      className={`flex-1 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold transition-all ${mode === m ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}>
+                      {m === 'login' ? 'Connexion' : 'Inscription'}
+                    </button>
+                  ))}
+                </div>
 
-              <button onClick={handleGithub} disabled={loading}
-                className="w-full liquid-glass bg-black/40 border border-white/10 flex items-center justify-center gap-3 py-4 rounded-full hover:bg-white/10 transition-all group text-white disabled:opacity-50">
-                <GithubIcon className="w-5 h-5 group-hover:text-[#5ed29c] transition-colors" />
-                <span className="text-sm font-medium">Continuer avec GitHub</span>
-              </button>
+                <div className="rounded-full px-5 py-3 border border-white/[0.07] transition-all focus-within:border-[#5ed29c]/30" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="nom@exemple.com"
+                    className="w-full bg-transparent border-none outline-none text-white placeholder:text-white/20 text-sm" />
+                </div>
 
-              <button onClick={handleGuest}
-                className="w-full text-white/30 hover:text-white/60 text-[11px] uppercase tracking-widest transition-colors py-2">
-                Continuer en tant qu'invité
-              </button>
+                <div className="rounded-full px-5 py-3 border border-white/[0.07] transition-all focus-within:border-[#5ed29c]/30" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="Mot de passe"
+                    onKeyDown={e => e.key === 'Enter' && handleEmail()}
+                    className="w-full bg-transparent border-none outline-none text-white placeholder:text-white/20 text-sm" />
+                </div>
+
+                {status && <p className="text-[11px] text-center px-2" style={{ color: status.includes('créé') ? '#5ed29c' : '#f87171' }}>{status}</p>}
+
+                <button onClick={handleEmail} disabled={loading}
+                  className="w-full bg-white text-black font-bold py-4 rounded-full hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest shadow-lg disabled:opacity-50">
+                  {loading ? '...' : mode === 'login' ? 'Se connecter' : "S'inscrire"}
+                </button>
+
+                <div className="relative py-1 flex items-center gap-3">
+                  <div className="flex-1 h-px bg-white/[0.05]" />
+                  <span className="text-[10px] text-white/20 uppercase tracking-widest">ou</span>
+                  <div className="flex-1 h-px bg-white/[0.05]" />
+                </div>
+
+                <button onClick={handleGoogle} disabled={loading}
+                  className="w-full border border-white/[0.08] flex items-center justify-center gap-3 py-3.5 rounded-full hover:bg-white/5 hover:-translate-y-px transition-all text-white text-sm disabled:opacity-50" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <GoogleIcon className="w-4 h-4" />
+                  Continuer avec Google
+                </button>
+
+                <button onClick={handleGithub} disabled={loading}
+                  className="w-full border border-white/[0.08] flex items-center justify-center gap-3 py-3.5 rounded-full hover:bg-white/5 hover:-translate-y-px transition-all text-white text-sm disabled:opacity-50 group" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <GithubIcon className="w-4 h-4 group-hover:text-[#5ed29c] transition-colors" />
+                  Continuer avec GitHub
+                </button>
+
+                <button onClick={handleGuest}
+                  className="w-full text-white/25 hover:text-white/50 text-[10px] uppercase tracking-widest transition-colors py-2">
+                  Continuer en tant qu'invité
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -437,13 +519,14 @@ const HeroSection = ({ scrollYProgress }) => {
       />
       <motion.div style={{ opacity: useTransform(scrollYProgress, [0, 0.4], [1, 0]) }} className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black z-[1]" />
       <div className="relative z-10 text-center max-w-7xl">
-        <h1 className="text-6xl sm:text-8xl md:text-9xl font-serif-custom tracking-tighter leading-[0.85] text-white mb-10">
-          {chars.map((c, i) => (
-            <motion.span key={i} initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 + i * 0.03, duration: 0.5 }} className={c === " " ? "mr-4" : ""}>
-              {c}
-            </motion.span>
-          ))}
-        </h1>
+        <motion.h1
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="text-6xl sm:text-8xl md:text-9xl font-serif-custom tracking-tighter leading-[0.85] text-white mb-10"
+        >
+          <HoverScrambleText text={title} />
+        </motion.h1>
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="text-white/50 text-lg md:text-xl max-w-2xl mx-auto font-light leading-relaxed italic mb-16">
           "Concevoir des outils pour les penseurs profonds. Au milieu du chaos, nous bâtissons des havres numériques pour la concentration pure."
         </motion.p>
@@ -926,6 +1009,206 @@ const ArchitecturePage = () => {
   );
 };
 
+// --- StatsBar ---
+const StatsBar = () => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-60px' });
+  const stats = [
+    { value: '< 700ms', label: 'Latence P50' },
+    { value: '4×', label: 'Fallback LLM' },
+    { value: 'BM25 + Vector', label: 'Recherche hybride' },
+    { value: '100%', label: 'Sources citées' },
+    { value: 'Temps réel', label: 'Streaming SSE' },
+  ];
+  return (
+    <section ref={ref} className="relative z-10 py-10 border-y border-white/[0.04]" style={{ background: 'rgba(255,255,255,0.01)' }}>
+      <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-around gap-8">
+        {stats.map((s, i) => (
+          <motion.div
+            key={s.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ delay: i * 0.07, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="text-center"
+          >
+            <div className="text-xl md:text-2xl font-bold text-[#5ed29c] mb-1 font-mono">{s.value}</div>
+            <div className="text-[9px] uppercase tracking-[0.25em] text-white/20">{s.label}</div>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+// --- FeatureGrid ---
+const FEATURES = [
+  { icon: Search, title: 'Recherche Hybride', desc: 'BM25 lexical et embeddings vectoriels fusionnés par Reciprocal Rank Fusion — rappel maximal sur chaque requête.' },
+  { icon: Shield, title: 'Sécurité & PII', desc: 'Masquage regex des données personnelles. Juge LLM autonome contre hallucinations et injections de prompt.' },
+  { icon: Zap, title: 'Streaming Multi-LLM', desc: 'Tokens en temps réel via DeepSeek. Basculement automatique sur Groq ou OpenRouter en cas d\'erreur 429.' },
+  { icon: Database, title: 'Sources Traçables', desc: 'Chaque affirmation est ancrée dans un passage citable. Aucune réponse hors du corpus indexé.' },
+  { icon: Brain, title: 'Mémoire Long-terme', desc: 'L\'historique est résumé par LLM entre sessions. Le contexte utilisateur s\'enrichit à chaque échange.' },
+  { icon: BarChart3, title: 'Observabilité Complète', desc: 'Langfuse trace latences, modèles, fallbacks, score juge. Dashboard monitoring avec feedbacks 👍/👎.' },
+];
+
+const FeatureCard = ({ icon: Icon, title, desc, delay }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-50px' });
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const rotateX = useSpring(useMotionValue(0), { stiffness: 120, damping: 20 });
+  const rotateY = useSpring(useMotionValue(0), { stiffness: 120, damping: 20 });
+
+  const handleMouse = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width / 2;
+    const cy = e.clientY - rect.top - rect.height / 2;
+    rotateX.set((cy / (rect.height / 2)) * -5);
+    rotateY.set((cx / (rect.width / 2)) * 5);
+  };
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 24 }}
+      animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{ delay, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+      style={{ rotateX, rotateY, transformPerspective: 800 }}
+      onMouseMove={handleMouse}
+      onMouseLeave={() => { rotateX.set(0); rotateY.set(0); }}
+      className="liquid-glass rounded-[28px] p-7 border border-white/[0.06] hover:border-white/[0.1] transition-colors group cursor-default"
+    >
+      <div
+        className="w-10 h-10 rounded-[14px] flex items-center justify-center mb-5 transition-colors"
+        style={{ background: 'rgba(94,210,156,0.08)', border: '1px solid rgba(94,210,156,0.15)' }}
+      >
+        <Icon size={17} color="#5ed29c" />
+      </div>
+      <h3 className="text-[15px] font-semibold text-white mb-2">{title}</h3>
+      <p className="text-[12px] text-white/40 leading-relaxed">{desc}</p>
+      <div className="mt-5 h-px w-8 group-hover:w-full transition-all duration-500 rounded-full" style={{ background: 'linear-gradient(to right, rgba(94,210,156,0.4), transparent)' }} />
+    </motion.div>
+  );
+};
+
+const FeatureGrid = () => (
+  <section className="relative z-10 py-24 px-6">
+    <div className="max-w-7xl mx-auto">
+      <div className="mb-14">
+        <div className="text-[9px] uppercase tracking-[0.3em] text-[#5ed29c]/50 mb-4">Capacités</div>
+        <h2 className="text-4xl md:text-6xl font-serif-custom tracking-tighter text-white">
+          Conçu pour la précision.
+        </h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {FEATURES.map((f, i) => (
+          <FeatureCard key={f.title} {...f} delay={i * 0.08} />
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+// --- RagPipelineSection ---
+const RAG_NODES = [
+  {
+    id: 1,
+    title: 'BM25',
+    date: 'Étape 1',
+    content: 'Recherche lexicale exacte par tokens — identifie chaque occurrence précise des termes de la requête dans le corpus documentaire.',
+    icon: Search,
+    relatedIds: [2, 3],
+    status: 'completed',
+    energy: 88,
+  },
+  {
+    id: 2,
+    title: 'Vector Search',
+    date: 'Étape 2',
+    content: 'Embeddings sémantiques stockés dans Qdrant. Capture le sens conceptuel au-delà des mots exacts pour des correspondances profondes.',
+    icon: Brain,
+    relatedIds: [1, 3],
+    status: 'completed',
+    energy: 95,
+  },
+  {
+    id: 3,
+    title: 'RRF Fusion',
+    date: 'Étape 3',
+    content: 'Reciprocal Rank Fusion : fusionne les rangs BM25 et vectoriels. Score final = Σ 1/(k + rank_i). Maximise la précision hybride.',
+    icon: GitBranch,
+    relatedIds: [1, 2, 4],
+    status: 'completed',
+    energy: 81,
+  },
+  {
+    id: 4,
+    title: 'Re-ranking',
+    date: 'Étape 4',
+    content: 'Cross-encoder analyse les passages candidats et les réordonne par pertinence réelle. Ignoré si le top-1 est déjà très confiant.',
+    icon: Layers,
+    relatedIds: [3, 5],
+    status: 'completed',
+    energy: 90,
+  },
+  {
+    id: 5,
+    title: 'LLM Streaming',
+    date: 'Étape 5',
+    content: 'DeepSeek streame les tokens en temps réel. Fallback automatique sur Groq puis OpenRouter en cas de 429 ou d\'erreur réseau.',
+    icon: Zap,
+    relatedIds: [4, 6],
+    status: 'in-progress',
+    energy: 97,
+  },
+  {
+    id: 6,
+    title: 'Observabilité',
+    date: 'Étape 6',
+    content: 'Langfuse trace chaque requête : latence, modèle utilisé, fallbacks, score du juge LLM. Les feedbacks 👍/👎 sont capturés.',
+    icon: BarChart3,
+    relatedIds: [5],
+    status: 'completed',
+    energy: 74,
+  },
+];
+
+const RagPipelineSection = () => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-120px' });
+
+  return (
+    <section ref={ref} className="relative py-24 px-6 overflow-hidden">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center mb-4"
+        >
+          <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border border-white/[0.07]" style={{ background: 'rgba(94,210,156,0.04)' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#5ed29c] inline-block" />
+            <span className="text-[9px] uppercase tracking-[0.3em] text-[#5ed29c]/70">Pipeline RAG Interactif</span>
+          </div>
+          <h2 className="text-4xl md:text-6xl font-serif-custom tracking-tighter text-white mb-4">
+            Comment ça fonctionne.
+          </h2>
+          <p className="text-white/30 text-sm max-w-lg mx-auto leading-relaxed">
+            Cliquez sur un nœud pour explorer chaque étape du pipeline. Les connexions révèlent comment les composants s'alimentent mutuellement.
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={isInView ? { opacity: 1 } : {}}
+          transition={{ duration: 0.8, delay: 0.3 }}
+        >
+          <RadialOrbitalTimeline timelineData={RAG_NODES} />
+        </motion.div>
+      </div>
+    </section>
+  );
+};
+
 // --- Footer ---
 const Footer = () => (
   <footer className="bg-black pt-20 pb-12 px-10 border-t border-white/5 relative z-10">
@@ -1072,6 +1355,7 @@ export default function App() {
       <Route path="*" element={
         <div className="relative bg-black" style={{ WebkitUserSelect: 'none' }}>
           <style dangerouslySetInnerHTML={{ __html: styles }} />
+          <MeshGradientBg />
 
           <div className="grid-line" style={{ left: '25%' }} />
           <div className="grid-line" style={{ left: '50%' }} />
@@ -1086,7 +1370,9 @@ export default function App() {
             onLogout={handleLogout}
           />
           <HeroSection scrollYProgress={scrollYProgress} />
-          <ScrollRevealMessage />
+          <StatsBar />
+          <FeatureGrid />
+          <RagPipelineSection />
           <Footer />
 
           <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onAuthSuccess={handleAuthSuccess} />
