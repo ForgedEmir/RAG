@@ -220,15 +220,30 @@ def _valider_lakera(texte: str) -> ValidationResult:
             # le seul vrai détecteur d'attaque. Les détecteurs PII/content sont ignorés
             # car le PII est déjà géré par pii_masker.py et les questions lore contiennent
             # des prénoms légitimes ("Qui est Lucas ?") qui déclenchent sinon pii/name.
-            attack_detected = any(
-                item.get("detector_type") == "prompt_attack"
-                and item.get("detected", False)
-                and item.get("score", 1.0) >= _LAKERA_THRESHOLD
-                for item in breakdown
-            )
-            if any(item.get("detector_type") == "prompt_attack" for item in breakdown):
-                score = next((item.get("score", 0) for item in breakdown if item.get("detector_type") == "prompt_attack"), 0)
-                logger.debug(f"[LAKERA] prompt_attack score={score:.3f} (seuil={_LAKERA_THRESHOLD})")
+            prompt_attack_hits = [
+                item for item in breakdown
+                if item.get("detector_type") == "prompt_attack" and item.get("detected", False)
+            ]
+            prompt_scores = [
+                float(item.get("score"))
+                for item in prompt_attack_hits
+                if isinstance(item.get("score"), (int, float))
+            ]
+
+            attack_detected = False
+            if prompt_scores:
+                max_score = max(prompt_scores)
+                logger.debug(f"[LAKERA] prompt_attack score={max_score:.3f} (seuil={_LAKERA_THRESHOLD})")
+                attack_detected = max_score >= _LAKERA_THRESHOLD
+            elif prompt_attack_hits:
+                # Lakera policy peut parfois renvoyer `detected=true` sans score explicite.
+                # Dans ce cas, on exige une corroboration regex locale pour bloquer.
+                pattern_result = check_patterns(texte)
+                attack_detected = not pattern_result["valid"]
+                if attack_detected:
+                    logger.warning("[LAKERA] prompt_attack sans score + motif regex détecté => blocage.")
+                else:
+                    logger.info("[LAKERA] prompt_attack sans score et sans motif regex => autorisé.")
 
             if not attack_detected:
                 logger.info(f"[LAKERA] Flagged mais prompt_attack=False (PII/content seulement) — autorisé.")
