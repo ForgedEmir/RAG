@@ -55,7 +55,9 @@ _INJECTION_PATTERNS: list[str] = [
     r"bypass\s+the\s+(system|filter|rules|instructions)",
     r"tes\s+nouvelles?\s+instructions?\s+sont",
     r"désormais\s+tu\s+(dois|es|vas)", r"constraints?\s+disabled",
-    r"system\s+prompt", r"prompt\s+injection",
+    r"prompt\s+injection",
+    # Les tentatives d'extraction du system prompt (avec le mot "prompt") sont
+    # gérées par _check_prompt_extraction() — pas besoin de les dupliquer ici.
     r"(reveal|print|show)\s+your\s+(prompt|instructions|system)",
     r"what\s+are\s+your\s+(instructions|constraints|rules)",
     r"révèle?\s+(ton\s+|le\s+|ta\s+)?(system\s+)?prompt",
@@ -134,6 +136,26 @@ def _track_false_positive(texte: str) -> None:
         pass
 
 
+# ── Extraction du system prompt ───────────────────────────────────────────────
+# Le mot "prompt" n'est jamais présent dans une question lore légitime sur Aethelgard.
+# Cette vérification est donc sans faux positif, et s'applique indépendamment de Lakera.
+
+_PROMPT_EXTRACTION_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
+    r"syst[eè]me?\s+prompt",
+    r"system\s+prompt",
+    r"(donne|affiche|montre|révèle?|expose|dis|partage|répète?)\s+(moi\s+)?(?:ton|le|tes?|la)\s+(?:syst[eè]me?\s+)?prompt",
+    r"(reveal|print|show|give|tell|display|output|repeat)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?prompt",
+    r"(?:what(?:'s| is)|quel(?:s|le)?(?:\s+est)?)\s+(?:ton|your|le)\s+(?:system\s+)?prompt",
+]]
+
+
+def _check_prompt_extraction(texte: str) -> ValidationResult:
+    for pattern in _PROMPT_EXTRACTION_PATTERNS:
+        if pattern.search(texte):
+            return {"valid": False, "type": "prompt_injection", "reason": "Tentative d'extraction du system prompt"}
+    return {"valid": True, "type": "ok", "reason": "ok"}
+
+
 # ── Interface publique ────────────────────────────────────────────────────────
 
 def valider_entree(texte: str) -> ValidationResult:
@@ -144,7 +166,13 @@ def valider_entree(texte: str) -> ValidationResult:
     if not texte or not texte.strip():
         return {"valid": False, "type": "prompt_injection", "reason": "Entrée vide"}
 
-    # Lakera Guard (classifieur IA) — seule couche active
+    # Vérification ciblée system-prompt : le mot "prompt" n'apparaît jamais dans
+    # une vraie question lore → zéro faux positif, zéro latence.
+    extraction = _check_prompt_extraction(texte)
+    if not extraction["valid"]:
+        return extraction
+
+    # Lakera Guard (IA) — couvre les attaques subtiles (roleplay, jailbreak, etc.)
     return _valider_lakera(texte)
 
 
