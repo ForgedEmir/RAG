@@ -109,6 +109,7 @@ _LOCK_FILE = os.path.join(os.path.dirname(__file__), ".startup.lock")
 _STARTUP_INDEX_ENABLED = env_bool("STARTUP_INDEX_ENABLED", True)
 _STARTUP_WARMUP_ENABLED = env_bool("STARTUP_WARMUP_ENABLED", True)
 _WATCHDOG_ENABLED = env_bool("WATCHDOG_ENABLED", True)
+_WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH = env_bool("WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH", True)
 
 def _pid_is_alive(pid: int) -> bool:
     if pid <= 0:
@@ -173,7 +174,7 @@ def _warmup() -> None:
                 count = client.count(_COLLECTION_NAME).count
                 # Vérifie aussi la dimension — une collection 384-dim avec 30 points
                 # sera quand même effacée au 1er appel get_store() → mieux vaut re-indexer maintenant
-                needs_reindex = count == 0
+                needs_reindex = False
                 if count > 0:
                     try:
                         from src.ingestion.vector_store import _get_vector_size
@@ -184,8 +185,10 @@ def _warmup() -> None:
                             needs_reindex = True
                     except Exception as e:
                         logger.warning(f"[WARMUP] Vérification dimension impossible : {e}")
+                else:
+                    logger.info("[WARMUP] Qdrant vide: indexation en arrière-plan prévue (pas de force_reindex en warmup).")
                 logger.info(f"[WARMUP] FastEmbed prêt, Qdrant '{_COLLECTION_NAME}': {count} points ({time.monotonic() - t:.1f}s)")
-                if needs_reindex:
+                if needs_reindex and _WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH:
                     from src.ingestion.run import index_data
                     index_data(force_reindex=True)
                     count2 = client.count(_COLLECTION_NAME).count

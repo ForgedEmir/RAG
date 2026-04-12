@@ -418,9 +418,12 @@ def index_data(force_reindex: bool = False) -> bool:
     if not (supprimes or nouveaux or modifies):
         logger.info("Aucun changement détecté.")
         if not _is_bm25_corpus_healthy(actuels):
-            logger.info("Corpus BM25 absent/invalide — reconstruction depuis les fichiers actuels.")
-            all_docs = prepare_files_for_ai(actuels)
-            _save_bm25_corpus(all_docs)
+            logger.info("Corpus BM25 absent/invalide — tentative de reconstruction légère depuis Qdrant.")
+            try:
+                from src.search.search import _load_bm25
+                _load_bm25()
+            except Exception as e:
+                logger.warning(f"Reconstruction légère BM25 impossible : {e}")
         return False
 
     store = get_store(force_reindex=False)
