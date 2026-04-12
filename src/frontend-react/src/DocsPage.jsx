@@ -238,12 +238,36 @@ export default function DocsPage() {
   ];
 
   const LESSONS = [
-    { title: 'Le RAG est plus dur que prévu', content: 'On pensait que brancher un LLM sur des documents serait simple. En réalité, la qualité dépend massivement du chunking, de la stratégie de recherche et du prompt. Un mauvais chunking casse tout même avec un bon LLM.', delay: 0 },
-    { title: 'La recherche hybride bat la recherche pure', content: 'BM25 seul rate les synonymes. Vector seul rate les noms propres et termes techniques. RRF hybride améliore le rappel de ~25% sur notre corpus de lore. Aucun des deux moteurs seul ne suffit.', delay: 0.06 },
-    { title: 'Les fallbacks sont indispensables en prod', content: 'Les LLM ont une disponibilité variable. Sans les 4 niveaux de fallback (LLM principal → Groq → OpenRouter-free → statique), le système aurait été indisponible plusieurs fois. Le design "fail gracefully" est non-négociable.', delay: 0.12 },
-    { title: 'L\'observabilité change tout', content: 'Sans Langfuse, on déboguait à l\'aveugle. Les traces ont révélé que 40% des lenteurs venaient du re-ranking, pas du LLM — ce qui a motivé l\'ajout du smart skip. L\'observabilité n\'est pas un bonus, c\'est une nécessité.', delay: 0.18 },
-    { title: 'Le streaming SSE améliore drastiquement l\'UX', content: 'Même si le LLM met 3 secondes à répondre, le stream token-par-token crée une perception de rapidité. Les utilisateurs restent engagés. Sans streaming, une attente de 3s semble éternelle.', delay: 0.24 },
-    { title: 'Le cache sémantique est sous-estimé', content: 'Notre cache Redis avec seuil cosine 0.92 réduit de ~30% les appels LLM sur les questions récurrentes (personnages principaux, factions). C\'est une optimisation coût/performance à déployer dès le début.', delay: 0.3 },
+    {
+      title: 'Concevoir une architecture distribuée de A à Z',
+      content: 'Intégrer FastAPI, Qdrant, Redis, Supabase et plusieurs LLM dans un système cohérent nous a confrontés à des problèmes réels de prod : gestion des timeouts, stratégies de retry, backpressure SSE. Ces compétences sont directement transférables à tout backend moderne orienté services.',
+      delay: 0,
+    },
+    {
+      title: 'Travailler en équipe avec ownership par domaine',
+      content: 'Chaque membre gérait un périmètre technique complet (ingestion, sécurité, évaluation, frontend) avec une autonomie totale. On a appris à définir des interfaces claires entre modules, à faire des PR reviews constructives et à synchroniser sans dépendances bloquantes — comme dans une vraie équipe produit.',
+      delay: 0.06,
+    },
+    {
+      title: 'Déployer et maintenir un système en production',
+      content: 'Docker Compose, CI/CD via Coolify, gestion des variables d\'environnement, résolution de pannes en live (OOM, corruption de cache, saturation disque) — on a appris que déployer est une compétence à part entière. La prod n\'est pas le dev.',
+      delay: 0.12,
+    },
+    {
+      title: 'Mesurer avant d\'optimiser',
+      content: 'Langfuse nous a permis de quantifier l\'impact de chaque composant. On a découvert que 40% des latences venaient du re-ranking, pas du LLM — ce qui a changé notre stratégie d\'optimisation. Prendre des décisions sur la data, pas sur l\'intuition, c\'est une discipline qui manque souvent aux juniors.',
+      delay: 0.18,
+    },
+    {
+      title: 'La sécurité comme contrainte de conception, pas comme ajout',
+      content: 'Intégrer Lakera Guard, le masquage PII et la validation des entrées dès le début a changé notre façon de penser les APIs. Chaque endpoint manipule potentiellement des données sensibles. Penser "threat model" avant de coder est une compétence rare et recherchée en entreprise.',
+      delay: 0.24,
+    },
+    {
+      title: 'Communiquer des choix techniques à des non-techniques',
+      content: 'Documenter pourquoi Qdrant plutôt que Pinecone, ou pourquoi RRF plutôt que la simple fusion par score, nous a obligés à structurer notre raisonnement. Savoir défendre un choix technique avec des arguments mesurables — coût, latence, maintenabilité — est ce que les recruteurs attendent d\'un ingénieur senior.',
+      delay: 0.3,
+    },
   ];
 
   return (
@@ -337,7 +361,7 @@ export default function DocsPage() {
                       { name: 'Discord', desc: 'Communication & daily sync' },
                       { name: 'Obsidian', desc: 'Documentation & planning' },
                       { name: 'Docker', desc: 'Conteneurisation & déploiement' },
-                      { name: 'Postman', desc: 'Tests API manuels' },
+                      { name: 'MCP', desc: 'Connecteurs context protocol' },
                       { name: 'Langfuse', desc: 'Monitoring RAG partagé' },
                     ].map(t => (
                       <div key={t.name} className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/[0.07]"

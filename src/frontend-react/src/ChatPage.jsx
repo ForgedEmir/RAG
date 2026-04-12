@@ -284,11 +284,37 @@ function useTTS() {
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
     utt.lang = 'fr-FR';
-    utt.onstart = () => setSpeaking(true);
-    utt.onend = () => setSpeaking(false);
-    utt.onerror = () => setSpeaking(false);
-    uttRef.current = utt;
-    window.speechSynthesis.speak(utt);
+    utt.rate = 0.88;
+    utt.pitch = 0.72; // voix grave pour l'Oracle
+
+    const applyVoiceAndSpeak = () => {
+      const voices = window.speechSynthesis.getVoices();
+      // Cherche une voix masculine française (Thomas, Henri, Claude, Pierre…)
+      const maleVoice = voices.find(v =>
+        v.lang.startsWith('fr') &&
+        /thomas|henri|claude|pierre|paul|antoine|nicolas/i.test(v.name)
+      ) || voices.find(v =>
+        v.lang.startsWith('fr') &&
+        !/marie|pauline|amélie|amel|lea|lucie|celine|valerie/i.test(v.name)
+      ) || voices.find(v => v.lang.startsWith('fr'));
+      if (maleVoice) utt.voice = maleVoice;
+      utt.onstart = () => setSpeaking(true);
+      utt.onend = () => setSpeaking(false);
+      utt.onerror = () => setSpeaking(false);
+      uttRef.current = utt;
+      window.speechSynthesis.speak(utt);
+    };
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      applyVoiceAndSpeak();
+    } else {
+      // Les voix se chargent de façon asynchrone au premier appel
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.onvoiceschanged = null;
+        applyVoiceAndSpeak();
+      };
+    }
   };
 
   const stop = () => {
@@ -503,6 +529,13 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
       return;
     }
 
+    // getUserMedia requiert HTTPS hors localhost — fail gracieusement
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setInput(prev => prev + (prev ? ' ' : '') + '(Micro indisponible — connexion HTTPS requise)');
+      setRecording(false);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
@@ -548,8 +581,11 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
       rec.start();
       mediaRecorderRef.current = rec;
       setRecording(true);
-    } catch (_) {
+    } catch (err) {
       setRecording(false);
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        setInput(prev => prev + (prev ? ' ' : '') + '(Accès micro refusé — autorisez le microphone dans votre navigateur)');
+      }
     }
   };
 

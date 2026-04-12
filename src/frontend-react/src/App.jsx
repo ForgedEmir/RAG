@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { Balloons } from './components/Balloons.jsx';
 
 import { Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useTransform, useMotionValue, useSpring } from 'framer-motion';
@@ -965,8 +964,31 @@ const COMPACT_PLANS = [
   },
 ];
 
+const PRICING_ROWS = [
+  { label: 'Requêtes / jour',         values: ['10',           '500',                  'Illimitées'] },
+  { label: 'Sources de lore',          values: ['1',            '20',                   'Illimitées'] },
+  { label: 'Recherche hybride',        values: [false,          true,                   true] },
+  { label: 'Re-ranking cross-encoder', values: [false,          true,                   true] },
+  { label: 'Synthèse vocale (TTS)',    values: [false,          true,                   true] },
+  { label: 'Historique sessions',      values: [false,          '30 jours',             'Illimité'] },
+  { label: 'API REST',                 values: [false,          false,                  true] },
+  { label: 'Connecteurs MCP',          values: [false,          false,                  true] },
+  { label: 'Support',                  values: ['Communauté',   'Email prioritaire',    'Dédié + SLA 99.9%'] },
+];
+
+const PRICING_PLANS = [
+  { name: 'Curieux',  price: '0',  label: 'Gratuit pour toujours', cta: 'Commencer gratuitement', highlight: false },
+  { name: 'Érudit',   price: '24', label: '/ mois, facturé annuellement', cta: '14 jours gratuit', highlight: true, badge: 'Populaire' },
+  { name: 'Studio',   price: '89', label: '/ mois, facturé annuellement', cta: "Contacter l'équipe", highlight: false },
+];
+
 const PricingOverlay = ({ isOpen, onClose, navbarProps }) => {
-  const balloonsRef = useRef(null);
+  const navigate = useNavigate();
+  const handleCta = (plan) => {
+    if (plan.name === 'Studio') return; // contact link — do nothing for now
+    onClose();
+    navigate('/chat');
+  };
 
   return (
     <AnimatePresence>
@@ -980,103 +1002,109 @@ const PricingOverlay = ({ isOpen, onClose, navbarProps }) => {
               style={{ filter: 'blur(18px)', transform: 'scale(1.08)' }}
               src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260324_151826_c7218672-6e92-402c-9e45-f1e0f454bdc4.mp4"
               muted autoPlay loop playsInline />
-            <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.68)' }} />
+            <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.72)' }} />
           </div>
 
-          {/* Content — fills viewport, no scroll */}
-          <div className="absolute inset-0 z-10 flex flex-col">
+          <div className="absolute inset-0 z-10 flex flex-col overflow-y-auto">
             {navbarProps && <Navbar {...navbarProps} />}
 
-            <div className="flex-1 flex items-center justify-center px-6 py-6">
+            <div className="flex-1 flex items-start justify-center px-4 py-10 pt-28">
               <div className="w-full max-w-5xl">
+
                 {/* Header */}
-                <div className="text-center mb-8">
+                <div className="text-center mb-10">
                   <div className="inline-flex items-center gap-2 mb-4 px-4 py-1.5 rounded-full border border-white/[0.07]" style={{ background: 'rgba(245,158,11,0.04)' }}>
                     <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] inline-block" />
                     <span className="text-[9px] uppercase tracking-[0.3em] text-[#F59E0B]/70 font-mono">Abonnements</span>
                   </div>
-                  <h2 className="text-4xl md:text-6xl font-serif-custom tracking-tighter text-white">
-                    Simple.<em className="italic text-white/40"> Transparent.</em>
+                  <h2 className="text-4xl md:text-5xl font-serif-custom tracking-tighter text-white mb-2">
+                    Le bon plan,<em className="italic text-white/40"> au bon moment.</em>
                   </h2>
+                  <p className="text-white/30 text-sm">Sans engagement. Résiliable à tout moment. Données hébergées en Europe.</p>
                 </div>
 
-                {/* 3 compact cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {COMPACT_PLANS.map((plan, i) => (
+                {/* Plan header cards */}
+                <div className="grid grid-cols-3 gap-3 mb-0">
+                  {PRICING_PLANS.map((plan, i) => (
                     <motion.div
                       key={plan.name}
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 + i * 0.08, ease: [0.22, 1, 0.36, 1] }}
-                      className="relative rounded-[24px] p-6 flex flex-col"
+                      initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.08 + i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+                      className="relative rounded-t-[20px] rounded-b-none p-5 pb-4"
                       style={{
-                        background: plan.highlight ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
-                        border: plan.highlight ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,255,255,0.07)',
-                        boxShadow: plan.highlight ? '0 0 50px rgba(245,158,11,0.06)' : 'none',
+                        background: plan.highlight ? 'rgba(245,158,11,0.07)' : 'rgba(255,255,255,0.025)',
+                        border: plan.highlight ? '1px solid rgba(245,158,11,0.28)' : '1px solid rgba(255,255,255,0.07)',
+                        borderBottom: 'none',
                       }}
                     >
                       {plan.highlight && (
-                        <div className="absolute top-0 left-0 right-0 h-px rounded-t-[24px]"
+                        <div className="absolute top-0 left-0 right-0 h-px rounded-t-[20px]"
                           style={{ background: 'linear-gradient(to right, transparent, #F59E0B, transparent)' }} />
                       )}
-
-                      {/* Name + badge */}
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-serif-custom italic text-white">{plan.name}</h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-base font-serif-custom italic text-white">{plan.name}</h3>
                         {plan.badge && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider text-black bg-[#F59E0B]">
-                            {plan.badge}
-                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider text-black bg-[#F59E0B]">{plan.badge}</span>
                         )}
                       </div>
-
-                      {/* Price */}
-                      <div className="mb-5">
-                        <div className="flex items-baseline gap-1">
-                          {plan.price === '0' ? (
-                            <span className="text-3xl font-bold text-white">Gratuit</span>
-                          ) : (
-                            <>
-                              <span className="text-3xl font-bold text-white">{plan.price}€</span>
-                              <span className="text-[10px] text-white/25 ml-1">/ mois</span>
-                            </>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-white/20 mt-0.5">{plan.label}</div>
+                      <div className="flex items-baseline gap-1 mb-0.5">
+                        {plan.price === '0' ? (
+                          <span className="text-2xl font-bold text-white">Gratuit</span>
+                        ) : (
+                          <>
+                            <span className="text-2xl font-bold text-white">{plan.price}€</span>
+                            <span className="text-[9px] text-white/25">/ mois</span>
+                          </>
+                        )}
                       </div>
-
-                      {/* Perks */}
-                      <ul className="space-y-2 mb-6 flex-1">
-                        {plan.perks.map(perk => (
-                          <li key={perk} className="flex items-center gap-2 text-[12px] text-white/55">
-                            <span className="w-1 h-1 rounded-full shrink-0" style={{ background: plan.highlight ? '#F59E0B' : 'rgba(255,255,255,0.3)' }} />
-                            {perk}
-                          </li>
-                        ))}
-                      </ul>
-
-                      {/* CTA */}
-                      <button
-                        onClick={() => balloonsRef.current?.launch()}
-                        className="w-full py-3 rounded-full text-[11px] font-bold uppercase tracking-widest transition-all active:scale-95 hover:scale-[1.02]"
-                        style={plan.highlight
-                          ? { background: '#F59E0B', color: '#000' }
-                          : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.09)' }
-                        }
-                      >
-                        {plan.cta}
-                      </button>
+                      <div className="text-[9px] text-white/20">{plan.label}</div>
                     </motion.div>
                   ))}
                 </div>
 
-                <p className="text-center text-[10px] text-white/15 mt-6 uppercase tracking-widest">
+                {/* Feature comparison table */}
+                <div className="rounded-b-[20px] border border-white/[0.06] overflow-hidden mb-4" style={{ background: 'rgba(255,255,255,0.015)' }}>
+                  {PRICING_ROWS.map((row, ri) => (
+                    <div
+                      key={row.label}
+                      className="grid grid-cols-[1.6fr_1fr_1fr_1fr] text-[11px] border-b border-white/[0.04] last:border-b-0"
+                      style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)' }}
+                    >
+                      <div className="px-5 py-3 text-white/40">{row.label}</div>
+                      {row.values.map((val, vi) => (
+                        <div key={vi} className="px-3 py-3 flex items-center justify-center">
+                          {val === true  ? <Check size={13} className="text-[#F59E0B]" /> :
+                           val === false ? <span className="text-white/15 text-base leading-none">—</span> :
+                           <span className="text-white/60 text-center">{val}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {/* CTA row */}
+                <div className="grid grid-cols-3 gap-3">
+                  {PRICING_PLANS.map((plan) => (
+                    <button
+                      key={plan.name}
+                      onClick={() => handleCta(plan)}
+                      className="w-full py-3 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95 hover:scale-[1.02]"
+                      style={plan.highlight
+                        ? { background: '#F59E0B', color: '#000' }
+                        : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.09)' }
+                      }
+                    >
+                      {plan.cta}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-center text-[9px] text-white/15 mt-6 uppercase tracking-widest">
                   Tous les prix HT · Résiliable à tout moment · Données hébergées en Europe
                 </p>
               </div>
             </div>
           </div>
-
-          <Balloons ref={balloonsRef} type="default" />
         </motion.div>
       )}
     </AnimatePresence>
@@ -1086,10 +1114,10 @@ const PricingOverlay = ({ isOpen, onClose, navbarProps }) => {
 // --- TeamOverlay ---
 const TeamOverlay = ({ isOpen, onClose, navbarProps }) => {
   const team = [
-    { name: 'Emir', github: '#', linkedin: '#' },
-    { name: 'Ediz', github: '#', linkedin: '#' },
-    { name: 'Nicolas', github: '#', linkedin: '#' },
-    { name: 'Tom', github: '#', linkedin: '#' },
+    { name: 'Emir', github: 'https://github.com/ForgedEmir', linkedin: 'https://www.linkedin.com/in/emir-makhtsaev-0b97283a0/' },
+    { name: 'Ediz', github: 'https://github.com/EdizKesici', linkedin: 'https://www.linkedin.com/in/ediz-kesici-25a5093b6/' },
+    { name: 'Nicolas', github: 'https://github.com/Q220003', linkedin: 'https://www.linkedin.com/in/nicolas-bonafede-974b07402/' },
+    { name: 'Tom', github: 'https://github.com/TomPerezleTiec', linkedin: 'https://www.linkedin.com/in/tom-perez-le-tiec-b811182a9' },
   ];
 
   return (
@@ -1117,8 +1145,8 @@ const TeamOverlay = ({ isOpen, onClose, navbarProps }) => {
                     overlayContent={
                       <div className="flex flex-col justify-end p-8 h-full w-full pointer-events-auto">
                         <div className="absolute top-8 right-8 flex flex-col gap-3 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                          <a href={member.linkedin} className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><LinkedinIcon className="w-5 h-5" /></a>
-                          <a href={member.github} className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><GithubIcon className="w-5 h-5" /></a>
+                          <a href={member.linkedin} target="_blank" rel="noopener noreferrer" className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><LinkedinIcon className="w-5 h-5" /></a>
+                          <a href={member.github} target="_blank" rel="noopener noreferrer" className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><GithubIcon className="w-5 h-5" /></a>
                         </div>
                         <h3 className="text-white text-3xl font-serif-custom italic drop-shadow-md">{member.name}</h3>
                       </div>
