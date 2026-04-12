@@ -4,7 +4,7 @@ import {
   ChevronLeft, PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
   Trash2, LogOut, Sparkles, FileText,
   Check, ArrowUp, Square, Menu, ArrowUpRight,
-  ThumbsUp, ThumbsDown, Volume2, VolumeX, Mic, MicOff, Settings
+  ThumbsUp, ThumbsDown, Volume2, VolumeX, Settings
 } from 'lucide-react';
 import { useChat } from './useChat.js';
 import { logout, getSupabase } from './auth.js';
@@ -516,86 +516,6 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
   const initTriggered = useRef(false);
   const { text: animatedPlaceholder, visible: placeholderVisible } = useAnimatedPlaceholder();
 
-  // ── STT (Speech-to-Text via Web Speech API) ───────────────────────────────
-  const [recording, setRecording] = useState(false);
-  const [sttError, setSttError] = useState('');
-  const sttErrorTimer = useRef(null);
-
-  const showSttError = (msg) => {
-    setSttError(msg);
-    clearTimeout(sttErrorTimer.current);
-    sttErrorTimer.current = setTimeout(() => setSttError(''), 4000);
-  };
-
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-
-  const toggleRecording = async () => {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
-      setRecording(false);
-      return;
-    }
-
-    // getUserMedia requiert HTTPS hors localhost
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showSttError('HTTPS requis pour le microphone');
-      setRecording(false);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const rec = new MediaRecorder(stream, { mimeType });
-      audioChunksRef.current = [];
-
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      rec.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        const formData = new FormData();
-        formData.append('audio', blob, mimeType === 'audio/webm' ? 'audio.webm' : 'audio.mp4');
-        try {
-          const { getSupabase } = await import('./auth.js');
-          const headers = {};
-          const sb = await getSupabase();
-          if (sb) {
-            const { data } = await sb.auth.getSession();
-            const token = data?.session?.access_token;
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-          }
-          if (!headers['Authorization']) {
-            const guestId = localStorage.getItem('oracleGuestId') || '';
-            if (guestId.startsWith('guest_')) headers['x-local-guest-id'] = guestId;
-          }
-          const res = await fetch('/api/stt', { method: 'POST', headers, body: formData });
-          if (res.ok) {
-            const { text } = await res.json();
-            if (text) {
-              setInput(prev => (prev ? prev + ' ' + text : text));
-              if (textareaRef.current) {
-                textareaRef.current.style.height = 'auto';
-                textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
-              }
-            }
-          }
-        } catch (_) {}
-      };
-
-      rec.start();
-      mediaRecorderRef.current = rec;
-      setRecording(true);
-    } catch (err) {
-      setRecording(false);
-      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-        showSttError('Accès micro refusé');
-      }
-    }
-  };
 
   useEffect(() => {
     if (initialQuestion && !initTriggered.current) {
@@ -814,7 +734,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
                   value={input}
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
-                  placeholder={recording ? 'Écoute en cours...' : animatedPlaceholder}
+                  placeholder={animatedPlaceholder}
                   className="w-full bg-transparent border-none outline-none text-white/90 text-[16px] leading-[1.5] resize-none hide-scrollbar font-light self-center"
                   style={{
                     caretColor: '#5ed29c',
@@ -829,29 +749,6 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
               </div>
 
               <div className="shrink-0 flex items-center gap-1 p-2">
-                {!streaming && (
-                  <div className="relative">
-                    {sttError && (
-                      <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 rounded-lg text-[10px] text-white/80 pointer-events-none z-50"
-                        style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)' }}>
-                        {sttError}
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0"
-                          style={{ borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: '4px solid rgba(248,113,113,0.3)' }} />
-                      </div>
-                    )}
-                    <button
-                      onClick={toggleRecording}
-                      title={recording ? 'Arrêter la dictée' : 'Dicter un message'}
-                      className={`flex items-center justify-center w-10 h-10 rounded-full border transition-all ${
-                        recording
-                          ? 'bg-[#f87171]/10 border-[#f87171]/40 text-[#f87171] animate-pulse'
-                          : 'bg-white/[0.04] border-white/10 text-white/30 hover:text-white/70 hover:bg-white/10'
-                      }`}
-                    >
-                      {recording ? <MicOff size={15} /> : <Mic size={15} />}
-                    </button>
-                  </div>
-                )}
 
                 {streaming ? (
                   <motion.button

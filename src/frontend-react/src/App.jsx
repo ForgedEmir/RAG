@@ -493,7 +493,7 @@ const VideoBackground = ({ src, opacityProgress }) => {
 };
 
 // --- Navbar ---
-const Navbar = ({ onLoginClick, onTeamClick, onPricingClick, onDocsClick, onArchitectureClick, onNavigate, user, onLogout }) => {
+const Navbar = ({ onLoginClick, onPricingClick, onDocsClick, onArchitectureClick, onNavigate, user, onLogout }) => {
   const navigate = useNavigate();
   const go = (path) => { if (onNavigate) onNavigate(path); else navigate(path); };
   return (
@@ -506,7 +506,6 @@ const Navbar = ({ onLoginClick, onTeamClick, onPricingClick, onDocsClick, onArch
             <button onClick={onArchitectureClick ?? (() => go('/architecture'))} className="hover:text-white transition-colors">Architecture</button>
             <button onClick={onDocsClick ?? (() => go('/docs'))} className="hover:text-white transition-colors">Documentation</button>
             <button onClick={onPricingClick} className="hover:text-white transition-colors">Abonnements</button>
-            <button onClick={onTeamClick} className="hover:text-white transition-colors">Équipe</button>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1111,57 +1110,6 @@ const PricingOverlay = ({ isOpen, onClose, navbarProps }) => {
   );
 };
 
-// --- TeamOverlay ---
-const TeamOverlay = ({ isOpen, onClose, navbarProps }) => {
-  const team = [
-    { name: 'Emir', github: 'https://github.com/ForgedEmir', linkedin: 'https://www.linkedin.com/in/emir-makhtsaev-0b97283a0/' },
-    { name: 'Ediz', github: 'https://github.com/EdizKesici', linkedin: 'https://www.linkedin.com/in/ediz-kesici-25a5093b6/' },
-    { name: 'Nicolas', github: 'https://github.com/Q220003', linkedin: 'https://www.linkedin.com/in/nicolas-bonafede-974b07402/' },
-    { name: 'Tom', github: 'https://github.com/TomPerezleTiec', linkedin: 'https://www.linkedin.com/in/tom-perez-le-tiec-b811182a9' },
-  ];
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[600] bg-black overflow-hidden flex flex-col">
-          <div className="fixed inset-0 z-0 pointer-events-none">
-            <video className="w-full h-full object-cover opacity-40" src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260324_151826_c7218672-6e92-402c-9e45-f1e0f454bdc4.mp4" muted autoPlay loop playsInline />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black" />
-          </div>
-          {navbarProps && <Navbar {...navbarProps} />}
-          <div className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-6 flex flex-col justify-center pb-12 pt-32">
-            <div className="flex flex-col md:flex-row justify-between items-end mb-12 border-b border-white/10 pb-8">
-              <h2 className="text-5xl md:text-7xl font-serif-custom text-white tracking-tighter">The LoreKeepers. <br /><em className="italic text-white/40">Guiding light.</em></h2>
-              <p className="text-white/40 text-right max-w-xs text-[10px] uppercase tracking-[0.4em] mt-8">Architects of the digital void. <br /> Designing the future of RAG.</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {team.map((member, i) => (
-                <motion.div key={member.name} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.15 }} className="aspect-[4/5] w-full group">
-                  <TiltedCard
-                    altText={`Portrait pour ${member.name}`}
-                    captionText={`LoreKeeper - ${member.name}`}
-                    scaleOnHover={1.05} rotateAmplitude={12}
-                    showTooltip={true} displayOverlayContent={true}
-                    overlayContent={
-                      <div className="flex flex-col justify-end p-8 h-full w-full pointer-events-auto">
-                        <div className="absolute top-8 right-8 flex flex-col gap-3 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                          <a href={member.linkedin} target="_blank" rel="noopener noreferrer" className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><LinkedinIcon className="w-5 h-5" /></a>
-                          <a href={member.github} target="_blank" rel="noopener noreferrer" className="p-3 rounded-full liquid-glass hover:text-[#F59E0B] transition-colors"><GithubIcon className="w-5 h-5" /></a>
-                        </div>
-                        <h3 className="text-white text-3xl font-serif-custom italic drop-shadow-md">{member.name}</h3>
-                      </div>
-                    }
-                  />
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-};
-
 // --- ArchitecturePage ---
 
 const FadeInSection = ({ children, className = "" }) => (
@@ -1642,7 +1590,6 @@ const Footer = () => {
 // --- App ---
 export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isTeamOpen, setIsTeamOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [isArchitectureOpen, setIsArchitectureOpen] = useState(false);
@@ -1652,7 +1599,6 @@ export default function App() {
 
   // ── Callbacks définis AVANT les useEffect qui en dépendent ──────────────
   const closeAll = useCallback(() => {
-    setIsTeamOpen(false);
     setIsPricingOpen(false);
     setIsLoginOpen(false);
     setIsDocsOpen(false);
@@ -1726,35 +1672,30 @@ export default function App() {
     }
   }, [closeAll, navigate]);
 
-  const openTeam = useCallback(() => {
-    setIsPricingOpen(false); setIsLoginOpen(false); setIsDocsOpen(false); setIsArchitectureOpen(false);
-    setIsTeamOpen(true);
-  }, []);
-
   const openPricing = useCallback(() => {
     closeAll();
     setIsPricingOpen(true);
   }, [closeAll]);
 
   const openLogin = useCallback(() => {
-    setIsTeamOpen(false); setIsPricingOpen(false); setIsDocsOpen(false); setIsArchitectureOpen(false);
+    setIsPricingOpen(false); setIsDocsOpen(false); setIsArchitectureOpen(false);
     setIsLoginOpen(true);
   }, []);
 
   const openDocs = useCallback(() => {
-    setIsTeamOpen(false); setIsPricingOpen(false); setIsLoginOpen(false); setIsArchitectureOpen(false);
+    setIsPricingOpen(false); setIsLoginOpen(false); setIsArchitectureOpen(false);
     setIsDocsOpen(true);
   }, []);
 
   const openArchitecture = useCallback(() => {
-    setIsTeamOpen(false); setIsPricingOpen(false); setIsLoginOpen(false); setIsDocsOpen(false);
+    setIsPricingOpen(false); setIsLoginOpen(false); setIsDocsOpen(false);
     setIsArchitectureOpen(true);
   }, []);
 
   // Pause Lenis + bloque scroll natif quand un overlay est ouvert
   // Lenis intercepte les événements wheel directement → overflow:hidden seul ne suffit pas
   useEffect(() => {
-    const anyOverlay = isDocsOpen || isArchitectureOpen || isTeamOpen || isPricingOpen;
+    const anyOverlay = isDocsOpen || isArchitectureOpen || isPricingOpen;
     if (anyOverlay) {
       window.__lenis?.stop();
       document.body.style.overflow = 'hidden';
@@ -1769,7 +1710,7 @@ export default function App() {
       document.body.style.overflow = '';
       document.documentElement.style.overflow = '';
     };
-  }, [isDocsOpen, isArchitectureOpen, isTeamOpen, isPricingOpen]);
+  }, [isDocsOpen, isArchitectureOpen, isPricingOpen]);
 
   return (
     <>
@@ -1806,7 +1747,6 @@ export default function App() {
 
             <Navbar
               onLoginClick={openLogin}
-              onTeamClick={openTeam}
               onPricingClick={openPricing}
               onDocsClick={openDocs}
               onArchitectureClick={openArchitecture}
@@ -1821,8 +1761,7 @@ export default function App() {
 
             <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onAuthSuccess={handleAuthSuccess} />
 
-            <TeamOverlay isOpen={isTeamOpen} onClose={() => setIsTeamOpen(false)} navbarProps={{ onLoginClick: openLogin, onTeamClick: openTeam, onPricingClick: openPricing, onDocsClick: openDocs, onArchitectureClick: openArchitecture, onNavigate: handleNavigate, user, onLogout: handleLogout }} />
-            <PricingOverlay isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} navbarProps={{ onLoginClick: openLogin, onTeamClick: openTeam, onPricingClick: openPricing, onDocsClick: openDocs, onArchitectureClick: openArchitecture, onNavigate: handleNavigate, user, onLogout: handleLogout }} />
+            <PricingOverlay isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} navbarProps={{ onLoginClick: openLogin, onPricingClick: openPricing, onDocsClick: openDocs, onArchitectureClick: openArchitecture, onNavigate: handleNavigate, user, onLogout: handleLogout }} />
 
             {/* Docs & Architecture — overlays, pas de route → pas d'écran noir */}
             <AnimatePresence>
@@ -1843,7 +1782,7 @@ export default function App() {
                     onWheelCapture={(event) => event.stopPropagation()}
                     onTouchMoveCapture={(event) => event.stopPropagation()}
                   >
-                  <Navbar onLoginClick={openLogin} onTeamClick={openTeam} onPricingClick={openPricing} onDocsClick={openDocs} onArchitectureClick={openArchitecture} onNavigate={handleNavigate} user={user} onLogout={handleLogout} />
+                  <Navbar onLoginClick={openLogin} onPricingClick={openPricing} onDocsClick={openDocs} onArchitectureClick={openArchitecture} onNavigate={handleNavigate} user={user} onLogout={handleLogout} />
                   <DocsPage />
                   </div>
                 </motion.div>
@@ -1868,7 +1807,7 @@ export default function App() {
                     onWheelCapture={(event) => event.stopPropagation()}
                     onTouchMoveCapture={(event) => event.stopPropagation()}
                   >
-                  <Navbar onLoginClick={openLogin} onTeamClick={openTeam} onPricingClick={openPricing} onDocsClick={openDocs} onArchitectureClick={openArchitecture} onNavigate={handleNavigate} user={user} onLogout={handleLogout} />
+                  <Navbar onLoginClick={openLogin} onPricingClick={openPricing} onDocsClick={openDocs} onArchitectureClick={openArchitecture} onNavigate={handleNavigate} user={user} onLogout={handleLogout} />
                   <ArchitecturePage />
                   <Footer />
                   </div>
