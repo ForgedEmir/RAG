@@ -110,6 +110,12 @@ _STARTUP_INDEX_ENABLED = env_bool("STARTUP_INDEX_ENABLED", True)
 _STARTUP_WARMUP_ENABLED = env_bool("STARTUP_WARMUP_ENABLED", True)
 _WATCHDOG_ENABLED = env_bool("WATCHDOG_ENABLED", True)
 _WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH = env_bool("WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH", True)
+_STARTUP_WARMUP_MODE = (os.getenv("STARTUP_WARMUP_MODE", "parallel") or "parallel").strip().lower()
+_WARMUP_ENABLE_RERANKER_PRIME = env_bool("WARMUP_ENABLE_RERANKER_PRIME", True)
+try:
+    _WARMUP_STEP_DELAY_SECONDS = max(0.0, float(os.getenv("WARMUP_STEP_DELAY_SECONDS", "0.75")))
+except ValueError:
+    _WARMUP_STEP_DELAY_SECONDS = 0.75
 
 def _pid_is_alive(pid: int) -> bool:
     if pid <= 0:
@@ -161,7 +167,12 @@ def _is_first_worker() -> bool:
         return False
 
 def _warmup() -> None:
-    """Pré-charge FastEmbed + Reranker ONNX + BM25 en parallèle."""
+    """Pré-charge les composants runtime.
+
+    Modes disponibles via STARTUP_WARMUP_MODE:
+    - parallel: vitesse max, CPU plus élevé au boot
+    - phased: démarrage progressif, CPU plus stable
+    """
     import time
 
     def _load_embeddings():
@@ -204,9 +215,14 @@ def _warmup() -> None:
             from src.search.search import _get_reranker
             reranker = _get_reranker()
             if reranker:
-                # Prime ONNX execution graph — sans ça la 1ère inférence réelle prend ~10s
-                list(reranker.rerank("warmup query", ["warmup passage"]))
-            logger.info(f"[WARMUP] Reranker prêt + ONNX primed ({time.monotonic() - t:.1f}s)")
+                if _WARMUP_ENABLE_RERANKER_PRIME:
+                    # Prime ONNX execution graph — sans ça la 1ère inférence réelle prend ~10s
+                    list(reranker.rerank("warmup query", ["warmup passage"]))
+                    logger.info(f"[WARMUP] Reranker prêt + ONNX primed ({time.monotonic() - t:.1f}s)")
+                else:
+                    logger.info(f"[WARMUP] Reranker chargé (prime désactivé) ({time.monotonic() - t:.1f}s)")
+            else:
+                logger.info(f"[WARMUP] Reranker indisponible ({time.monotonic() - t:.1f}s)")
         except Exception as e:
             logger.warning(f"[WARMUP] Reranker échoué : {e}")
 
@@ -250,20 +266,36 @@ def _warmup() -> None:
             logger.warning(f"[WARMUP] LLM init échoué : {e}")
 
     t0 = time.monotonic()
-    threads = [
-        threading.Thread(target=_load_embeddings, daemon=True),
-        threading.Thread(target=_load_reranker,   daemon=True),
-        threading.Thread(target=_load_llm,        daemon=True),
-        threading.Thread(target=_load_redis,      daemon=True),
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+    mode = _STARTUP_WARMUP_MODE
+    if mode not in {"parallel", "phased"}:
+        logger.warning("[WARMUP] STARTUP_WARMUP_MODE invalide (%s), fallback parallel.", mode)
+        mode = "parallel"
 
-    # Charge BM25 après la phase embeddings/Qdrant pour éviter d'afficher
-    # un corpus obsolète juste avant une réindexation forcée.
-    _load_bm25()
+    logger.info("[WARMUP] Mode: %s", mode)
+
+    if mode == "parallel":
+        threads = [
+            threading.Thread(target=_load_embeddings, daemon=True),
+            threading.Thread(target=_load_reranker,   daemon=True),
+            threading.Thread(target=_load_llm,        daemon=True),
+            threading.Thread(target=_load_redis,      daemon=True),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Charge BM25 après la phase embeddings/Qdrant pour éviter d'afficher
+        # un corpus obsolète juste avant une réindexation forcée.
+        _load_bm25()
+    else:
+        # WHY: En mode phased, on étale les tâches coûteuses pour réduire les pics CPU.
+        steps = [_load_redis, _load_llm, _load_embeddings, _load_bm25, _load_reranker]
+        for i, step in enumerate(steps):
+            step()
+            if _WARMUP_STEP_DELAY_SECONDS > 0 and i < len(steps) - 1:
+                time.sleep(_WARMUP_STEP_DELAY_SECONDS)
+
     logger.info(f"[WARMUP] Terminé ({time.monotonic() - t0:.1f}s)")
 
 
