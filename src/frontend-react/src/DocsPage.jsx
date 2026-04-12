@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion'; // motion used in FeatureCard expand/collapse
 import {
   Search, Brain, Layers, Shield, Zap, BarChart3, Database,
-  GitBranch, CheckCircle, XCircle, ChevronRight, Users, BookOpen,
+  GitBranch, CheckCircle, XCircle, ChevronRight, BookOpen,
   Lightbulb, Cpu, Lock, Clock, ArrowUpRight, Code2, Sparkles, Server
 } from 'lucide-react';
 
@@ -11,7 +11,6 @@ const VIDEO_BG = "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH
 const SECTIONS = [
   { id: 'features', label: 'Fonctionnalités', icon: Sparkles },
   { id: 'stack', label: 'Stack & Choix', icon: Cpu },
-  { id: 'team', label: "L'équipe", icon: Users },
   { id: 'learned', label: 'Ce qu\'on a appris', icon: Lightbulb },
 ];
 
@@ -122,27 +121,6 @@ const TechRow = ({ category, chosen, alternatives, why, delay }) => (
   </FadeIn>
 );
 
-// ── Team card ─────────────────────────────────────────────────────────────────
-const TeamCard = ({ name, role, tasks, delay }) => (
-  <FadeIn delay={delay}>
-    <div className="rounded-[24px] border border-white/[0.06] p-7 h-full" style={{ background: 'rgba(255,255,255,0.02)' }}>
-      <div className="w-10 h-10 rounded-full flex items-center justify-center font-serif-custom italic text-lg text-[#F59E0B] border border-[#F59E0B]/20 mb-5"
-        style={{ background: 'rgba(245,158,11,0.06)' }}>
-        {name[0]}
-      </div>
-      <h3 className="text-[17px] font-serif-custom italic text-white mb-1">{name}</h3>
-      <div className="text-[9px] uppercase tracking-[0.25em] text-[#F59E0B]/50 mb-4">{role}</div>
-      <ul className="space-y-2">
-        {tasks.map((t, i) => (
-          <li key={i} className="flex items-start gap-2 text-[12px] text-white/40">
-            <span className="text-[#F59E0B]/40 mt-0.5 shrink-0">—</span>{t}
-          </li>
-        ))}
-      </ul>
-    </div>
-  </FadeIn>
-);
-
 // ── Lesson card ───────────────────────────────────────────────────────────────
 const LessonCard = ({ number, title, content, delay }) => (
   <FadeIn delay={delay}>
@@ -228,13 +206,6 @@ export default function DocsPage() {
     { category: 'Backend', chosen: 'FastAPI', alternatives: 'Flask, Django, Express', why: 'Async natif pour le streaming SSE, auto-documentation OpenAPI, Pydantic pour la validation.', delay: 0.3 },
     { category: 'Embedding', chosen: 'FastEmbed (bge-small)', alternatives: 'OpenAI text-embedding-3, Cohere', why: 'Zéro coût, zéro latence réseau, tourne en local. 384 dimensions suffisent pour le lore.', delay: 0.35 },
     { category: 'Conteneurisation', chosen: 'Docker + Compose', alternatives: 'Podman, K8s, bare metal', why: 'Docker Compose orchestre FastAPI, Qdrant, Redis et Nginx en un seul fichier. Reproductible en local et en prod sans configuration supplémentaire.', delay: 0.4 },
-  ];
-
-  const TEAM = [
-    { name: 'Emir', role: 'Lead Fullstack & Architecture', tasks: ['Architecture globale du système RAG', 'Frontend React (landing, chat, monitoring)', 'Pipeline de recherche hybride BM25 + Vector', 'Déploiement Docker & CI/CD'], delay: 0 },
-    { name: 'Ediz', role: 'Backend & Ingestion', tasks: ['Pipeline d\'ingestion multi-format', 'Chunking contextuel et enrichissement', 'Watchdog de réindexation automatique', 'Tests unitaires ingestion'], delay: 0.08 },
-    { name: 'Nicolas', role: 'Sécurité & Observabilité', tasks: ['Implémentation Langfuse tracing', 'Juge LLM anti-hallucination', 'PII masking et intégration Lakera', 'Dashboard monitoring'], delay: 0.16 },
-    { name: 'Tom', role: 'Recherche & Évaluation', tasks: ['Benchmarks BM25 vs Vector vs Hybrid', 'Tuning re-ranking cross-encoder', 'HyDE fallback implementation', 'Évaluation qualitative des réponses'], delay: 0.24 },
   ];
 
   const LESSONS = [
@@ -338,42 +309,6 @@ export default function DocsPage() {
               <div className="space-y-3">
                 {STACK.map((s, i) => <TechRow key={s.category} {...s} delay={i * 0.04} />)}
               </div>
-            </section>
-
-            {/* ── TEAM ─────────────────────────────────────────── */}
-            <section id="team" ref={el => sectionRefs.current.team = el}>
-              <SectionHeader
-                eyebrow="L'équipe"
-                title="Les LoreKeepers."
-                subtitle="Quatre étudiants, une vision. Chacun a pris en charge un domaine du système avec une ownership complète."
-              />
-              <div className="grid md:grid-cols-2 gap-4">
-                {TEAM.map(m => <TeamCard key={m.name} {...m} />)}
-              </div>
-
-              {/* Collab tools */}
-              <FadeIn delay={0.3}>
-                <div className="mt-8 rounded-[24px] border border-white/[0.06] p-7" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                  <div className="text-[9px] uppercase tracking-[0.3em] text-white/25 mb-4">Outils de collaboration</div>
-                  <div className="flex flex-wrap gap-3">
-                    {[
-                      { name: 'GitHub', desc: 'Versionning & PR reviews' },
-                      { name: 'Discord', desc: 'Communication & daily sync' },
-                      { name: 'Obsidian', desc: 'Documentation & planning' },
-                      { name: 'Docker', desc: 'Conteneurisation & déploiement' },
-                      { name: 'MCP', desc: 'Connecteurs context protocol' },
-                      { name: 'Langfuse', desc: 'Monitoring RAG partagé' },
-                    ].map(t => (
-                      <div key={t.name} className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/[0.07]"
-                        style={{ background: 'rgba(255,255,255,0.02)' }}>
-                        <span className="text-[12px] font-semibold text-white">{t.name}</span>
-                        <span className="text-[10px] text-white/25">—</span>
-                        <span className="text-[10px] text-white/40">{t.desc}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </FadeIn>
             </section>
 
             {/* ── LEARNED ──────────────────────────────────────── */}
