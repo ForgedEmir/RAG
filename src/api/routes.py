@@ -208,8 +208,14 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     validation = valider_entree(question)
     if not validation["valid"]:
-        bt = validation["type"]
-        is_lakera = bt == "jailbreak"
+        bt = validation.get("type", "")
+        reason = (validation.get("reason", "") or "").lower()
+        # Lakera retourne souvent type=prompt_injection; on le distingue via la raison.
+        is_lakera = (
+            bt in ("jailbreak", "lakera", "lakera_prompt_attack")
+            or "lakera" in reason
+            or "prompt_attack" in reason
+        )
         track("injection_lakera" if is_lakera else "injection_regex", detail=question[:200])
         msg = ("⚠️ L'Oracle a détecté une tentative de manipulation des arcanes sacrées."
                if bt in ("prompt_injection", "jailbreak") else
