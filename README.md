@@ -271,7 +271,7 @@ ENV=production
 RAG_PROFILE=balanced
 
 WEB_CONCURRENCY=2
-BACKGROUND_MAX_WORKERS=16
+BACKGROUND_MAX_WORKERS=8
 GUNICORN_TIMEOUT=120
 GUNICORN_GRACEFUL_TIMEOUT=30
 GUNICORN_KEEPALIVE=10
@@ -279,6 +279,9 @@ GUNICORN_KEEPALIVE=10
 REDIS_URL=redis://redis:6379
 
 EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+QDRANT_VECTOR_SIZE=384
+FASTEMBED_CACHE_PATH=/app/fastembed_cache
+HF_TOKEN=hf_xxx
 RERANKER_ENABLED=true
 SMART_RERANK_ENABLED=true
 RERANKER_MODEL=Xenova/ms-marco-MiniLM-L-6-v2
@@ -290,6 +293,11 @@ MAX_RESPONSE_SECONDS=10
 
 QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH=true
 ```
+
+For stable model downloads and startup speed in production:
+
+1. Set `HF_TOKEN` in your deployment environment.
+2. Keep `FASTEMBED_CACHE_PATH` on a persistent volume (example path: `/app/fastembed_cache`).
 
 ---
 

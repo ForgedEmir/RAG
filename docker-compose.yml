@@ -26,9 +26,14 @@ services:
       APP_ENV: ${APP_ENV:-production}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       BACKGROUND_MAX_WORKERS: ${BACKGROUND_MAX_WORKERS:-8}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      QDRANT_VECTOR_SIZE: ${QDRANT_VECTOR_SIZE:-384}
+      FASTEMBED_CACHE_PATH: ${FASTEMBED_CACHE_PATH:-/app/fastembed_cache}
+      HF_TOKEN: ${HF_TOKEN:-}
     volumes:
       - ./data:/app/data
       - lorekeeper_data:/app/data
+      - fastembed_cache:/app/fastembed_cache
     depends_on:
       redis:
         condition: service_healthy
@@ -37,3 +42,4 @@ services:
 volumes:
   redis_data:
   lorekeeper_data:
+  fastembed_cache:
