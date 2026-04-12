@@ -5,6 +5,7 @@ Ce fichier teste les fonctions d'ajout, recherche et suppression dans Qdrant.
 On utilise des mocks pour simuler Qdrant sans vraiment l'utiliser.
 """
 from unittest.mock import Mock, MagicMock, patch
+import pytest
 from langchain_core.documents import Document
 
 
@@ -210,3 +211,40 @@ def test_get_store_mismatch_sans_auto_recreate_leve_erreur(mock_qdrant_vs, mock_
          patch.object(vs, "_get_expected_vector_size", return_value=3):
         with pytest.raises(RuntimeError):
             get_store(force_reindex=False)
+
+
+@patch('src.ingestion.vector_store.FastEmbedEmbeddings')
+def test_get_embeddings_retry_apres_cache_corrompu(mock_fastembed):
+    """Si model.onnx_data est manquant, le cache est purgé puis l'init est retentée."""
+    import src.ingestion.vector_store as vs
+
+    vs._embeddings = None
+
+    broken = RuntimeError(
+        "No such file or directory [/tmp/fastembed_cache/models--qdrant--multilingual-e5-large-onnx/snapshots/abc/model.onnx_data]"
+    )
+    ready = Mock()
+    mock_fastembed.side_effect = [broken, ready]
+
+    with patch('src.ingestion.vector_store._purge_corrupted_fastembed_cache') as mock_purge:
+        emb = vs._get_embeddings()
+
+    assert emb is ready
+    assert mock_fastembed.call_count == 2
+    mock_purge.assert_called_once()
+
+
+@patch('src.ingestion.vector_store.FastEmbedEmbeddings')
+def test_get_embeddings_erreur_non_cache_pas_de_retry(mock_fastembed):
+    """Une erreur non liée au cache doit remonter directement."""
+    import src.ingestion.vector_store as vs
+
+    vs._embeddings = None
+    mock_fastembed.side_effect = RuntimeError("configuration invalide")
+
+    with patch('src.ingestion.vector_store._purge_corrupted_fastembed_cache') as mock_purge:
+        with pytest.raises(RuntimeError):
+            vs._get_embeddings()
+
+    assert mock_fastembed.call_count == 1
+    mock_purge.assert_not_called()

@@ -3,7 +3,9 @@ Cloud (QDRANT_URL + QDRANT_API_KEY) ou local (qdrant_db/).
 """
 import os
 import logging
+import re
 import shutil
+import threading
 from typing import List, Set, Optional
 
 from langchain_qdrant import QdrantVectorStore
@@ -32,22 +34,88 @@ _QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH = os.getenv(
     "QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH", "true"
 ).lower() != "false"
 _QDRANT_VECTOR_SIZE_OVERRIDE = os.getenv("QDRANT_VECTOR_SIZE")
+_FASTEMBED_CACHE_PATH = os.getenv("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache")
 
 # Singletons — créés une seule fois
 _embeddings: Optional[FastEmbedEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
 _vector_size: Optional[int] = None
+_embeddings_lock = threading.Lock()
+
+
+def _is_fastembed_cache_missing_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "no such file or directory" in msg
+        and ("model.onnx_data" in msg or "fastembed_cache" in msg or "onnx" in msg)
+    )
+
+
+def _extract_missing_path(exc: Exception) -> Optional[str]:
+    msg = str(exc)
+    match = re.search(r"no such file or directory\s*\[([^\]]+)\]", msg, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return os.path.normpath(match.group(1))
+
+
+def _purge_corrupted_fastembed_cache(exc: Exception, model_name: str) -> None:
+    """Supprime les dossiers cache FastEmbed incomplets pour permettre un retry propre."""
+    model_leaf = model_name.split("/")[-1]
+    targets = {
+        os.path.join(_FASTEMBED_CACHE_PATH, f"models--qdrant--{model_leaf}-onnx"),
+        os.path.join(_FASTEMBED_CACHE_PATH, f"models--qdrant--{model_leaf}"),
+    }
+
+    missing_path = _extract_missing_path(exc)
+    if missing_path and "snapshots" in missing_path:
+        snapshot_parent = os.path.dirname(os.path.dirname(missing_path))
+        model_root = os.path.dirname(snapshot_parent)
+        targets.add(model_root)
+
+    removed = 0
+    for target in targets:
+        if os.path.isdir(target):
+            try:
+                shutil.rmtree(target)
+                removed += 1
+            except Exception as e:
+                logger.warning("Purge cache FastEmbed impossible (%s): %s", target, e)
+
+    if removed:
+        logger.warning("Cache FastEmbed corrompu détecté: %s dossier(s) purgé(s).", removed)
 
 
 def _get_embeddings() -> FastEmbedEmbeddings:
     global _embeddings
-    if _embeddings is None:
+    if _embeddings is not None:
+        return _embeddings
+
+    with _embeddings_lock:
+        if _embeddings is not None:
+            return _embeddings
+
         model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-        # FastEmbed uses ONNX — no PyTorch/GPU required, starts in ~3s
-        _embeddings = FastEmbedEmbeddings(model_name=model)
-        logger.info(f"FastEmbed embeddings chargé : {model}")
-    return _embeddings
+        os.makedirs(_FASTEMBED_CACHE_PATH, exist_ok=True)
+
+        def _build() -> FastEmbedEmbeddings:
+            # FastEmbed uses ONNX — no PyTorch/GPU required.
+            return FastEmbedEmbeddings(model_name=model, cache_dir=_FASTEMBED_CACHE_PATH)
+
+        try:
+            _embeddings = _build()
+            logger.info(f"FastEmbed embeddings chargé : {model}")
+            return _embeddings
+        except Exception as e:
+            if not _is_fastembed_cache_missing_error(e):
+                raise
+
+            logger.warning("FastEmbed init échoué (cache incomplet), purge + retry en cours.")
+            _purge_corrupted_fastembed_cache(e, model)
+            _embeddings = _build()
+            logger.info(f"FastEmbed embeddings chargé après purge cache : {model}")
+            return _embeddings
 
 
 def _get_vector_size() -> int:
