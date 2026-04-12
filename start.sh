@@ -10,9 +10,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Réglages par défaut pour une charge modérée (~15 utilisateurs concurrents).
-WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
-BACKGROUND_MAX_WORKERS=${BACKGROUND_MAX_WORKERS:-16}
+# Réglages par défaut orientés stabilité mémoire (les valeurs restent surchargeables via env).
+WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+BACKGROUND_MAX_WORKERS=${BACKGROUND_MAX_WORKERS:-8}
 GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
 GUNICORN_GRACEFUL_TIMEOUT=${GUNICORN_GRACEFUL_TIMEOUT:-30}
 GUNICORN_KEEPALIVE=${GUNICORN_KEEPALIVE:-10}
