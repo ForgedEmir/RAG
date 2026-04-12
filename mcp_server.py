@@ -4,7 +4,7 @@ Expose le RAG d'Aethelgard Online comme outils MCP utilisables par Claude Deskto
 
 Transports :
   - stdio  (défaut) : Claude Desktop local
-  - sse             : HTTP/SSE pour connexions distantes (Claude.ai web, Cursor, CI...)
+    - sse             : HTTP/SSE pour connexions distantes (Claude.ai web, Cursor, etc.)
 
 Lancement stdio (Claude Desktop) :
     python mcp_server.py
@@ -19,7 +19,7 @@ Configuration Claude Desktop (%APPDATA%\\Claude\\claude_desktop_config.json) :
         "lorekeeper": {
           "command": "python",
           "args": ["C:/chemin/vers/Oracle-LoreKeeper/mcp_server.py"],
-          "env": { "OPENAI_API_KEY": "...", "QDRANT_URL": "...", "QDRANT_API_KEY": "..." }
+                    "env": { "LLM_API_KEY": "...", "QDRANT_URL": "...", "QDRANT_API_KEY": "..." }
         }
       }
     }

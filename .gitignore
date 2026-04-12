@@ -11,6 +11,10 @@
 __pycache__/
 *.pyo
 *.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
 
 # Binaires
 *.bin
@@ -25,6 +29,7 @@ chroma_db/
 
 # Env
 venv/
+.venv/
 .env
 .env.*
 !.env.example

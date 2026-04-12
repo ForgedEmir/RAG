@@ -41,10 +41,110 @@ Oracle LoreKeeper is a production-grade Retrieval-Augmented Generation (RAG) bac
 
 ## 2. Architecture
 
+### 2.0 Complete Architecture Diagram
+
+The complete runtime + ingestion architecture is available as Mermaid in [docs/architecture-complete.mmd](docs/architecture-complete.mmd).
+
+```mermaid
+flowchart TB
+  subgraph CLIENTS[Clients]
+    Browser[Web browser]
+    ClaudeDesktop[Claude Desktop / MCP client]
+    AdminUser[Admin / monitoring user]
+  end
+
+  subgraph FRONTEND[Presentation layer]
+    ReactApp[React + Vite + Tailwind frontend]
+    MonitoringUI[Monitoring dashboard]
+    ChatUI[Chat / docs / architecture pages]
+  end
+
+  subgraph API[FastAPI application]
+    Routes[API routes\n/api/ask /api/feedback /health /auth /monitoring /admin]
+    Auth[Auth & session\nSupabase JWT or guest]
+    PII[PII masking]
+    Validate[Security validation\nLakera Guard optional]
+    Cache[Semantic cache\nRedis]
+    Context[Context assembly\nconversation history + user summary + vector memories]
+    Rewrite[Query reformulation\noptional]
+  end
+
+  subgraph RETRIEVAL[Retrieval layer]
+    Embed[FastEmbed ONNX embedding]
+    Vector[Qdrant vector search]
+    BM25[BM25 lexical search]
+    Fuse[RRF fusion]
+    Rerank[Cross-encoder reranking\nsmart skip]
+    HyDE[HyDE fallback]
+  end
+
+  subgraph GENERATION[Generation layer]
+    Prompt[Prompt builder\nretrieved passages + context]
+    PrimaryLLM[Primary LLM\nCerebras / OpenRouter]
+    FallbackLLM[Fallback LLM\nGroq]
+    Stream[SSE token stream]
+  end
+
+  subgraph DATA[Persistent services]
+    Supabase[(Supabase\nAuth + sessions + conversations + events)]
+    Qdrant[(Qdrant\nvector DB)]
+    Redis[(Redis\ncache + rate limits)]
+    Langfuse[(Langfuse\ntraces + evals)]
+  end
+
+  subgraph INGESTION[Ingestion pipeline]
+    Sources[data/sample\nMD TXT PDF CSV XLSX JSON XML]
+    Loader[Document loader]
+    Parser[Parser]
+    Chunker[Chunking]
+    Enrich[Contextual enrichment\noptional]
+    Index[Indexing\nembeddings + BM25 corpus]
+    Watchdog[Watchdog / reindex]
+  end
+
+  Browser --> ReactApp
+  ClaudeDesktop --> Routes
+  AdminUser --> MonitoringUI
+  ReactApp --> ChatUI
+  ChatUI --> Routes
+  MonitoringUI --> Routes
+
+  Routes --> Auth --> PII --> Validate --> Cache
+  Cache -->|miss| Context
+  Cache -->|hit| Stream
+
+  Context --> Rewrite --> Embed
+  Embed --> Vector
+  Rewrite --> BM25
+  Vector --> Fuse
+  BM25 --> Fuse
+  Fuse --> Rerank --> HyDE --> Prompt
+  Rerank --> Prompt
+  HyDE --> Prompt
+
+  Prompt --> PrimaryLLM --> Stream
+  PrimaryLLM -->|429 / timeout| FallbackLLM --> Stream
+
+  Stream --> ReactApp
+  Stream --> ChatUI
+
+  Routes -. background .-> Supabase
+  Routes -. background .-> Redis
+  Routes -. background .-> Langfuse
+  Routes -. background .-> Qdrant
+
+  Sources --> Loader --> Parser --> Chunker --> Enrich --> Index
+  Index --> Qdrant
+  Index --> Redis
+  Index --> Supabase
+  Watchdog --> Sources
+  Watchdog --> Index
+```
+
 ### 2.1 Directory Structure
 
 ```
-Oracle-LoreKeeper-dev/
+Oracle-LoreKeeper/
 ├── main.py                         # FastAPI app factory, lifespan, warmup, frontend serving
 ├── mcp_server.py                   # Model Context Protocol server
 ├── docker-compose.yml              # Redis + app services
@@ -52,7 +152,6 @@ Oracle-LoreKeeper-dev/
 ├── Makefile                        # Common dev/ops commands
 ├── requirements.txt                # Python dependencies
 ├── .env.example                    # Environment variable template
-├── locustfile.py                   # Load testing configuration
 ├── pyproject.toml                  # Project metadata
 ├── pytest.ini                      # Test configuration
 ├── docs/
@@ -85,9 +184,8 @@ Oracle-LoreKeeper-dev/
     ├── monitoring/
     │   └── tracker.py              # Supabase event tracking, statistics, spike detection
     ├── security/
-    │   ├── validator.py            # Input validation: regex + Lakera Guard
+    │   ├── validator.py            # Input validation: Lakera Guard (+ regex helper for ingestion)
     │   ├── pii_masker.py           # PII redaction before LLM calls
-    │   └── judge.py                # (kept for reference — evaluation delegated to Langfuse)
     ├── caching/
     │   └── semantic_cache.py       # Redis semantic response cache
     ├── memory/
@@ -107,11 +205,11 @@ Oracle-LoreKeeper-dev/
     │   └── dist/                   # Built static files (served by FastAPI)
     └── test-unitaires/
         ├── conftest.py
+        ├── locustfile.py
         ├── test_routes.py
         ├── test_search.py
         ├── test_feedback.py
-        ├── test_run.py
-        └── test_load.py            # Load tests (opt-in: RUN_LOAD_TESTS=true)
+        └── test_run.py
 ```
 
 ### 2.2 Component Responsibilities
@@ -463,22 +561,22 @@ WATCHDOG_ENABLED=true
 
 ### 6.1 Input Validation (validator.py)
 
-**Layer 1 — Regex patterns** (always active, <1ms):
-- 70+ patterns covering: prompt injection, jailbreak attempts, system prompt extraction, role-playing attacks, encoding tricks
-- Returns 403 with `reason: "injection_regex"` if detected
-
-**Layer 2 — Lakera Guard** (optional, <50ms):
-- LLM-based classifier for subtle jailbreaks not caught by regex
+**Request validation — Lakera Guard** (optional, <50ms):
+- LLM-based classifier for jailbreak/prompt-attack detection on user questions
 - Three modes:
   - `enforce`: block detected requests
   - `shadow`: log but allow (monitoring only)
   - `disabled`: off
 
+**Ingestion regex helper — `check_patterns()`**:
+- Regex patterns are still used during ingestion chunk filtering (`src/ingestion/run.py`)
+- This protects the indexed corpus from obvious prompt-injection payloads
+
 ```env
 LAKERA_API_KEY=
 LAKERA_PROJECT_ID=
 LAKERA_MODE=enforce       # enforce | shadow | disabled
-SECURITY_VALIDATOR=rules  # rules | false | shadow
+SECURITY_VALIDATOR=true   # true | false | disabled
 ```
 
 ### 6.2 PII Masking (pii_masker.py)
@@ -670,7 +768,7 @@ LAKERA_API_KEY=
 LAKERA_PROJECT_ID=
 LAKERA_MODE=enforce                         # enforce | shadow | disabled
 
-SECURITY_VALIDATOR=rules                    # rules | false | shadow
+SECURITY_VALIDATOR=true                     # true | false | disabled
 ```
 
 ### RAG Pipeline
@@ -841,10 +939,6 @@ python -m pytest src/test-unitaires/test_search.py -v
 python -m pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q
 ```
 
-**Current status:** 131 passed, 6 skipped, 0 failed.
-
-The 6 skipped tests are load/stress tests requiring a live server and `RUN_LOAD_TESTS=true`.
-
 ### Load Tests
 
 ```bash
@@ -862,10 +956,11 @@ Load tests cover: 1000 concurrent requests, cache hit rate validation, memory le
 ### Locust Load Testing
 
 ```bash
-locust -f locustfile.py --host http://localhost:8000
+set LOCUST_BEARER_TOKEN=<your_jwt>
+locust -f src/test-unitaires/locustfile.py --host http://localhost:8000
 
-# Headless (CI)
-locust -f locustfile.py --host http://localhost:8000 \
+# Headless mode
+locust -f src/test-unitaires/locustfile.py --host http://localhost:8000 \
   --users 15 --spawn-rate 3 --run-time 60s --headless
 ```
 

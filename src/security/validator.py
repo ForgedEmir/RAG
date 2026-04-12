@@ -1,12 +1,11 @@
 """
 Validation des entrées utilisateur avant envoi au LLM.
 
-Deux couches de protection :
-    1. Regex (instantané) — bloque les patterns connus
-    2. Lakera Guard (<50ms) — classifieur pour les injections subtiles
+Lakera Guard (<50ms) — classifieur IA pour les injections subtiles et jailbreaks.
+check_patterns() reste disponible pour la validation des chunks à l'ingestion.
 
 Config .env :
-  SECURITY_VALIDATOR = true | rules | false | shadow
+  SECURITY_VALIDATOR = true | false | disabled
   LAKERA_API_KEY     = clé API Lakera
   LAKERA_PROJECT_ID  = projet Lakera (optionnel)
   LAKERA_MODE        = enforce (défaut) | shadow | disabled
@@ -24,7 +23,7 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-_MODE             = os.getenv("SECURITY_VALIDATOR", "rules").lower()
+_ENABLED          = os.getenv("SECURITY_VALIDATOR", "true").lower() not in ("false", "0", "no", "disabled")
 _LAKERA_KEY       = os.getenv("LAKERA_API_KEY")
 _LAKERA_URL       = "https://api.lakera.ai/v2/guard"
 _LAKERA_PRJ       = os.getenv("LAKERA_PROJECT_ID")
@@ -139,21 +138,13 @@ def _track_false_positive(texte: str) -> None:
 
 def valider_entree(texte: str) -> ValidationResult:
     """Point d'entrée principal : valide le texte avant envoi au LLM."""
-    if _MODE in ("false", "0", "no", "disabled") or _LAKERA_MODE == "disabled":
+    if not _ENABLED or _LAKERA_MODE == "disabled":
         return {"valid": True, "type": "ok", "reason": "Validation désactivée"}
 
     if not texte or not texte.strip():
         return {"valid": False, "type": "prompt_injection", "reason": "Entrée vide"}
 
-    # Couche 1 : regex (uniquement si mode "rules_only", sinon Lakera seul suffit)
-    if _MODE in ("rules", "rules_only"):
-        result = check_patterns(texte)
-        if not result["valid"]:
-            logger.warning(f"[REGEX] Injection détectée : {result['reason']}")
-            return result
-        return {"valid": True, "type": "ok", "reason": "Validation par règles OK"}
-
-    # Couche 2 : Lakera Guard (classifieur IA, moins de faux positifs)
+    # Lakera Guard (classifieur IA) — seule couche active
     return _valider_lakera(texte)
 
 

@@ -45,7 +45,7 @@ Oracle LoreKeeper is a retrieval-augmented generation (RAG) system that answers 
 | Cache & limits | Redis + SlowAPI | Semantic cache + per-user rate limiting |
 | Frontend | React + Vite + Tailwind | Served statically by FastAPI |
 | Observability | Langfuse (optional) | Full pipeline tracing |
-| Security | Regex + Lakera Guard (optional) | Injection detection, PII masking |
+| Security | Lakera Guard (optional) + regex chunk checks | Injection detection, PII masking |
 | Quality | Langfuse | LLM-as-Judge, pipeline tracing, evaluation scores |
 
 ---
@@ -57,7 +57,7 @@ Client → POST /api/ask
           │
           ├── Auth (JWT or guest)
           ├── PII masking
-          ├── Security validation (regex + optional Lakera)
+          ├── Security validation (Lakera Guard, optional)
           ├── Semantic cache lookup  ──► cached? return immediately
           │
           ├── Parallel context fetch
@@ -94,7 +94,7 @@ Client → POST /api/ask
 
 ```bash
 git clone <repo-url>
-cd Oracle-LoreKeeper-dev
+cd Oracle-LoreKeeper
 
 python -m venv venv
 # Windows:
@@ -153,6 +153,8 @@ make index      # Force reindex
 | `/api/feedback` | POST | JWT / guest | Submit rating (1–5) |
 | `/api/auth/config` | GET | — | Supabase public config |
 | `/api/auth/me` | GET | JWT | Current user ID |
+| `/api/swagger` | GET | — | OpenAPI Swagger UI |
+| `/api/redoc` | GET | — | OpenAPI ReDoc UI |
 | `/api/feedback/vote` | POST | JWT / guest | Submit thumbs up/down (-1 / +1) by trace_id |
 | `/api/conversations` | GET | JWT / guest | Get conversation history for a session |
 | `/api/conversations/list` | GET | JWT / guest | List all conversations for current user |
@@ -195,7 +197,7 @@ data: {"type": "done", "trace_id": "...", "model": "llama3.1-8b"}
 
 ## Testing
 
-**Unit suite (131 tests):**
+**Unit suite:**
 ```bash
 python -m pytest src/test-unitaires -q
 ```
@@ -217,7 +219,8 @@ python -m pytest src/test-unitaires/test_load.py -q
 
 **Locust load testing:**
 ```bash
-locust -f locustfile.py --host http://localhost:8000
+set LOCUST_BEARER_TOKEN=<your_jwt>
+locust -f src/test-unitaires/locustfile.py --host http://localhost:8000
 ```
 
 ---
@@ -295,6 +298,10 @@ QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH=true
 - `.env` and `.env.*` are git-ignored
 - `.env.example` is versioned with all variables documented
 - No hardcoded API keys or base URLs anywhere in the codebase
+
+## CI/CD Status
+
+No CI/CD workflow is currently configured in this repository.
 
 ---
 

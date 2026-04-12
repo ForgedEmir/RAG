@@ -26,7 +26,7 @@ setup:
 	@if [ ! -f .env ]; then \
 		cp .env.example .env; \
 		echo "  .env créé depuis .env.example — remplis les clés API !"; \
-		echo "  Ouvre .env et ajoute au minimum OPENAI_API_KEY (clé Groq)."; \
+		echo "  Ouvre .env et ajoute au minimum LLM_API_KEY, QDRANT_URL, SUPABASE_URL."; \
 		exit 1; \
 	fi
 	@echo ">>> Installation des dépendances..."
@@ -48,7 +48,7 @@ run:
 docker-up:
 	@if [ ! -f .env ]; then \
 		cp .env.example .env; \
-		echo "  .env créé — remplis OPENAI_API_KEY avant de relancer."; \
+		echo "  .env créé — remplis les clés LLM/Qdrant/Supabase avant de relancer."; \
 		exit 1; \
 	fi
 	docker compose up --build -d

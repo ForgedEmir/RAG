@@ -84,7 +84,7 @@ for _name in ("uvicorn", "uvicorn.error", "gunicorn", "gunicorn.error", "gunicor
     _attach_buffer_handler_to_logger(_name)
 
 # Silencer les logs HTTP externes (Supabase, Qdrant, OpenRouter) — trop verbeux en prod
-logging.getLogger("src.security.pii_masker").setLevel(logging.DEBUG)  # TODO: retirer après debug
+logging.getLogger("src.security.pii_masker").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("hpack").setLevel(logging.WARNING)
@@ -272,7 +272,13 @@ async def lifespan(app: FastAPI):
             pass
 
 
-app = FastAPI(title="Oracle LoreKeeper", lifespan=lifespan)
+app = FastAPI(
+    title="Oracle LoreKeeper",
+    lifespan=lifespan,
+    # Move Swagger UI away from /docs to avoid collision with React SPA route /docs
+    docs_url="/api/swagger",
+    redoc_url="/api/redoc",
+)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)

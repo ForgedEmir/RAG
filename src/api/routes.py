@@ -569,6 +569,7 @@ async def get_cache_stats(request: Request):
     return cache_stats()
 
 
+
 def register_routes(app: FastAPI, log_buffer: deque = None) -> None:
     # WHY: Attacher le buffer à l'app state évite les imports circulaires dans le monitoring.
     if log_buffer is not None:

@@ -1,6 +1,7 @@
 """Test de charge Oracle LoreKeeper — 20 utilisateurs simultanés.
 Lancement : locust --headless -u 20 -r 2 --run-time 60s --host http://127.0.0.1:8000
 """
+import os
 import random
 from locust import HttpUser, task, between
 
@@ -23,12 +24,19 @@ QUESTIONS = [
     "Qui est Emir dans le lore ?",
 ]
 
-# JWT de test — récupéré depuis les DevTools
-TEST_JWT = "eyJhbGciOiJFUzI1NiIsImtpZCI6IjIxYmUxOGYyLTAwNDUtNDY4Yi04NTcyLTc4Mzk4MGYyZjU5MCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3NzdHh6cG1vZ25nbHlidGh1Z3FmLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI1ZTUzNzc3NS05ZjFkLTQ3NGYtYjlmMy1mOGMxZmRhMDg1ZmMiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzc1NzYyMTY3LCJpYXQiOjE3NzU3NTg1NjcsImVtYWlsIjoiZW1pci5tYWtodHNhZXYucHJvQGdtYWlsLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZ2l0aHViIiwicHJvdmlkZXJzIjpbImdpdGh1YiJdfSwidXNlcl9tZXRhZGF0YSI6eyJhdmF0YXJfdXJsIjoiaHR0cHM6Ly9hdmF0YXJzLmdpdGh1YnVzZXJjb250ZW50LmNvbS91LzI0NDYwMDE3Nz92PTQiLCJlbWFpbCI6ImVtaXIubWFraHRzYWV2LnByb0BnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZnVsbF9uYW1lIjoiRW1pciIsImlzcyI6Imh0dHBzOi8vYXBpLmdpdGh1Yi5jb20iLCJuYW1lIjoiRW1pciIsInBob25lX3ZlcmlmaWVkIjpmYWxzZSwicHJlZmVycmVkX3VzZXJuYW1lIjoiRm9yZ2VkRW1pciIsInByb3ZpZGVyX2lkIjoiMjQ0NjAwMTc3Iiwic3ViIjoiMjQ0NjAwMTc3IiwidXNlcl9uYW1lIjoiRm9yZ2VkRW1pciJ9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6Im9hdXRoIiwidGltZXN0YW1wIjoxNzc1NjQ0MzYyfV0sInNlc3Npb25faWQiOiJjNTgxMjRmZS0xYWZjLTQwMTAtODFlYy1iMGIyNWIzMmY5YjMiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.5ogGFAc_XpDaQGnE9L9mDbvFMyjfe_pL0_uIS7ZFqxs7vKB4q2rqEOF6jPnb8jyruiNozN-ZbpbXDeoz0iNJcg"
+# Prefer a short-lived bearer token from env.
+# If not provided, use guest mode header (requires ALLOW_GUEST_MODE=true).
+TEST_JWT = os.getenv("LOCUST_BEARER_TOKEN", "").strip()
+TEST_GUEST_ID = os.getenv("LOCUST_GUEST_ID", "guest_locust_test")
 
 
 class LoreKeeperUser(HttpUser):
     wait_time = between(1, 4)  # délai réaliste entre les questions
+
+    def _auth_headers(self):
+        if TEST_JWT:
+            return {"Authorization": f"Bearer {TEST_JWT}"}
+        return {"x-local-guest-id": TEST_GUEST_ID}
 
     @task
     def ask_question(self):
@@ -36,7 +44,7 @@ class LoreKeeperUser(HttpUser):
         with self.client.post(
             "/api/ask",
             json={"question": question, "session_id": ""},
-            headers={"Authorization": f"Bearer {TEST_JWT}"},
+            headers=self._auth_headers(),
             stream=True,
             catch_response=True,
             timeout=30,

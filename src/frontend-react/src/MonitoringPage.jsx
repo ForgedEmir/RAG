@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MessageSquare, Zap, Database, Shield, FileText, ArrowUpDown, 
@@ -24,7 +25,9 @@ const styles = `
   --error: #f87171;
   --warning: #fb923c;
   --info: #60a5fa;
-  background-color: var(--bg-color);
+  background: radial-gradient(ellipse at 85% 8%, rgba(94,210,156,0.05) 0%, transparent 45%),
+              radial-gradient(ellipse at 10% 90%, rgba(94,210,156,0.03) 0%, transparent 40%),
+              #000000;
   color: #ffffff;
   font-family: 'Inter', sans-serif;
   min-height: 100vh;
@@ -433,6 +436,110 @@ const FeatureGridTab = ({ apiKey }) => {
   );
 };
 
+// ── Pipeline flow visualization (inline dans SourcesTab) ─────────────────────
+const INGESTION_STEPS = [
+  { id: 'reception', label: 'Réception',  Icon: UploadCloud, desc: 'Validation extension, taille & sécurité' },
+  { id: 'parsing',   label: 'Parsing',    Icon: FileText,    desc: 'Extraction texte, nettoyage Unicode'     },
+  { id: 'chunking',  label: 'Chunking',   Icon: GitBranch,   desc: 'Découpage contextuel + late chunking'    },
+  { id: 'embedding', label: 'Embedding',  Icon: Brain,       desc: 'Vecteurs ONNX 384 dim via FastEmbed'     },
+  { id: 'qdrant',    label: 'Qdrant',     Icon: Database,    desc: 'Upsert vectoriel + index HNSW cosine'    },
+  { id: 'bm25',      label: 'BM25',       Icon: Search,      desc: 'Rebuild corpus lexical + cache invalide' },
+];
+
+const _STEP_STYLES = {
+  idle:          { ring: 'border-white/[0.06]',    bg: 'bg-transparent',      ico: 'text-white/[0.18]', lbl: 'text-white/[0.18]' },
+  pending:       { ring: 'border-white/10',         bg: 'bg-white/[0.03]',     ico: 'text-white/25',     lbl: 'text-white/25'     },
+  'in-progress': { ring: 'border-[#60a5fa]/60',    bg: 'bg-[#60a5fa]/10',     ico: 'text-[#60a5fa]',    lbl: 'text-[#60a5fa]'    },
+  completed:     { ring: 'border-[#5ed29c]/45',    bg: 'bg-[#5ed29c]/[0.07]', ico: 'text-[#5ed29c]',    lbl: 'text-[#5ed29c]'    },
+  failed:        { ring: 'border-[#f87171]/45',    bg: 'bg-[#f87171]/[0.07]', ico: 'text-[#f87171]',    lbl: 'text-[#f87171]'    },
+};
+
+const _StepNode = ({ step, status, isLast }) => {
+  const s = _STEP_STYLES[status] || _STEP_STYLES.idle;
+  const { Icon } = step;
+  const icon = status === 'completed'
+    ? <Check size={13} />
+    : status === 'failed'
+      ? <X size={13} />
+      : <Icon size={14} />;
+
+  return (
+    <div className="flex items-start flex-1 min-w-0">
+      <div className="flex flex-col items-center flex-1 min-w-0 px-1">
+        <motion.div
+          className={`w-9 h-9 rounded-full border flex items-center justify-center flex-shrink-0 ${s.ring} ${s.bg} ${s.ico} transition-colors duration-500`}
+          animate={status === 'in-progress' ? {
+            boxShadow: ['0 0 0 0 rgba(96,165,250,0)', '0 0 0 7px rgba(96,165,250,0.14)', '0 0 0 0 rgba(96,165,250,0)']
+          } : { boxShadow: '0 0 0 0 rgba(0,0,0,0)' }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          {icon}
+        </motion.div>
+        <motion.span
+          className={`text-[9px] uppercase tracking-widest mt-2 font-medium text-center ${s.lbl} transition-colors duration-500`}
+        >
+          {step.label}
+        </motion.span>
+        <span className="text-[8px] text-white/12 text-center leading-snug mt-0.5 px-0.5 hidden xl:block">
+          {step.desc}
+        </span>
+      </div>
+      {!isLast && (
+        <div className="flex-shrink-0 flex items-center" style={{ width: '20px', paddingTop: '18px' }}>
+          <div className="h-px w-full transition-colors duration-700"
+            style={{ background: status === 'completed' ? 'rgba(94,210,156,0.25)' : 'rgba(255,255,255,0.05)' }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const IngestionFlowVis = ({ currentStep, hasError }) => {
+  const getStatus = (i) => {
+    if (currentStep === -1) return 'idle';
+    if (hasError && i === currentStep) return 'failed';
+    if (currentStep === 6 || i < currentStep) return 'completed';
+    if (i === currentStep) return 'in-progress';
+    return 'pending';
+  };
+
+  return (
+    <div className="liquid-glass rounded-2xl px-5 py-4">
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[9px] uppercase tracking-widest text-white/20 font-medium">
+          Ce qui se passe lors de l'indexation
+        </span>
+        <AnimatePresence mode="wait">
+          {currentStep === 6 && (
+            <motion.span key="done" initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+              className="text-[9px] text-[#5ed29c] flex items-center gap-1">
+              <Check size={9} /> Indexation terminée
+            </motion.span>
+          )}
+          {currentStep >= 0 && currentStep < 6 && !hasError && (
+            <motion.span key="running" initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+              className="text-[9px] text-[#60a5fa] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#60a5fa] animate-pulse inline-block" />
+              Traitement en cours
+            </motion.span>
+          )}
+          {hasError && (
+            <motion.span key="error" initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+              className="text-[9px] text-[#f87171] flex items-center gap-1">
+              <X size={9} /> Erreur d'indexation
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
+      <div className="flex items-start">
+        {INGESTION_STEPS.map((step, i) => (
+          <_StepNode key={step.id} step={step} status={getStatus(i)} isLast={i === INGESTION_STEPS.length - 1} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // 4. SOURCES
 const SourcesTab = ({ apiKey }) => {
   const [files, setFiles] = useState([]);
@@ -446,6 +553,35 @@ const SourcesTab = ({ apiKey }) => {
   const [replaceTarget, setReplaceTarget] = useState('');
   const replaceTargetRef = useRef('');
   const ignoreNextUploadZoneClickRef = useRef(false);
+
+  // ── Pipeline flow animation ───────────────────────────────────────────────
+  const [pipelineStep, setPipelineStep] = useState(-1); // -1=idle, 0-5=active, 6=done
+  const [pipelineError, setPipelineError] = useState(false);
+  const pipelineTimersRef = useRef([]);
+
+  const startPipelineAnim = () => {
+    pipelineTimersRef.current.forEach(t => clearTimeout(t));
+    pipelineTimersRef.current = [];
+    setPipelineStep(0);
+    setPipelineError(false);
+    const go = (step, ms) => pipelineTimersRef.current.push(setTimeout(() => setPipelineStep(step), ms));
+    go(1, 1500); go(2, 4000); go(3, 8500); go(4, 17000); go(5, 23000);
+  };
+
+  const finishPipelineAnim = (success) => {
+    pipelineTimersRef.current.forEach(t => clearTimeout(t));
+    pipelineTimersRef.current = [];
+    if (success) {
+      setPipelineStep(6);
+      pipelineTimersRef.current.push(setTimeout(() => setPipelineStep(-1), 5000));
+    } else {
+      setPipelineError(true);
+      pipelineTimersRef.current.push(setTimeout(() => { setPipelineStep(-1); setPipelineError(false); }, 3500));
+    }
+  };
+
+  useEffect(() => () => { pipelineTimersRef.current.forEach(t => clearTimeout(t)); }, []);
+
   const MAX_UPLOAD_SIZE_BYTES = 500 * 1024;
   const ALLOWED_UPLOAD_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'xml', 'xlsx', 'pdf']);
 
@@ -530,6 +666,7 @@ const SourcesTab = ({ apiKey }) => {
 
     setUploading(true);
     setUploadMsg(null);
+    startPipelineAnim();
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -543,11 +680,14 @@ const SourcesTab = ({ apiKey }) => {
         const details = data.ingestion?.summary ? ` ${data.ingestion.summary}` : '';
         setUploadMsg({ ok: true, text: `${data.message || 'Fichier uploadé !'}${details}`.trim() });
         fetchFiles();
+        finishPipelineAnim(true);
       } else {
         setUploadMsg({ ok: false, text: data.error || 'Erreur upload.' });
+        finishPipelineAnim(false);
       }
     } catch(e) {
       setUploadMsg({ ok: false, text: 'Erreur réseau.' });
+      finishPipelineAnim(false);
     } finally {
       setUploading(false);
     }
@@ -601,6 +741,7 @@ const SourcesTab = ({ apiKey }) => {
 
     setUploading(true);
     setUploadMsg(null);
+    startPipelineAnim();
     try {
       const formData = new FormData();
       // Reuse /upload upsert path and force the backend-visible filename.
@@ -616,11 +757,14 @@ const SourcesTab = ({ apiKey }) => {
         const details = data.ingestion?.summary ? ` ${data.ingestion.summary}` : '';
         setUploadMsg({ ok: true, text: `${data.message || 'Fichier remplacé !'}${details}`.trim() });
         await fetchFiles();
+        finishPipelineAnim(true);
       } else {
         setUploadMsg({ ok: false, text: data.error || 'Erreur remplacement.' });
+        finishPipelineAnim(false);
       }
     } catch (e) {
       setUploadMsg({ ok: false, text: 'Erreur réseau.' });
+      finishPipelineAnim(false);
     } finally {
       setUploading(false);
       setReplaceTarget('');
@@ -647,6 +791,7 @@ const SourcesTab = ({ apiKey }) => {
   };
 
   return (
+    <>
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
       <Card delay={0} className="xl:col-span-2 h-[500px] flex flex-col">
         <div className="flex justify-between items-center mb-6">
@@ -724,6 +869,10 @@ const SourcesTab = ({ apiKey }) => {
         <div className="text-[10px] text-white/20 uppercase tracking-widest mt-4">.txt, .md, .csv, .json, .xml, .xlsx, .pdf</div>
       </Card>
     </div>
+    <div className="mt-6">
+      <IngestionFlowVis currentStep={pipelineStep} hasError={pipelineError} />
+    </div>
+    </>
   );
 };
 
@@ -796,6 +945,7 @@ const LogsTab = ({ apiKey }) => {
 const MonitoringPage = ({ apiKey, onLogout }) => {
   const tabs = ['Vue d\'ensemble', 'Features', 'Sources', 'Logs'];
   const [activeTab, setActiveTab] = useState(tabs[0]);
+  const navigate = useNavigate();
 
   const renderTab = () => {
     switch(activeTab) {
@@ -812,11 +962,14 @@ const MonitoringPage = ({ apiKey, onLogout }) => {
       {/* Navbar Admin */}
       <nav className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
         <div className="max-w-[1400px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          >
             <span className="text-2xl font-serif-italic text-white tracking-tight">LoreKeeper</span>
             <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest bg-[#5ed29c] text-black">Admin</span>
             {MOCK_MODE && <span className="px-2 py-0.5 rounded border border-[#fb923c] text-[#fb923c] text-[9px] uppercase tracking-widest">Mock Mode</span>}
-          </div>
+          </button>
 
           <div className="flex bg-white/5 rounded-full p-1">
             {tabs.map(tab => (
