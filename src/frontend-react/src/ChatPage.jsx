@@ -518,6 +518,14 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
 
   // ── STT (Speech-to-Text via Web Speech API) ───────────────────────────────
   const [recording, setRecording] = useState(false);
+  const [sttError, setSttError] = useState('');
+  const sttErrorTimer = useRef(null);
+
+  const showSttError = (msg) => {
+    setSttError(msg);
+    clearTimeout(sttErrorTimer.current);
+    sttErrorTimer.current = setTimeout(() => setSttError(''), 4000);
+  };
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -529,9 +537,9 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
       return;
     }
 
-    // getUserMedia requiert HTTPS hors localhost — fail gracieusement
+    // getUserMedia requiert HTTPS hors localhost
     if (!navigator.mediaDevices?.getUserMedia) {
-      setInput(prev => prev + (prev ? ' ' : '') + '(Micro indisponible — connexion HTTPS requise)');
+      showSttError('HTTPS requis pour le microphone');
       setRecording(false);
       return;
     }
@@ -584,7 +592,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
     } catch (err) {
       setRecording(false);
       if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-        setInput(prev => prev + (prev ? ' ' : '') + '(Accès micro refusé — autorisez le microphone dans votre navigateur)');
+        showSttError('Accès micro refusé');
       }
     }
   };
@@ -822,17 +830,27 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
 
               <div className="shrink-0 flex items-center gap-1 p-2">
                 {!streaming && (
-                  <button
-                    onClick={toggleRecording}
-                    title={recording ? 'Arrêter la dictée' : 'Dicter un message'}
-                    className={`flex items-center justify-center w-10 h-10 rounded-full border transition-all ${
-                      recording
-                        ? 'bg-[#f87171]/10 border-[#f87171]/40 text-[#f87171] animate-pulse'
-                        : 'bg-white/[0.04] border-white/10 text-white/30 hover:text-white/70 hover:bg-white/10'
-                    }`}
-                  >
-                    {recording ? <MicOff size={15} /> : <Mic size={15} />}
-                  </button>
+                  <div className="relative">
+                    {sttError && (
+                      <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 rounded-lg text-[10px] text-white/80 pointer-events-none z-50"
+                        style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)' }}>
+                        {sttError}
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0"
+                          style={{ borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: '4px solid rgba(248,113,113,0.3)' }} />
+                      </div>
+                    )}
+                    <button
+                      onClick={toggleRecording}
+                      title={recording ? 'Arrêter la dictée' : 'Dicter un message'}
+                      className={`flex items-center justify-center w-10 h-10 rounded-full border transition-all ${
+                        recording
+                          ? 'bg-[#f87171]/10 border-[#f87171]/40 text-[#f87171] animate-pulse'
+                          : 'bg-white/[0.04] border-white/10 text-white/30 hover:text-white/70 hover:bg-white/10'
+                      }`}
+                    >
+                      {recording ? <MicOff size={15} /> : <Mic size={15} />}
+                    </button>
+                  </div>
                 )}
 
                 {streaming ? (
