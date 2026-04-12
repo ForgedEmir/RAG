@@ -327,10 +327,15 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
 def _save_bm25_corpus(documents: List[Document]) -> None:
     """Sauvegarde les chunks en JSON pour la hybrid search BM25."""
     os.makedirs(os.path.dirname(BM25_CORPUS_FILE), exist_ok=True)
-    corpus = [
-        {"id": doc.metadata.get("chunk_id", f"doc_{i}"), "text": doc.page_content, "fichier": doc.metadata.get("fichier", "inconnu")}
-        for i, doc in enumerate(documents)
-    ]
+    corpus = []
+    for i, doc in enumerate(documents):
+        raw_text = doc.metadata.get("original_text") if isinstance(doc.metadata, dict) else None
+        bm25_text = raw_text if isinstance(raw_text, str) and raw_text.strip() else doc.page_content
+        corpus.append({
+            "id": doc.metadata.get("chunk_id", f"doc_{i}"),
+            "text": bm25_text,
+            "fichier": doc.metadata.get("fichier", "inconnu"),
+        })
     dirpath = os.path.dirname(BM25_CORPUS_FILE)
     fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
     try:

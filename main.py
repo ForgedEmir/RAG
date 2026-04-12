@@ -110,20 +110,45 @@ _STARTUP_INDEX_ENABLED = env_bool("STARTUP_INDEX_ENABLED", True)
 _STARTUP_WARMUP_ENABLED = env_bool("STARTUP_WARMUP_ENABLED", True)
 _WATCHDOG_ENABLED = env_bool("WATCHDOG_ENABLED", True)
 
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
 def _is_first_worker() -> bool:
     """Utilise un fichier lock pour qu'un seul worker lance le warmup/indexation.
     Un lock vieux de plus de 60s est considéré périmé (crash, Stop-Process, redémarrage).
     Dans la même session, les workers démarrent en quelques secondes → lock < 10s → non supprimé.
     """
     if os.path.exists(_LOCK_FILE):
+        stale_reason = None
         try:
-            age = time.time() - os.path.getmtime(_LOCK_FILE)
-            if age > 60:
-                os.remove(_LOCK_FILE)
-                logger.info(f"[STARTUP] Verrou périmé supprimé ({age:.0f}s).")
+            with open(_LOCK_FILE, "r", encoding="utf-8") as f:
+                raw_pid = f.read().strip()
+            lock_pid = int(raw_pid) if raw_pid else 0
+            if lock_pid and not _pid_is_alive(lock_pid):
+                stale_reason = f"owner pid {lock_pid} absent"
         except Exception:
+            stale_reason = "lock illisible"
+
+        if stale_reason is None:
+            try:
+                age = time.time() - os.path.getmtime(_LOCK_FILE)
+                if age > 60:
+                    stale_reason = f"verrou périmé ({age:.0f}s)"
+            except Exception:
+                stale_reason = "mtime lock indisponible"
+
+        if stale_reason:
             try:
                 os.remove(_LOCK_FILE)
+                logger.info(f"[STARTUP] Verrou supprimé ({stale_reason}).")
             except Exception:
                 pass
     try:
@@ -244,18 +269,19 @@ async def lifespan(app: FastAPI):
     import asyncio
     first = _is_first_worker()
     if first:
-        if _STARTUP_INDEX_ENABLED:
-            # Indexation initiale en arrière-plan → le serveur répond aux health checks immédiatement
-            threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
-        else:
-            logger.info("[STARTUP] Indexation initiale désactivée (STARTUP_INDEX_ENABLED=false).")
-
         if _STARTUP_WARMUP_ENABLED:
             # Pré-charge FastEmbed + Reranker ONNX de façon BLOQUANTE avant d'accepter des requêtes
             # → élimine la latence à froid sur la première requête (~4–10s sans ça)
             await asyncio.to_thread(_warmup)
         else:
             logger.info("[STARTUP] Warmup désactivé (STARTUP_WARMUP_ENABLED=false).")
+
+        if _STARTUP_INDEX_ENABLED:
+            # WHY: Évite le pic mémoire warmup + index_data en parallèle (source de SIGKILL OOM).
+            # L'indexation démarre après warmup dans un thread séparé.
+            threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
+        else:
+            logger.info("[STARTUP] Indexation initiale désactivée (STARTUP_INDEX_ENABLED=false).")
 
         if _WATCHDOG_ENABLED:
             # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change

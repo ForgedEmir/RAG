@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import threading
 import time
 import unicodedata
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 _BM25_CORPUS_FILE = os.path.join(os.path.dirname(__file__), "..", "ingestion", "qdrant_db", "bm25_corpus.json")
 _CACHE_TTL   = int(os.getenv("SEARCH_CACHE_TTL",  "300"))
 _CACHE_SIZE  = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
+_BM25_BOOTSTRAP_LIMIT = max(100, int(os.getenv("BM25_BOOTSTRAP_LIMIT", "512")))
+_BM25_BOOTSTRAP_MAX_POINTS = max(500, int(os.getenv("BM25_BOOTSTRAP_MAX_POINTS", "50000")))
+_BM25_BOOTSTRAP_RETRY_SECONDS = max(5, int(os.getenv("BM25_BOOTSTRAP_RETRY_SECONDS", "30")))
 
 # Constantes nommées — évite les magic numbers dispersés dans le code
 RRF_K              = 60    # Paramètre de fusion RRF standard
@@ -90,6 +94,9 @@ _bm25_index:  Optional[BM25Okapi] = None
 _bm25_corpus: List[dict]          = []
 _bm25_loaded: bool                = False
 _bm25_lock                        = threading.Lock()
+_bm25_bootstrap_lock              = threading.Lock()
+_bm25_last_bootstrap_try: float   = 0.0
+_bm25_missing_warned: bool        = False
 
 _reranker     = None
 _reranker_lock = threading.Lock()
@@ -242,11 +249,80 @@ def _expand_query(question: str) -> List[str]:
 # ── BM25 ──────────────────────────────────────────────────────────────────────
 
 def _load_bm25() -> None:
-    global _bm25_index, _bm25_corpus, _bm25_loaded
+    global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
+
+    def _write_bm25_corpus(path: str, corpus: List[dict]) -> None:
+        dirpath = os.path.dirname(path)
+        os.makedirs(dirpath, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(corpus, f, ensure_ascii=False, indent=1)
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def _bootstrap_bm25_from_qdrant(path: str) -> bool:
+        global _bm25_last_bootstrap_try
+        now = time.time()
+        with _bm25_bootstrap_lock:
+            if now - _bm25_last_bootstrap_try < _BM25_BOOTSTRAP_RETRY_SECONDS:
+                return False
+            _bm25_last_bootstrap_try = now
+
+        try:
+            from src.ingestion.vector_store import _COLLECTION_NAME, _get_client
+            client = _get_client()
+            corpus: List[dict] = []
+            offset = None
+
+            while len(corpus) < _BM25_BOOTSTRAP_MAX_POINTS:
+                points, next_offset = client.scroll(
+                    collection_name=_COLLECTION_NAME,
+                    with_payload=True,
+                    with_vectors=False,
+                    limit=_BM25_BOOTSTRAP_LIMIT,
+                    offset=offset,
+                )
+                if not points:
+                    break
+
+                for point in points:
+                    payload = point.payload if isinstance(point.payload, dict) else {}
+                    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                    text = metadata.get("original_text") or payload.get("page_content") or payload.get("text")
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    chunk_id = metadata.get("chunk_id") or str(point.id)
+                    fichier = metadata.get("fichier", "inconnu")
+                    corpus.append({"id": chunk_id, "text": text, "fichier": fichier})
+                    if len(corpus) >= _BM25_BOOTSTRAP_MAX_POINTS:
+                        break
+
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            if not corpus:
+                return False
+
+            _write_bm25_corpus(path, corpus)
+            logger.info("Corpus BM25 reconstruit depuis Qdrant (%s chunks).", len(corpus))
+            return True
+        except Exception as e:
+            logger.warning("Reconstruction BM25 depuis Qdrant impossible (%s).", e)
+            return False
+
     path = os.path.normpath(_BM25_CORPUS_FILE)
     if not os.path.exists(path):
-        logger.warning("Corpus BM25 introuvable — vector-only (retry au prochain appel).")
-        return
+        rebuilt = _bootstrap_bm25_from_qdrant(path)
+        if not rebuilt or not os.path.exists(path):
+            if not _bm25_missing_warned:
+                logger.warning("Corpus BM25 introuvable — vector-only (retry au prochain appel).")
+                _bm25_missing_warned = True
+            return
+
     with _bm25_lock:
         if _bm25_loaded:
             return
@@ -264,6 +340,7 @@ def _load_bm25() -> None:
                     tokenized_corpus.append(tokens)
                 _bm25_index = BM25Okapi(tokenized_corpus)
                 logger.info(f"BM25 chargé ({len(_bm25_corpus)} chunks).")
+                _bm25_missing_warned = False
             _bm25_loaded = True
         except json.JSONDecodeError as e:
             logger.warning(f"Corpus BM25 corrompu ({e}) — vector-only.")
@@ -271,9 +348,11 @@ def _load_bm25() -> None:
             logger.warning(f"Chargement BM25 impossible ({e}) — vector-only.")
 
 def invalidate_bm25_cache() -> None:
-    global _bm25_loaded
+    global _bm25_loaded, _bm25_missing_warned, _bm25_last_bootstrap_try
     with _bm25_lock:
         _bm25_loaded = False
+        _bm25_missing_warned = False
+        _bm25_last_bootstrap_try = 0.0
 
 
 # ── RRF avec scores exposés ───────────────────────────────────────────────────
