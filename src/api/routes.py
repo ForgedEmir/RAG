@@ -199,6 +199,29 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         if owner and owner != _norm_uid(user_id):
             return JSONResponse({"error": "Accès refusé"}, status_code=403)
 
+    # ── Détection questions méta/technique (hors lore) AVANT sécurité ──────
+    # WHY: ces questions ne doivent pas être interprétées comme prompt attacks.
+    _META_KEYWORDS = (
+        "user-memory", "user memory", "mémoire utilisateur", "ta mémoire",
+        "mes données", "mon profil", "tu sais quoi sur moi", "qu'est-ce que tu sais",
+        "qui es-tu", "qui es tu", "tu es qui", "comment tu fonctionnes",
+        "comment fonctionne", "ton fonctionnement", "tes données", "ta base de données",
+        "tu stockes", "tu enregistres", "qu'est-ce que tu es",
+        "architecture du système", "architecture du systeme",
+        "résume l'architecture", "resume l'architecture",
+        "architecture technique", "stack technique",
+    )
+    q_lower = question.lower()
+    if any(kw in q_lower for kw in _META_KEYWORDS):
+        meta_msg = "🔮 Je suis l'Oracle des Archives, gardien du lore d'Aethelgard Online. Je réponds uniquement aux questions sur l'univers du jeu — son histoire, ses personnages, ses factions et ses événements. Pour toute question technique sur le service, contacte les développeurs."
+        return StreamingResponse(
+            iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
+                  f"data: {json.dumps({'type': 'text', 'text': meta_msg})}\n\n",
+                  f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     # Masquage PII avant validation sécurité
     try:
         from src.security.pii_masker import masquer
@@ -223,25 +246,6 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n",
-                  f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    # ── Détection questions méta (sur l'Oracle lui-même) ─────────────────
-    _META_KEYWORDS = (
-        "user-memory", "user memory", "mémoire utilisateur", "ta mémoire",
-        "mes données", "mon profil", "tu sais quoi sur moi", "qu'est-ce que tu sais",
-        "qui es-tu", "qui es tu", "tu es qui", "comment tu fonctionnes",
-        "comment fonctionne", "ton fonctionnement", "tes données", "ta base de données",
-        "tu stockes", "tu enregistres", "qu'est-ce que tu es",
-    )
-    q_lower = question.lower()
-    if any(kw in q_lower for kw in _META_KEYWORDS):
-        meta_msg = "🔮 Je suis l'Oracle des Archives, gardien du lore d'Aethelgard Online. Je réponds uniquement aux questions sur l'univers du jeu — son histoire, ses personnages, ses factions et ses événements. Pour toute question technique sur le service, contacte les développeurs."
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'confidence': 0})}\n\n",
-                  f"data: {json.dumps({'type': 'text', 'text': meta_msg})}\n\n",
                   f"data: {json.dumps({'type': 'done', 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"]),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
