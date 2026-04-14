@@ -10,7 +10,7 @@ from collections import defaultdict, deque
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.auth import get_current_user, require_monitoring
 from src.api.limiter import limiter
@@ -81,7 +81,7 @@ def _run_background_summary(uid: str, history: list) -> None:
 
 
 class AskBody(BaseModel):
-    question: str
+    question: str = Field(..., max_length=5000)
     session_id: str = ""
 
 class ReindexBody(BaseModel):
@@ -242,7 +242,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                     break
                 if kind == "error":
                     track("error", detail=data[:200])
-                    yield f"data: {json.dumps({'type': 'error', 'message': data})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Une erreur interne est survenue.'})}\n\n"
                     return
                 accumulated.append(data)
                 yield f"data: {json.dumps({'type': 'text', 'text': data})}\n\n"
@@ -267,7 +267,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         except Exception as e:
             track("error", detail=str(e)[:200])
             logger.error(f"[{req_id}] Stream error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Une erreur interne est survenue.'})}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -328,7 +328,7 @@ async def trigger_reindex(request: Request, body: ReindexBody):
         return {"message": "Indexation terminée." if result else "Déjà à jour."}
     except Exception as e:
         logger.error(f"Reindex error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne lors de la réindexation."}, status_code=500)
 
 
 @router.get("/api/conversations")

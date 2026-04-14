@@ -1,7 +1,8 @@
 import logging
 import os
-from fastapi import APIRouter, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.responses import JSONResponse, Response
+from src.api.auth import get_current_user
 from src.api.limiter import limiter
 from src.monitoring.tracker import track
 
@@ -13,7 +14,7 @@ ALLOWED_AUDIO = {"audio/webm", "audio/wav", "audio/mpeg", "audio/mp3", "audio/og
 
 @media_router.post("/api/tts")
 @limiter.limit("30/minute")
-async def tts(request: Request):
+async def tts(request: Request, user_id: str = Depends(get_current_user)):
     try:
         body = await request.json()
         if not (text := (body or {}).get("text", "")):
@@ -24,11 +25,11 @@ async def tts(request: Request):
         return Response(content=audio, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"TTS Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne lors de la génération audio."}, status_code=500)
 
 @media_router.post("/api/stt")
 @limiter.limit("20/minute")
-async def stt(request: Request, audio: UploadFile = File(...)):
+async def stt(request: Request, audio: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     try:
         if audio.content_type and audio.content_type.lower() not in ALLOWED_AUDIO:
             return JSONResponse({"error": "Format audio non supporté"}, status_code=400)
@@ -51,4 +52,4 @@ async def stt(request: Request, audio: UploadFile = File(...)):
         return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne lors de la transcription audio."}, status_code=500)

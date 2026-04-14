@@ -89,9 +89,16 @@ def load_memory() -> dict:
 
 
 def save_memory(fichiers: dict) -> None:
-    os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-    with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(fichiers, f, indent=2)
+    dirpath = os.path.dirname(MEMORY_FILE)
+    os.makedirs(dirpath, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix="files_metadata_", suffix=".json", dir=dirpath)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(fichiers, f, indent=2)
+        os.replace(tmp_path, MEMORY_FILE)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def list_current_files() -> dict:

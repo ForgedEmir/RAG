@@ -371,6 +371,8 @@ def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float
         _pipeline_stats["bm25_active"] += 1
     _pipeline_stats.update(last_query=question[:80], last_mode=mode,
                            last_vector_count=len(vector_results), last_bm25_count=len(bm25_results))
-    logger.info(f"[{mode}] '{question[:60]}' → {len(passages)} passage(s) "
+    logger.debug(f"[{mode}] '{question[:60]}' → {len(passages)} passage(s) "
+                f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{plan.use_reranker})")
+    logger.info(f"[{mode}] {len(passages)} passage(s) retourné(s) "
                 f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{plan.use_reranker})")
     return passages, sources, conf_scores

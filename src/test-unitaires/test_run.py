@@ -35,20 +35,19 @@ def test_load_memory_existe(mock_file, mock_exists):
 
 # ===== TESTS POUR save_memory =====
 
-@patch('os.makedirs')
-@patch('builtins.open', new_callable=mock_open)
-def test_save_memory(mock_file, mock_makedirs):
-    """On peut sauvegarder la memoire dans un fichier JSON."""
-    fichiers = {"histoire.md": 1111111111, "personnages.txt": 2222222222}
+def test_save_memory(tmp_path, monkeypatch):
+    """save_memory écrit le JSON de manière atomique via un fichier temporaire."""
+    import src.ingestion.run as run_module
+    target = tmp_path / "files_metadata.json"
+    monkeypatch.setattr(run_module, "MEMORY_FILE", str(target))
 
+    fichiers = {"histoire.md": 1111111111, "personnages.txt": 2222222222}
     save_memory(fichiers)
 
-    mock_makedirs.assert_called_once()
-    mock_file.assert_called_once_with(MEMORY_FILE, 'w', encoding='utf-8')
-    handle = mock_file()
-    written_content = ''.join(call.args[0] for call in handle.write.call_args_list)
-    assert "histoire.md" in written_content
-    assert "personnages.txt" in written_content
+    assert target.exists()
+    import json as _json
+    data = _json.loads(target.read_text(encoding="utf-8"))
+    assert data == fichiers
 
 
 # ===== TESTS POUR list_current_files =====

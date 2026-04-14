@@ -103,7 +103,7 @@ def test_ask_erreur_generation(mock_stream, mock_rechercher, mock_index):
     events = parse_sse(response.content)
     error_event = next((e for e in events if e.get("type") == "error"), None)
     assert error_event is not None
-    assert "Erreur API" in error_event["message"]
+    assert error_event["message"] == "Une erreur interne est survenue."
 
 
 # ===== TESTS POUR LE QUERY REWRITING =====
@@ -178,4 +178,4 @@ def test_reindex_erreur(mock_index):
     mock_index.side_effect = Exception("Erreur d'indexation")
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 500
-    assert "Erreur d'indexation" in response.json()["error"]
+    assert "Erreur interne lors de la réindexation." in response.json()["error"]

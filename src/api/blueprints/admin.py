@@ -100,13 +100,21 @@ async def evaluate_rag_endpoint(request: Request):
 async def admin_delete(request: Request):
     require_monitoring(request)
     body = await request.json()
-    filename = (body or {}).get("filename", "").strip()
+    raw_filename = (body or {}).get("filename", "").strip()
 
-    # Path traversal protection
-    if not filename or any(s in filename for s in ("/", "\\", "..")):
+    # Normalise pour éliminer tout composant de chemin
+    filename = os.path.basename(raw_filename)
+
+    # Rejette si vide, si le nom a changé après basename (chemin traversal), ou si des
+    # caractères suspects subsistent
+    if not filename or filename != raw_filename or any(s in filename for s in ("\x00",)):
         return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
 
-    path = os.path.join(DATA_DIR, filename)
+    # Vérification supplémentaire : le chemin résolu doit rester dans DATA_DIR
+    path = os.path.realpath(os.path.join(DATA_DIR, filename))
+    if not path.startswith(os.path.realpath(DATA_DIR) + os.sep):
+        return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
+
     if not os.path.exists(path):
         return JSONResponse({"error": "Fichier introuvable"}, status_code=404)
 
