@@ -112,7 +112,11 @@ async def admin_delete(request: Request):
 
     # Vérification supplémentaire : le chemin résolu doit rester dans DATA_DIR
     path = os.path.realpath(os.path.join(DATA_DIR, filename))
-    if not path.startswith(os.path.realpath(DATA_DIR) + os.sep):
+    real_data_dir = os.path.realpath(DATA_DIR)
+    try:
+        if os.path.commonpath([path, real_data_dir]) != real_data_dir:
+            return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
+    except ValueError:
         return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
 
     if not os.path.exists(path):

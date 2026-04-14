@@ -96,9 +96,10 @@ def save_memory(fichiers: dict) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(fichiers, f, indent=2)
         os.replace(tmp_path, MEMORY_FILE)
-    finally:
+    except Exception:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+        raise
 
 
 def list_current_files() -> dict:
@@ -273,9 +274,10 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(corpus, f, ensure_ascii=False, indent=1)
         os.replace(tmp_path, BM25_CORPUS_FILE)
-    finally:
+    except Exception:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+        raise
     logger.info(f"Corpus BM25 sauvegardé ({len(corpus)} chunks).")
 
     try:
