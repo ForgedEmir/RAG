@@ -23,8 +23,11 @@ def test_auth_me_avec_jwt_valide(app_client):
 
 def test_auth_me_sans_token_dev_mode(app_client):
     """/api/auth/me en mode dev doit accepter le header x-local-guest-id."""
-    with patch("src.api.auth._APP_ENV", "development"), \
-         patch("src.api.auth._ALLOW_LOCAL_GUEST_HEADER", True):
+    with patch.dict("os.environ", {
+        "APP_ENV": "development",
+        "ALLOW_LOCAL_GUEST_HEADER": "true",
+        "ALLOW_GUEST_MODE": "true",
+    }):
         resp = app_client.get(
             "/api/auth/me",
             headers={"x-local-guest-id": "guest_abc123"},
@@ -45,7 +48,7 @@ def test_auth_me_token_invalide(app_client):
 
 def test_auth_me_sans_token_prod_mode(app_client):
     """/api/auth/me sans token en mode production doit retourner 401."""
-    with patch("src.api.auth._APP_ENV", "production"):
+    with patch.dict("os.environ", {"APP_ENV": "production"}):
         resp = app_client.get("/api/auth/me")
     assert resp.status_code == 401
 

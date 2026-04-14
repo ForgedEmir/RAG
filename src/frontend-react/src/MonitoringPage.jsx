@@ -15,6 +15,7 @@ import {
 // /!\ PASSEZ À FALSE POUR UTILISER VOTRE VRAI BACKEND /!\
 const MOCK_MODE = false; 
 const DEBUG = false;
+const MOCK_MONITORING_KEY = (import.meta.env.VITE_MONITORING_MOCK_KEY || 'mock-monitoring-key').trim();
 
 const styles = `
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -130,7 +131,7 @@ async function apiFetch(path, monitoringKey, options = {}) {
   
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, Math.random() * 400 + 200)); // Simulate network
-    if (monitoringKey !== "lorekeeper2026") throw new Error("403 Forbidden");
+    if (monitoringKey !== MOCK_MONITORING_KEY) throw new Error("403 Forbidden");
     
     if (path === '/health') return MOCK_DB.health;
     if (path === '/api/monitoring/stats') return MOCK_DB.stats;

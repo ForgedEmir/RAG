@@ -24,7 +24,7 @@ async def tts(request: Request):
         return Response(content=audio, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"TTS Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 @media_router.post("/api/stt")
 @limiter.limit("20/minute")
@@ -54,4 +54,4 @@ async def stt(request: Request, audio: UploadFile = File(...)):
         return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)

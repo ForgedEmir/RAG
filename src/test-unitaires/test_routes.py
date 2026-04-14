@@ -184,7 +184,8 @@ def test_reindex_erreur(mock_index):
     mock_index.side_effect = Exception("Erreur d'indexation")
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 500
-    assert "Erreur d'indexation" in response.json()["error"]
+    # Depuis le durcissement, le message d'erreur est générique
+    assert "Erreur interne" in response.json()["error"]
 
 
 @patch("src.api.auth._MONITORING_KEY", "test_key")

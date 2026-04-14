@@ -488,7 +488,7 @@ async def trigger_reindex(request: Request, body: ReindexBody):
         return {"message": "Indexation terminée." if result else "Déjà à jour."}
     except Exception as e:
         logger.error(f"Reindex error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 
 @router.get("/api/conversations")

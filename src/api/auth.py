@@ -8,6 +8,7 @@ import os
 import logging
 import threading
 import time
+import hmac
 from collections import OrderedDict
 from typing import Optional
 
@@ -20,9 +21,10 @@ _JWT_CACHE_TTL_SECONDS = int(os.getenv("JWT_CACHE_TTL_SECONDS", "60"))
 _JWT_CACHE_MAX_SIZE = int(os.getenv("JWT_CACHE_MAX_SIZE", "512"))
 _APP_ENV = os.getenv("APP_ENV", "development").lower()
 _ALLOW_LOCAL_GUEST_HEADER = os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true"
-# ALLOW_GUEST_MODE=true permet aux invités de fonctionner en production.
-# Mettre à false pour désactiver totalement le mode invité.
-_ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "true").lower() == "true"
+# Le mode invité est désactivé par défaut et ne doit être activé que volontairement.
+_ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true"
+# Garde-fou explicite pour éviter l'activation accidentelle du mode invité en production.
+_ALLOW_GUEST_MODE_IN_PROD = os.getenv("ALLOW_GUEST_MODE_IN_PROD", "false").lower() == "true"
 _security = HTTPBearer(auto_error=False)
 _jwt_cache: OrderedDict[str, tuple[float, Optional[str]]] = OrderedDict()
 _jwt_cache_lock = threading.Lock()
@@ -36,11 +38,11 @@ def check_monitoring_key(request: Request) -> bool:
 
     header_key = request.headers.get("x-monitoring-key", "").strip()
     if header_key:
-        return header_key == _MONITORING_KEY
+        return hmac.compare_digest(header_key, _MONITORING_KEY)
 
     auth = request.headers.get("authorization", "").strip()
     if auth.lower().startswith("bearer "):
-        return auth[7:].strip() == _MONITORING_KEY
+        return hmac.compare_digest(auth[7:].strip(), _MONITORING_KEY)
 
     return False
 
@@ -93,10 +95,16 @@ async def get_current_user(
     """Dépendance FastAPI : retourne le user_id depuis le JWT Supabase.
     Lève 401 si le token est absent ou invalide.
     """
+    # Toujours lire dynamiquement les variables d'environnement pour supporter les tests patchés
+    app_env = getattr(request, "_test_app_env", os.getenv("APP_ENV", "development")).lower()
+    allow_guest_mode = getattr(request, "_test_allow_guest_mode", os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true")
+    allow_local_guest_header = getattr(request, "_test_allow_local_guest_header", os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true")
+    allow_guest_mode_in_prod = getattr(request, "_test_allow_guest_mode_in_prod", os.getenv("ALLOW_GUEST_MODE_IN_PROD", "false").lower() == "true")
+
     if not credentials:
-        # Mode invité : accepté si ALLOW_GUEST_MODE=true (dev + prod).
-        # En dev, ALLOW_LOCAL_GUEST_HEADER suffit (rétrocompat).
-        guest_allowed = _ALLOW_GUEST_MODE or (_APP_ENV != "production" and _ALLOW_LOCAL_GUEST_HEADER)
+        guest_allowed = allow_guest_mode and allow_local_guest_header and (
+            app_env != "production" or allow_guest_mode_in_prod
+        )
         if guest_allowed:
             guest_id = (request.headers.get("x-local-guest-id") or "").strip()
             if guest_id.startswith("guest_"):

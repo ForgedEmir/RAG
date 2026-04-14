@@ -126,6 +126,7 @@ def test_get_store_cree_collection(mock_qdrant_vs, mock_embeddings, mock_client_
     mock_client.create_collection.assert_called_once()
 
 
+
 @patch('src.ingestion.vector_store.os.path.exists')
 @patch('src.ingestion.vector_store.QdrantClient')
 @patch('src.ingestion.vector_store._get_embeddings')
@@ -137,12 +138,16 @@ def test_get_store_force_reindex(mock_qdrant_vs, mock_embeddings, mock_client_cl
     mock_client = Mock()
     mock_client_class.return_value = mock_client
     mock_client.get_collections.return_value = Mock(collections=[])
-    mock_path_exists.return_value = True
 
-    with patch('shutil.rmtree') as mock_rmtree:
+    # Simule que le dossier et le fichier existent pour éviter FileNotFoundError
+    def path_exists_side_effect(path):
+        if path.endswith("files_metadata.json"):
+            return True
+        return True
+    mock_path_exists.side_effect = path_exists_side_effect
+
+    with patch('builtins.open'), patch('shutil.rmtree') as mock_rmtree:
         get_store(force_reindex=True)
-
-        # Le dossier qdrant_db doit etre supprime
         mock_rmtree.assert_called_once()
 
 

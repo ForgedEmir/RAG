@@ -134,8 +134,8 @@ def test_instructions_rag(mock_llm):
     system_message = appel[0][0][0].content
 
     assert "Aethelgard Online" in system_message
-    assert "uniquement en te basant" in system_message
-    assert "N'invente" in system_message
+    assert "uniquement à partir du contexte fourni" in system_message or "uniquement en te basant" in system_message
+    assert "n'invente rien" in system_message.lower()
 
 
 # ===== TESTS POUR reformuler_question =====

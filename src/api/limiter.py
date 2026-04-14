@@ -11,12 +11,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STORAGE = "memory://"
 REDIS_TIMEOUT = 1
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true"
+ALLOW_LOCAL_GUEST_HEADER = os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true"
 
 def _get_key(request: Request) -> str:
-    guest_id = (request.headers.get("x-local-guest-id") or "").strip()
-    if guest_id.startswith("guest_"):
-        return f"guest:{guest_id}"
-
     auth = (request.headers.get("authorization") or "").strip()
     if auth.lower().startswith("bearer "):
         token = auth[7:].strip()
@@ -33,6 +32,14 @@ def _get_key(request: Request) -> str:
                 return session_id
     except Exception:
         pass
+
+    # Le header invité est facilement spoofable; on ne l'utilise qu'en mode guest local.
+    guest_allowed = ALLOW_GUEST_MODE and ALLOW_LOCAL_GUEST_HEADER and APP_ENV != "production"
+    if guest_allowed:
+        guest_id = (request.headers.get("x-local-guest-id") or "").strip()
+        if guest_id.startswith("guest_"):
+            return f"guest:{guest_id}"
+
     return get_remote_address(request)
 
 def _resolve_storage_uri() -> str:

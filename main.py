@@ -96,6 +96,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
@@ -344,6 +345,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
+_allowed_origins = [o.strip() for o in os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8080,http://127.0.0.1:8080"
+).split(",") if o.strip()]
+
+
+
+# CORS permissif comme avant (dev et test)
 _allowed_origins = [o.strip() for o in os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:8080,http://127.0.0.1:8080"

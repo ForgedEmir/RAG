@@ -1,5 +1,6 @@
 """Router monitoring — /api/monitoring/*"""
 import os
+import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ from src.api.auth import require_monitoring
 from src.monitoring.tracker import get_stats
 
 monitoring_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ReformulationToggleBody(BaseModel):
@@ -43,7 +45,8 @@ async def monitoring_pipeline(request: Request):
             stats["qdrant_dimensions"] = str(e)[:60]
         return stats
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        logger.warning(f"monitoring_pipeline failed: {e}")
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/reformulation")
@@ -114,7 +117,8 @@ async def monitoring_contextual_retrieval(request: Request):
             "debug_metadata_keys": sample_meta_keys,
         }
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        logger.warning(f"monitoring_contextual_retrieval failed: {e}")
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/features")
@@ -247,7 +251,8 @@ async def monitoring_user_memories(request: Request):
         r = client.table("user_memory").select("user_id, summary, updated_at").order("updated_at", desc=True).limit(20).execute()
         return {"memories": r.data or []}
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        logger.warning(f"monitoring_user_memories failed: {e}")
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/feedbacks")
@@ -258,7 +263,8 @@ async def monitoring_feedbacks(request: Request, limit: int = 50):
 
         return {"feedbacks": get_recent_feedback_events(limit=limit)}
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        logger.warning(f"monitoring_feedbacks failed: {e}")
+        return JSONResponse({"error": "Erreur interne"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/pii")
