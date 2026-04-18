@@ -42,6 +42,7 @@ install:
 	pip install -r requirements.txt
 
 run:
+	@echo "App sur http://localhost:8000"
 	python main.py
 
 # ── Docker ────────────────────────────────────────────
@@ -53,7 +54,7 @@ docker-up:
 	fi
 	docker compose up --build -d
 	@echo ""
-	@echo "  App disponible sur : http://localhost:5000"
+	@echo "  App disponible sur : http://localhost:$${APP_PORT:-8000}"
 	@echo "  Qdrant dashboard  : http://localhost:6333/dashboard"
 	@echo ""
 

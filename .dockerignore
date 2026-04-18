@@ -1,8 +1,8 @@
 .git
 .gitignore
 .env
-venv/
 .venv/
+venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -14,3 +14,8 @@ __pycache__/
 src/ingestion/qdrant_db/
 src/test-unitaires/
 Schéma/*.pdf
+data/
+*.md
+!README.md
+Makefile
+Procfile
