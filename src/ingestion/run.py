@@ -405,6 +405,14 @@ def index_data(force_reindex: bool = False) -> bool:
             logger.info("Réindexation complète terminée.")
         else:
             logger.warning("Collection recréée mais aucun fichier valide trouvé dans data/sample.")
+        # WHY: réindexation complète → tout le contenu peut avoir changé, on vide
+        # le semantic cache en entier pour éviter de servir des réponses périmées.
+        try:
+            from src.caching.semantic_cache import clear_all as _clear_semantic_cache
+            _clear_semantic_cache()
+            logger.info("Semantic cache vidé (force_reindex).")
+        except Exception as e:
+            logger.warning(f"Impossible de vider le semantic cache : {e}")
         return True
 
     memoire  = load_memory()
@@ -430,6 +438,18 @@ def index_data(force_reindex: bool = False) -> bool:
 
     if supprimes | modifies:
         remove_files(store, supprimes | modifies)
+
+    # WHY: Purge du semantic cache ciblé sur tous les fichiers qui changent
+    # (supprimés, modifiés ET nouveaux). Un fichier "nouveau" peut contredire
+    # une réponse existante — ex: v1 du fichier disait X, on ajoute un nouveau
+    # fichier qui dit Y, la réponse cachée sur X est périmée.
+    fichiers_impactes = supprimes | modifies | nouveaux
+    if fichiers_impactes:
+        try:
+            from src.caching.semantic_cache import invalidate_for_files as _invalidate_semantic_cache
+            _invalidate_semantic_cache(fichiers_impactes)
+        except Exception as e:
+            logger.warning(f"Impossible d'invalider le semantic cache : {e}")
 
     a_indexer = nouveaux | modifies
     new_docs = []

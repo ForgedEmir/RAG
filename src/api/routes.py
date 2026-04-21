@@ -349,7 +349,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             if body.session_id:
                 save_exchange(body.session_id, question, answer, user_id)
-                cache_store(question, answer)
+                cache_store(question, answer, source_files=sources)
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
                     # WHY: count_user_exchanges is a Supabase round-trip — run it in the
                     # thread pool so it never blocks the SSE stream post-response.

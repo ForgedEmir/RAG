@@ -210,3 +210,102 @@ def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
     # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (aucun ici)
     assert mock_prepare.call_args_list[1] == ((set(),),)
     mock_add.assert_called_once()  # Ajoute la nouvelle version
+
+
+# ===== TESTS POUR l'invalidation du semantic cache (#174) =====
+
+@patch('src.caching.semantic_cache.invalidate_for_files')
+@patch('src.ingestion.run.list_current_files')
+@patch('src.ingestion.run.load_memory')
+@patch('src.ingestion.run.get_store')
+@patch('src.ingestion.run.remove_files')
+@patch('src.ingestion.run.prepare_files_for_ai')
+@patch('src.ingestion.run.add_documents')
+@patch('src.ingestion.run.save_memory')
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_invalide_semantic_cache_sur_modif(
+    mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
+    mock_get_store, mock_load, mock_list, mock_invalidate,
+):
+    """Quand un fichier change, index_data() doit invalider le semantic cache ciblé."""
+    mock_list.return_value = {"file.md": 2000, "autre.md": 500}
+    mock_load.return_value = {"file.md": 1000, "autre.md": 500}  # file.md modifié
+    mock_get_store.return_value = Mock()
+    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "file.md"})]
+
+    index_data(force_reindex=False)
+
+    mock_invalidate.assert_called_once()
+    fichiers_invalides = mock_invalidate.call_args[0][0]
+    assert fichiers_invalides == {"file.md"}
+
+
+@patch('src.caching.semantic_cache.invalidate_for_files')
+@patch('src.ingestion.run.list_current_files')
+@patch('src.ingestion.run.load_memory')
+@patch('src.ingestion.run.get_store')
+@patch('src.ingestion.run.remove_files')
+@patch('src.ingestion.run.prepare_files_for_ai')
+@patch('src.ingestion.run.add_documents')
+@patch('src.ingestion.run.save_memory')
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_invalide_semantic_cache_sur_nouveau_fichier(
+    mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
+    mock_get_store, mock_load, mock_list, mock_invalidate,
+):
+    """Un nouveau fichier peut contredire une réponse cachée → invalidation ciblée."""
+    mock_list.return_value = {"ancien.md": 1000, "nouveau.md": 2000}
+    mock_load.return_value = {"ancien.md": 1000}
+    mock_get_store.return_value = Mock()
+    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "nouveau.md"})]
+
+    index_data(force_reindex=False)
+
+    mock_invalidate.assert_called_once()
+    assert mock_invalidate.call_args[0][0] == {"nouveau.md"}
+
+
+@patch('src.caching.semantic_cache.invalidate_for_files')
+@patch('src.ingestion.run.list_current_files')
+@patch('src.ingestion.run.load_memory')
+@patch('src.ingestion.run.get_store')
+@patch('src.ingestion.run.remove_files')
+@patch('src.ingestion.run.prepare_files_for_ai')
+@patch('src.ingestion.run.add_documents')
+@patch('src.ingestion.run.save_memory')
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_index_invalide_semantic_cache_sur_suppression(
+    mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
+    mock_get_store, mock_load, mock_list, mock_invalidate,
+):
+    """Un fichier supprimé : on doit invalider les réponses qui s'y référaient."""
+    mock_list.return_value = {"reste.md": 1000}
+    mock_load.return_value = {"reste.md": 1000, "retire.md": 500}
+    mock_get_store.return_value = Mock()
+    mock_prepare.return_value = []
+
+    index_data(force_reindex=False)
+
+    mock_invalidate.assert_called_once()
+    assert mock_invalidate.call_args[0][0] == {"retire.md"}
+
+
+@patch('src.caching.semantic_cache.clear_all')
+@patch('src.ingestion.run.list_current_files')
+@patch('src.ingestion.run.prepare_files_for_ai')
+@patch('src.ingestion.run.get_store')
+@patch('src.ingestion.run.add_documents')
+@patch('src.ingestion.run.save_memory')
+@patch('src.ingestion.run._save_bm25_corpus')
+def test_force_reindex_vide_tout_le_semantic_cache(
+    mock_bm25, mock_save, mock_add, mock_get_store, mock_prepare,
+    mock_list, mock_clear_all,
+):
+    """force_reindex=True → tout le cache sémantique est vidé, pas seulement une partie."""
+    mock_list.return_value = {"file.md": 1000}
+    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "file.md"})]
+    mock_get_store.return_value = Mock()
+
+    index_data(force_reindex=True)
+
+    mock_clear_all.assert_called_once()

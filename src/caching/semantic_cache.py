@@ -12,7 +12,7 @@ import logging
 import os
 import threading
 import time
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -219,9 +219,16 @@ def check(query: str):
     return None
 
 
-def store(query: str, response: str) -> bool:
+def store(query: str, response: str, source_files: Optional[Iterable[str]] = None) -> bool:
     """Store embedding + response in Redis.
     Uses a pipeline (1 round-trip) + INCR counter instead of len(r.keys(...)).
+
+    Args:
+        query:        Question posée.
+        response:     Réponse LLM générée.
+        source_files: Noms de fichiers sources ayant servi à générer la réponse.
+                      Permet une invalidation ciblée lors d'un re-index (voir
+                      invalidate_for_files).
     """
     _ensure_cache_version()
     try:
@@ -240,7 +247,11 @@ def store(query: str, response: str) -> bool:
             return False
 
         key      = hashlib.sha256(query.lower().encode()).hexdigest()[:16]
-        emb_json = json.dumps({"embedding": vec, "query": query})
+        emb_json = json.dumps({
+            "embedding":    vec,
+            "query":        query,
+            "source_files": sorted(set(source_files)) if source_files else [],
+        })
 
         # Atomic pipeline — 1 round-trip
         pipe = r.pipeline()
@@ -273,9 +284,93 @@ def clear_all() -> None:
                 r.delete(*keys)
             if cursor == 0:
                 break
+        # Reset the counter too, otherwise store() will believe the cache is full.
+        try:
+            r.delete(_COUNT_KEY)
+        except Exception:
+            pass
         _invalidate_matrix()
     except Exception as e:
         logger.warning(f"Semantic cache clear failed: {e}")
+
+
+def invalidate_for_files(filenames: Iterable[str]) -> int:
+    """Invalide les entrées dont les source_files croisent ``filenames``.
+
+    WHY: Après un re-index (fichier modifié/ajouté/supprimé), les réponses LLM
+    cachées qui s'appuyaient sur ce fichier sont potentiellement périmées.
+    On ne purge que ces entrées pour conserver le cache chaud sur les autres.
+
+    Les entrées antérieures à cette version (pas de clé ``source_files`` stockée)
+    sont purgées par sécurité dès qu'un fichier change — on ne peut pas savoir
+    d'où elles venaient.
+
+    Returns: nombre d'entrées (paires emb/resp) supprimées.
+    """
+    targets = {f for f in filenames if f}
+    if not targets:
+        return 0
+
+    try:
+        r = _get_redis()
+        if not r:
+            return 0
+
+        to_delete: List[str] = []
+        cursor = 0
+        while True:
+            cursor, keys = r.scan(cursor, match=f"{_PREFIX}emb:*", count=500)
+            if not keys:
+                if cursor == 0:
+                    break
+                continue
+
+            raw_values = r.mget(keys)
+            for key, raw in zip(keys, raw_values):
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except Exception:
+                    continue
+
+                if "source_files" not in parsed:
+                    # Legacy entry (pre-tracking). Fail-safe : invalider.
+                    should_delete = True
+                else:
+                    sources = set(parsed.get("source_files") or [])
+                    should_delete = bool(sources & targets)
+
+                if should_delete:
+                    resp_key = key.replace(f"{_PREFIX}emb:", f"{_PREFIX}resp:")
+                    to_delete.extend([key, resp_key])
+
+            if cursor == 0:
+                break
+
+        removed_pairs = 0
+        if to_delete:
+            # Chunk deletions to avoid oversized Redis commands.
+            batch = 500
+            for i in range(0, len(to_delete), batch):
+                r.delete(*to_delete[i:i + batch])
+            removed_pairs = len(to_delete) // 2
+            # Keep the counter in sync with the actual number of cached entries.
+            try:
+                r.decrby(_COUNT_KEY, removed_pairs)
+                current = int(r.get(_COUNT_KEY) or 0)
+                if current < 0:
+                    r.set(_COUNT_KEY, 0, ex=_TTL)
+            except Exception:
+                pass
+            _invalidate_matrix()
+            logger.info(
+                f"Semantic cache : {removed_pairs} entrée(s) invalidée(s) pour {sorted(targets)}."
+            )
+        return removed_pairs
+    except Exception as e:
+        logger.warning(f"Semantic cache invalidation failed: {e}")
+        return 0
 
 
 def stats() -> dict:
