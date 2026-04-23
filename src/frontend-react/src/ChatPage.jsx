@@ -211,10 +211,10 @@ const X = ({ size, className }) => (
 
 const EmptyState = ({ onSuggest }) => {
   const suggestions = [
-    "Qui est le personnage principal ?",
-    "Résume l'architecture du système",
-    "Quelles sont les factions existantes ?",
-    "Décris les lieux importants"
+    "Résume ce document en points clés",
+    "Explique l'architecture du système",
+    "Quelles sont les procédures principales ?",
+    "Quelles sont les conditions d'accès ?"
   ];
 
   return (
@@ -225,11 +225,11 @@ const EmptyState = ({ onSuggest }) => {
         className="inline-flex items-center gap-3 liquid-glass px-4 py-2 rounded-full mb-8 border border-white/10 shadow-2xl"
       >
         <div className="bg-[#5ed29c] text-black text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Nouvelle</div>
-        <span className="text-white/40 text-[10px] tracking-[0.3em] uppercase">Session LoreKeeper</span>
+        <span className="text-white/40 text-[10px] tracking-[0.3em] uppercase">DocOracle — Q&A Documentaire</span>
       </motion.div>
 
-      <h1 className="font-serif-italic text-6xl md:text-8xl text-white mb-6 tracking-tighter leading-[0.9]">Que cherches-tu ?</h1>
-      <p className="text-lg text-white/40 mb-16 font-light italic max-w-lg mx-auto">"Plonge dans les archives. Pose ta question et laisse l'ordre émerger du chaos."</p>
+      <h1 className="font-serif-italic text-6xl md:text-8xl text-white mb-6 tracking-tighter leading-[0.9]">Que cherchez-vous ?</h1>
+      <p className="text-lg text-white/40 mb-16 font-light italic max-w-lg mx-auto">"Posez votre question. DocOracle consulte vos documents et cite ses sources."</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
         {suggestions.map((text, i) => (
@@ -254,11 +254,11 @@ const EmptyState = ({ onSuggest }) => {
 
 // ── Animated placeholder hook ─────────────────────────────────────────────
 const PLACEHOLDERS = [
-  'Interroger LoreKeeper…',
-  'Qui sont les personnages principaux ?',
-  'Décris le système de magie runique…',
-  'Résume les factions du monde…',
-  'Quels artefacts légendaires existent ?',
+  'Posez votre question…',
+  'Résumez ce document en 3 points clés…',
+  'Quelle est la procédure pour… ?',
+  'Comparez les sections A et B…',
+  'Quelles sont les conditions de… ?',
 ];
 
 function useAnimatedPlaceholder() {
@@ -461,7 +461,7 @@ const MessageBubble = ({ msg, sessionId }) => {
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center mb-2">
-          <span className="text-[10px] uppercase tracking-widest text-white/25">LoreKeeper</span>
+          <span className="text-[10px] uppercase tracking-widest text-white/25">DocOracle</span>
         </div>
 
         {msg.streaming && !msg.content ? (
@@ -686,7 +686,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
           <div className="h-[52px] flex items-center justify-between px-4 border-b border-white/[0.05] shrink-0">
             <div className="flex items-center gap-3">
               <button onClick={() => navigate('/')} className="text-white/40 hover:text-white transition-colors"><ChevronLeft size={18} /></button>
-              <span className="font-serif-italic text-[18px]">LoreKeeper</span>
+              <span className="font-serif-italic text-[18px]">DocOracle</span>
             </div>
             <button onClick={() => setSidebarOpen(false)} className="text-white/40 hover:text-white transition-colors"><PanelLeftClose size={18} /></button>
           </div>
@@ -788,7 +788,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
                   transition={{ duration: 0.2 }}
                   className="flex items-center gap-2 mb-3 flex-wrap"
                 >
-                  {['Développe ce point', 'Donne des exemples', 'Simplifie', 'Quels personnages ?'].map((chip, i) => (
+                  {['Développe ce point', 'Donne des exemples', 'Simplifie', 'Autres sources ?'].map((chip, i) => (
                     <motion.button
                       key={chip}
                       initial={{ opacity: 0, scale: 0.9 }}
@@ -867,7 +867,7 @@ export default function ChatPage({ user, onLogout, initialQuestion }) {
 
             <div className="flex justify-center items-center px-6 mt-3">
               <div className="text-[10px] text-white/20 uppercase tracking-widest flex items-center gap-1.5">
-                <Sparkles size={10} className="text-[#5ed29c]/50" /> Propulsé par LoreKeeper RAG
+                <Sparkles size={10} className="text-[#5ed29c]/50" /> Propulsé par DocOracle RAG
               </div>
             </div>
           </div>

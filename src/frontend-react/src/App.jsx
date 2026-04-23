@@ -397,8 +397,8 @@ const LoginModal = ({ isOpen, onClose, onAuthSuccess }) => {
               <X className="w-5 h-5" />
             </button>
             <div className="text-center mb-8">
-              <h2 className="text-4xl font-serif-custom italic text-white mb-2">Rejoindre le Savoir</h2>
-              <p className="text-white/40 text-sm">Connectez-vous pour accéder à LoreKeeper.</p>
+              <h2 className="text-4xl font-serif-custom italic text-white mb-2">Accéder à DocOracle</h2>
+              <p className="text-white/40 text-sm">Connectez-vous pour interroger votre documentation.</p>
             </div>
 
             <div className="space-y-3">
@@ -500,7 +500,7 @@ const Navbar = ({ onLoginClick, onPricingClick, onDocsClick, onArchitectureClick
     <nav className="fixed top-0 left-0 right-0 z-[500] px-8 py-6 pointer-events-none">
       <div className="pointer-events-auto max-w-7xl mx-auto flex justify-between items-center liquid-glass rounded-full px-8 py-3 border border-white/5">
         <div className="flex items-center gap-12">
-          <span className="text-2xl font-serif-custom tracking-tight text-white cursor-pointer" onClick={() => go('/')}>LoreKeeper<sup className="text-[10px] opacity-40 ml-1">®</sup></span>
+          <span className="text-2xl font-serif-custom tracking-tight text-white cursor-pointer" onClick={() => go('/')}>DocOracle<sup className="text-[10px] opacity-40 ml-1">®</sup></span>
           <div className="hidden md:flex gap-8 text-[11px] uppercase tracking-[0.2em] font-medium text-white/50">
             <button onClick={() => go('/')} className="hover:text-white transition-colors">Accueil</button>
             <button onClick={onArchitectureClick ?? (() => go('/architecture'))} className="hover:text-white transition-colors">Architecture</button>
@@ -539,7 +539,7 @@ const Navbar = ({ onLoginClick, onPricingClick, onDocsClick, onArchitectureClick
 
 // --- HeroSection ---
 const HeroSection = () => {
-  const title = "L'ordre dans le chaos.";
+  const title = "Vos docs. Des réponses.";
   const chars = title.split("");
   const navigate = useNavigate();
 
@@ -570,11 +570,11 @@ const HeroSection = () => {
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] inline-block" />
           <span className="text-[9px] uppercase tracking-[0.4em] text-[#F59E0B]/70 font-mono">
-            RAG · BM25 · Hybrid Search
+            RAG · BM25 · Hybrid Search · Production-grade
           </span>
         </motion.div>
 
-        <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-serif-custom tracking-tighter leading-[0.85] text-white mb-8">
+        <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-serif-custom tracking-tighter leading-[0.85] text-white mb-8" style={{letterSpacing:'-0.03em'}}>
           {chars.map((c, i) => (
             <motion.span
               key={i}
@@ -593,7 +593,7 @@ const HeroSection = () => {
           transition={{ delay: 1.1, duration: 0.9 }}
           className="text-white/50 text-sm md:text-[15px] max-w-xl mx-auto font-light leading-relaxed mb-10 tracking-wide"
         >
-          Moteur RAG hybride — indexez, interrogez et révélez la logique cachée de vos univers.
+          Moteur RAG hybride — indexez n'importe quelle documentation, interrogez-la en langage naturel, obtenez des réponses sourcées en moins de 500ms.
         </motion.p>
 
         <motion.div
@@ -606,7 +606,7 @@ const HeroSection = () => {
             className="group flex items-center gap-3 liquid-glass bg-white/5 border border-white/10 text-white font-bold px-9 py-4 rounded-full text-sm uppercase tracking-widest hover:bg-white/10 hover:border-white/20 hover:scale-105 active:scale-95 transition-all shadow-2xl"
           >
             <Sparkles className="w-4 h-4 text-[#F59E0B] group-hover:rotate-12 transition-transform" />
-            Interroger l'Oracle
+            Essayer maintenant
             <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </button>
         </motion.div>
@@ -631,8 +631,8 @@ const HeroSection = () => {
 const PinnedReveal = () => {
   const containerRef = useRef(null);
   const words = [
-    "Hybrid", "RAG.", "BM25", "+", "Vector.", "Re-ranking.",
-    "Streaming.", "Fallbacks.", "Observabilité.", "Tout", "ça,", "ensemble."
+    "Vos", "docs.", "Vos", "données.", "Vos", "réponses.",
+    "Sourcées.", "Vérifiées.", "En", "moins", "de", "500ms."
   ];
 
   useEffect(() => {
@@ -700,7 +700,7 @@ const PinnedReveal = () => {
 
       <div className="relative z-10 max-w-5xl mx-auto text-center">
         <div className="text-[9px] uppercase tracking-[0.45em] text-[#F59E0B]/50 mb-12 font-mono">
-          Ce que fait LoreKeeper
+          Ce que fait DocOracle
         </div>
 
         <div className="flex flex-wrap justify-center gap-x-5 gap-y-3">
@@ -718,7 +718,7 @@ const PinnedReveal = () => {
         </div>
 
         <div className="mt-16 text-[11px] text-white/20 tracking-[0.3em] uppercase font-mono">
-          BM25 · Vector · RRF · Cross-encoder · OpenRouter · SSE · Langfuse
+          BM25 · Vector · RRF · Cross-encoder · SSE Streaming · Langfuse · Redis Cache
         </div>
       </div>
     </section>
@@ -731,7 +731,7 @@ const PLANS = [
     name: 'Explorateur',
     price: '0',
     period: 'Gratuit pour toujours',
-    desc: 'Pour découvrir LoreKeeper et tester le potentiel du RAG sur votre lore.',
+    desc: 'Pour découvrir DocOracle et tester le potentiel du RAG sur vos documents.',
     cta: 'Commencer gratuitement',
     highlight: false,
     features: [
@@ -816,7 +816,7 @@ const PricingSection = ({ sectionRef }) => {
       name: 'Explorateur',
       price: '0',
       period: 'Gratuit pour toujours',
-      desc: 'Découvrir LoreKeeper et tester la recherche RAG sur un petit volume de questions.',
+      desc: 'Découvrir DocOracle et tester la recherche RAG sur un petit volume de questions.',
     },
     {
       name: 'Gardien',
@@ -1254,12 +1254,12 @@ const ArchitecturePage = () => {
         "Répond depuis la mémoire du modèle — figée à la date d'entraînement.",
         "Invente plausiblement des faits qui n'existent pas (hallucination).",
         "Aucune référence vérifiable aux sources originales.",
-        "Contexte universel et non personnalisé — ne connaît pas votre lore.",
+        "Contexte universel — ne connaît pas votre documentation interne.",
         "Impossible d'ajouter de nouvelles données sans re-entraîner.",
       ],
     },
     {
-      title: "LoreKeeper RAG",
+      title: "DocOracle RAG",
       accent: "#F59E0B",
       icon: Database,
       items: [
@@ -1267,7 +1267,7 @@ const ArchitecturePage = () => {
         "Chaque affirmation est ancrée dans un passage source citable.",
         "Recherche hybride (vecteurs + BM25) pour ne rater aucune correspondance.",
         "Mémoire long-terme par utilisateur — le contexte s'enrichit à chaque session.",
-        "Ajout de lore en temps réel via l'ingestion — sans toucher au modèle.",
+        "Ajout de documents en temps réel via l'ingestion — sans toucher au modèle.",
       ],
     },
   ];
@@ -1306,7 +1306,7 @@ const ArchitecturePage = () => {
             <em className="italic text-white/40">Un oracle.</em>
           </h1>
           <p className="text-white/40 text-lg max-w-2xl mx-auto leading-relaxed font-light">
-            LoreKeeper ne devine pas. Il consulte. Chaque réponse est construite depuis des documents réels,
+            DocOracle ne devine pas. Il consulte. Chaque réponse est construite depuis vos documents réels,
             vérifiée contre des sources traçables, et filtrée par un juge autonome.
           </p>
         </FadeInSection>
@@ -1394,14 +1394,14 @@ const ArchitecturePage = () => {
               Prêt à interroger l'Oracle ?
             </h2>
             <p className="text-white/35 mb-10 max-w-lg mx-auto text-[15px] leading-relaxed relative z-10">
-              Pose une question sur le lore d'Aethelgard. L'Oracle consulte les archives, cite ses sources, et ne te mentira jamais.
+              Indexez votre documentation. Posez vos questions en langage naturel. DocOracle consulte vos sources, cite ses références, et ne s'invente jamais de réponse.
             </p>
             <button
               onClick={() => navigate('/chat')}
               className="relative z-10 group inline-flex items-center gap-3 liquid-glass bg-white/5 border border-white/10 text-white font-bold px-10 py-5 rounded-full text-sm uppercase tracking-widest hover:bg-white/10 hover:border-white/20 hover:scale-105 active:scale-95 transition-all shadow-2xl"
             >
               <Sparkles className="w-4 h-4 text-[#F59E0B] group-hover:rotate-12 transition-transform" />
-              Interroger LoreKeeper
+              Essayer DocOracle
               <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </button>
           </div>
@@ -1418,7 +1418,7 @@ const LEGAL_CONTENT = {
     updated: 'Avril 2026',
     sections: [
       { heading: 'Données collectées', body: 'Nous collectons votre adresse email lors de la création de compte via Supabase Auth. Les messages envoyés au chatbot sont stockés en base de données pour maintenir l\'historique de session. Les votes de feedback (👍/👎) sont transmis à Langfuse pour l\'observabilité RAG.' },
-      { heading: 'Utilisation des données', body: 'Vos données sont utilisées exclusivement pour faire fonctionner le service LoreKeeper. Elles ne sont jamais vendues, revendues ni partagées avec des tiers à des fins commerciales. Les appels LLM transitent par OpenRouter et Groq — chaque fournisseur est soumis à sa propre politique de rétention (0–30 jours).' },
+      { heading: 'Utilisation des données', body: 'Vos données sont utilisées exclusivement pour faire fonctionner le service DocOracle. Elles ne sont jamais vendues, revendues ni partagées avec des tiers à des fins commerciales. Les appels LLM transitent par OpenRouter et Groq — chaque fournisseur est soumis à sa propre politique de rétention (0–30 jours).' },
       { heading: 'Hébergement & sécurité', body: 'Toutes les données utilisateurs sont hébergées en Europe (Supabase EU West — région Frankfurt). Les vecteurs d\'embedding sont stockés dans Qdrant Cloud EU. Les connexions sont chiffrées TLS 1.3. Les mots de passe ne transitent jamais en clair.' },
       { heading: 'Cookies & stockage local', body: 'Nous n\'utilisons pas de cookies tiers ou publicitaires. Un token de session est stocké dans localStorage pour maintenir votre connexion. Ce token est supprimé à la déconnexion. Le mode invité utilise un identifiant anonyme local (oracleGuestId).' },
       { heading: 'Vos droits', body: 'Conformément au RGPD, vous disposez d\'un droit d\'accès, de rectification, de portabilité et de suppression de vos données. Pour exercer ces droits, ouvrez une issue sur le dépôt GitHub du projet. Nous traitons les demandes sous 30 jours.' },
@@ -1428,11 +1428,11 @@ const LEGAL_CONTENT = {
     title: 'Conditions d\'utilisation',
     updated: 'Avril 2026',
     sections: [
-      { heading: 'Objet du service', body: 'LoreKeeper est un système RAG (Retrieval-Augmented Generation) destiné à l\'interrogation de corpus de lore, règles de jeu de rôle, documentation créative et contenus narratifs. Le service est opéré par l\'équipe LoreKeeper dans le cadre d\'un projet étudiant.' },
-      { heading: 'Usage autorisé', body: 'Le service est réservé à un usage personnel, éducatif et créatif. Toute utilisation commerciale non autorisée préalablement par l\'équipe est interdite. Vous vous engagez à ne soumettre que des contenus dont vous possédez les droits d\'utilisation.' },
+      { heading: 'Objet du service', body: 'DocOracle est un système RAG (Retrieval-Augmented Generation) destiné à l\'interrogation de documentation interne, bases de connaissance et corpus textuels. Le service est opéré dans le cadre d\'un projet en production.' },
+      { heading: 'Usage autorisé', body: 'Le service est réservé à un usage personnel, professionnel et éducatif. Toute utilisation abusive ou détournée est interdite. Vous vous engagez à ne soumettre que des contenus dont vous possédez les droits d\'utilisation.' },
       { heading: 'Usages interdits', body: 'Sont strictement interdits : les tentatives d\'injection de prompt, de jailbreak ou de contournement des mesures de sécurité ; la génération de contenus illégaux, diffamatoires ou malveillants ; le scraping automatisé ou les requêtes massives dépassant les limites du plan ; toute activité visant à nuire au service ou à ses utilisateurs.' },
-      { heading: 'Limitation de responsabilité', body: 'LoreKeeper est fourni "tel quel", sans garantie de disponibilité continue ni d\'exactitude des réponses générées. Les réponses du système sont générées par des LLM et peuvent contenir des inexactitudes. Elles ne constituent en aucun cas un avis juridique, médical ou professionnel.' },
-      { heading: 'Résiliation', body: 'L\'équipe LoreKeeper se réserve le droit de suspendre ou supprimer tout compte en cas d\'abus, de violation des présentes conditions ou de comportement nuisible, sans préavis. Les utilisateurs peuvent demander la suppression de leur compte à tout moment.' },
+      { heading: 'Limitation de responsabilité', body: 'DocOracle est fourni "tel quel", sans garantie de disponibilité continue ni d\'exactitude des réponses générées. Les réponses du système sont générées par des LLM et peuvent contenir des inexactitudes. Elles ne constituent en aucun cas un avis juridique, médical ou professionnel.' },
+      { heading: 'Résiliation', body: 'DocOracle se réserve le droit de suspendre ou supprimer tout compte en cas d\'abus, de violation des présentes conditions ou de comportement nuisible, sans préavis. Les utilisateurs peuvent demander la suppression de leur compte à tout moment.' },
     ],
   },
 };
@@ -1465,7 +1465,7 @@ const LegalModal = ({ type, onClose }) => {
             </div>
           ))}
           <div className="pt-6 border-t border-white/[0.05] text-[9px] text-white/20 uppercase tracking-widest">
-            LoreKeeper — Projet étudiant · Dernière mise à jour : {data.updated}
+            DocOracle · Dernière mise à jour : {data.updated}
           </div>
         </div>
       </motion.div>
@@ -1480,7 +1480,7 @@ const RAG_CARDS = [
     color: '#60a5fa',
     title: 'BM25',
     subtitle: 'Recherche lexicale',
-    desc: 'Correspondance exacte sur vos textes. Rapide et précis sur les termes métier et les noms propres de votre lore.',
+    desc: 'Correspondance exacte sur vos textes. Rapide et précis sur les termes métier, les noms propres et les références techniques.',
   },
   {
     icon: Database,
@@ -1528,10 +1528,10 @@ const RagSection = () => (
           <span className="text-[9px] uppercase tracking-[0.3em] text-[#F59E0B]/70 font-mono">Comment ça fonctionne</span>
         </div>
         <h2 className="text-4xl md:text-6xl font-serif-custom tracking-tighter text-white mb-5">
-          Le pipeline RAG,<br /><em className="italic text-white/35">étape par étape.</em>
+          Pas de magie.<br /><em className="italic text-white/35">De la méthode.</em>
         </h2>
         <p className="text-white/30 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
-          Chaque composant remplit un rôle précis. Ensemble, ils forment un système qui ne devine pas — il consulte, vérifie, et cite.
+          Chaque composant remplit un rôle précis. Ensemble, ils forment un système qui ne devine pas — il consulte vos documents, vérifie, et cite.
         </p>
       </div>
 
@@ -1565,15 +1565,15 @@ const Footer = () => {
     <footer className="bg-black pt-20 pb-12 px-10 border-t border-white/5 relative z-10">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-end gap-12">
         <div>
-          <h2 className="text-7xl md:text-9xl font-serif-custom text-white tracking-tighter mb-6">LoreKeeper</h2>
-          <p className="text-white/20 tracking-[0.4em] uppercase text-[10px]">Architects of the digital knowledge</p>
+          <h2 className="text-7xl md:text-9xl font-serif-custom text-white tracking-tighter mb-6">DocOracle</h2>
+          <p className="text-white/20 tracking-[0.4em] uppercase text-[10px]">Your documents. Instant answers. Zero hallucination.</p>
         </div>
         <div className="text-right">
-          <p className="text-white/40 mb-8 max-w-xs ml-auto text-sm italic">"Order emerging from chaos. Every word recorded, every insight found."</p>
+          <p className="text-white/40 mb-8 max-w-xs ml-auto text-sm italic">"Not a chatbot. A retrieval engine. Every answer sourced, never invented."</p>
         </div>
       </div>
       <div className="max-w-7xl mx-auto mt-20 pt-12 border-t border-white/5 flex flex-col md:flex-row justify-between text-[10px] uppercase tracking-[0.4em] text-white/20 gap-4">
-        <span>© 2026 LoreKeeper Team — Emir, Ediz, Nicolas, Tom</span>
+        <span>© 2026 DocOracle</span>
         <div className="flex gap-8">
           <button onClick={() => setLegal('privacy')} className="hover:text-white transition-colors cursor-pointer">Privacy</button>
           <button onClick={() => setLegal('terms')} className="hover:text-white transition-colors cursor-pointer">Terms</button>

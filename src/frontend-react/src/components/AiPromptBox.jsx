@@ -130,7 +130,7 @@ export const AiPromptBox = forwardRef((props, ref) => {
     onSend = () => {},
     isLoading = false,
     onAbort = () => {},
-    placeholder = 'Interroger LoreKeeper...',
+    placeholder = 'Posez votre question...',
     className,
     value: externalValue,
     onValueChange: externalOnValueChange,

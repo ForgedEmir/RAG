@@ -263,7 +263,7 @@ export default function DocsPage() {
             L'Oracle,<br /><em className="italic text-white/35">de l'intérieur.</em>
           </h1>
           <p className="text-white/35 text-base max-w-xl leading-relaxed">
-            Tout ce que vous devez savoir sur le fonctionnement de LoreKeeper — features, choix techniques, équipe et leçons apprises.
+            Tout ce que vous devez savoir sur le fonctionnement de DocOracle — features, choix techniques et architecture de production.
           </p>
         </motion.div>
 
@@ -291,7 +291,7 @@ export default function DocsPage() {
             <section id="features" ref={el => sectionRefs.current.features = el}>
               <SectionHeader
                 eyebrow="Fonctionnalités"
-                title="Ce que fait LoreKeeper."
+                title="Ce que fait DocOracle."
                 subtitle="Six composants RAG qui s'enchaînent pour produire des réponses précises, ancrées dans vos données et jamais inventées. Cliquez sur une feature pour voir l'implémentation."
               />
               <div className="space-y-3">
@@ -333,7 +333,7 @@ export default function DocsPage() {
                     Prêt à interroger l'Oracle ?
                   </h3>
                   <p className="text-white/30 text-sm mb-8 max-w-md mx-auto">
-                    Le système tourne. Vos documents, vos règles, votre lore — indexés et consultables en temps réel.
+                    Le système tourne. Vos documents, vos procédures, vos données — indexés et consultables en temps réel.
                   </p>
                   <a href="/chat"
                     className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-white text-black font-bold text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl">

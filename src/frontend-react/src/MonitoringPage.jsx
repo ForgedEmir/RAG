@@ -967,7 +967,7 @@ const MonitoringPage = ({ apiKey, onLogout }) => {
             onClick={() => navigate('/')}
             className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-            <span className="text-2xl font-serif-italic text-white tracking-tight">LoreKeeper</span>
+            <span className="text-2xl font-serif-italic text-white tracking-tight">DocOracle</span>
             <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest bg-[#5ed29c] text-black">Admin</span>
             {MOCK_MODE && <span className="px-2 py-0.5 rounded border border-[#fb923c] text-[#fb923c] text-[9px] uppercase tracking-widest">Mock Mode</span>}
           </button>
@@ -1055,7 +1055,7 @@ export default function MonitoringRoute() {
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="liquid-glass rounded-[32px] p-10 w-full max-w-sm relative z-10 border border-white/10 shadow-2xl">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-serif-italic mb-2">Accès Monitoring</h1>
-          <p className="text-xs text-white/40 uppercase tracking-widest">Noyau LoreKeeper v4.2</p>
+          <p className="text-xs text-white/40 uppercase tracking-widest">DocOracle — Monitoring v4.2</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
