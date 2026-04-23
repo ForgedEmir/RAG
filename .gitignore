@@ -46,7 +46,7 @@ rapport_tests_*.txt
 test-output/
 
 # Scripts locaux
-scripts/
+# (unignored)
 
 # Documents de schema locaux
 Schéma/

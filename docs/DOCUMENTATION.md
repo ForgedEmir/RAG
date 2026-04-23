@@ -29,6 +29,7 @@ Oracle LoreKeeper is a production-grade Retrieval-Augmented Generation (RAG) bac
 **Core goals:**
 - Grounded answers — responses always cite retrieved passages, never hallucinate
 - Low latency — semantic cache, ONNX inference, Cerebras fast LLM
+- Scalability — fully asynchronous architecture (FastAPI, Async Supabase, Async Redis)
 - Multi-user — per-user rate limiting, session management, conversation memory
 - Security — injection detection, PII masking
 - Quality — Langfuse LLM-as-Judge (automated, on every response)
@@ -59,14 +60,14 @@ flowchart TB
     ChatUI[Chat / docs / architecture pages]
   end
 
-  subgraph API[FastAPI application]
+  subgraph API[FastAPI application (Fully Async)]
     Routes[API routes\n/api/ask /api/feedback /health /auth /monitoring /admin]
-    Auth[Auth & session\nSupabase JWT or guest]
+    Auth[Async Auth & session\nSupabase JWT or guest]
     PII[PII masking]
-    Validate[Security validation\nLakera Guard optional]
-    Cache[Semantic cache\nRedis]
+    Validate[Async Security validation\nLakera Guard optional]
+    Cache[Async Semantic cache\nRedis]
     Context[Context assembly\nconversation history + user summary + vector memories]
-    Rewrite[Query reformulation\noptional]
+    Rewrite[Async Query reformulation\noptional]
   end
 
   subgraph RETRIEVAL[Retrieval layer]
@@ -75,7 +76,7 @@ flowchart TB
     BM25[BM25 lexical search]
     Fuse[RRF fusion]
     Rerank[Cross-encoder reranking\nsmart skip]
-    HyDE[HyDE fallback]
+    HyDE[Async HyDE fallback]
   end
 
   subgraph GENERATION[Generation layer]
@@ -128,9 +129,9 @@ flowchart TB
   Stream --> ReactApp
   Stream --> ChatUI
 
-  Routes -. background .-> Supabase
-  Routes -. background .-> Redis
-  Routes -. background .-> Langfuse
+  Routes -. async .-> Supabase
+  Routes -. async .-> Redis
+  Routes -. async .-> Langfuse
   Routes -. background .-> Qdrant
 
   Sources --> Loader --> Parser --> Chunker --> Enrich --> Index
@@ -146,7 +147,6 @@ flowchart TB
 ```
 Oracle-LoreKeeper/
 ├── main.py                         # FastAPI app factory, lifespan, warmup, frontend serving
-├── mcp_server.py                   # Model Context Protocol server
 ├── docker-compose.yml              # Redis + app services
 ├── Dockerfile                      # Production container
 ├── Makefile                        # Common dev/ops commands
@@ -159,35 +159,38 @@ Oracle-LoreKeeper/
 │   └── supabase_schema.sql         # Database schema
 ├── data/
 │   └── sample/                     # Lore source files (MD, PDF, CSV, JSON, XLSX, XML, TXT)
+├── scripts/
+│   └── start.sh                    # Startup script for Docker
 └── src/
+    ├── mcp_server.py               # Model Context Protocol server
     ├── api/
     │   ├── routes.py               # Main endpoints: /ask, /feedback, /health, /auth/*
-    │   ├── auth.py                 # JWT validation + guest mode
+    │   ├── auth.py                 # JWT validation + guest mode (Async)
     │   ├── limiter.py              # Rate limiting (SlowAPI + Redis)
     │   └── blueprints/
     │       ├── monitoring_bp.py    # /api/monitoring/* read-only dashboards
     │       ├── admin.py            # /api/admin/* source file management
     │       └── media.py            # File upload/download
     ├── search/
-    │   └── search.py               # Hybrid retrieval: vector + BM25 + RRF + smart rerank
+    │   └── search.py               # Hybrid retrieval (Async expansion & fallback)
     ├── generation/
-    │   └── generator.py            # LLM calls, reformulation, user summary, Langfuse tracing
+    │   └── generator.py            # LLM calls (Async), reformulation, user summary
     ├── ingestion/
     │   ├── run.py                  # Indexing pipeline orchestrator
     │   ├── vector_store.py         # Qdrant interface + dimension validation
     │   ├── chunker.py              # Document chunking strategies
-    │   ├── parser.py               # Multi-format parsing (Unstructured, LlamaParse)
+    │   ├── parser.py               # Multi-format parsing
     │   ├── document_loader.py      # File discovery and loading
     │   └── watcher.py              # Watchdog for automatic re-indexing
     ├── retrieval/
-    │   └── hyde.py                 # Hypothetical Document Embeddings fallback
+    │   └── hyde.py                 # Hypothetical Document Embeddings fallback (Async)
     ├── monitoring/
-    │   └── tracker.py              # Supabase event tracking, statistics, spike detection
+    │   └── tracker.py              # Supabase event tracking (Async Supabase client)
     ├── security/
-    │   ├── validator.py            # Input validation: Lakera Guard (+ regex helper for ingestion)
+    │   ├── validator.py            # Input validation: Lakera Guard (Async HTTP)
     │   ├── pii_masker.py           # PII redaction before LLM calls
     ├── caching/
-    │   └── semantic_cache.py       # Redis semantic response cache
+    │   └── semantic_cache.py       # Redis semantic response cache (Async Redis)
     ├── memory/
     │   └── vector_memory.py        # Long-term user memory (vector embeddings)
     ├── config/
@@ -195,21 +198,9 @@ Oracle-LoreKeeper/
     ├── tts/
     │   └── tts.py                  # Text-to-speech (edge-tts)
     ├── frontend-react/
-    │   ├── src/
-    │   │   ├── App.jsx
-    │   │   ├── ChatPage.jsx        # Chat UI with MediaRecorder STT
-    │   │   ├── MonitoringPage.jsx  # Real-time monitoring dashboard
-    │   │   ├── useChat.js          # SSE stream hook
-    │   │   └── auth.js             # Supabase auth client
-    │   ├── package.json
-    │   └── dist/                   # Built static files (served by FastAPI)
+    │   └── ...                     # Vite + React frontend
     └── test-unitaires/
-        ├── conftest.py
-        ├── locustfile.py
-        ├── test_routes.py
-        ├── test_search.py
-        ├── test_feedback.py
-        └── test_run.py
+        └── ...                     # Unit tests (Pytest + Asyncio)
 ```
 
 ### 2.2 Component Responsibilities

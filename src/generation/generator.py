@@ -123,14 +123,14 @@ def _callbacks(name: str = "lorekeeper", **meta) -> list:
     return [h] if h else []
 
 
-def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> None:
+async def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> None:
     """Envoie un score human_feedback sur la trace Langfuse liée à notre trace_id interne."""
     if not trace_id:
         return
     try:
         # Résoudre le vrai trace_id Langfuse (récupéré après le stream via handler.get_trace_id())
         from src.monitoring.tracker import get_trace_context
-        ctx = get_trace_context(trace_id)
+        ctx = await get_trace_context(trace_id)
         langfuse_id = ctx.get("langfuse_trace_id") or ""
 
         if not langfuse_id:
@@ -155,7 +155,8 @@ def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> None:
 
 def _build_messages(question: str, passages: List[str], sources: List[str],
                     history: List[dict], user_summary: str = "",
-                    vector_memories: List[str] = None) -> list:
+                    vector_memories: List[str] = None,
+                    tie_subjects: set = None) -> list:
     contexte      = "\n\n".join(passages)
     liste_sources = ", ".join(sources) if sources else "sources inconnues"
     system = (
@@ -171,9 +172,23 @@ def _build_messages(question: str, passages: List[str], sources: List[str],
         "\n\n"
         "Réponds uniquement à partir du contexte fourni. "
         "Si l'information est absente, dis-le clairement — n'invente rien. "
+        "Si deux passages fournis se contredisent sur un fait (ex : deux valeurs différentes "
+        "pour une même caractéristique), mentionne-le explicitement dans ta réponse en citant "
+        "les deux sources, au lieu de trancher au hasard. "
         "Rédige en paragraphes pour narrer, en tirets (-) pour les listes. Pas d'astérisques. "
         f"\n\nSources : {liste_sources}\n\nContexte :\n{contexte}"
     )
+    # WHY: quand plusieurs fichiers traitent du même sujet et partagent la même date
+    # d'indexation, on ne peut pas savoir lequel est "officiel". On prévient le LLM
+    # pour qu'il signale explicitement la divergence plutôt que de trancher arbitrairement.
+    if tie_subjects:
+        sujets_str = ", ".join(sorted(tie_subjects))
+        system += (
+            f"\n\n[AVERTISSEMENT ARCHIVES] Plusieurs sources de même date traitent du/des sujet(s) : {sujets_str}. "
+            "Les archives ne permettent pas de déterminer laquelle est la version officielle. "
+            "Tu DOIS signaler cette ambigüité dans ta réponse en citant les deux sources et leurs informations divergentes, "
+            "et inviter le Gardien des Archives (l'administrateur) à clarifier le canon."
+        )
     if user_summary:
         system += f"\n\nMémoire utilisateur :\n{user_summary}"
     if vector_memories:
@@ -196,7 +211,7 @@ def _build_messages(question: str, passages: List[str], sources: List[str],
 
 # ── LLM calls ─────────────────────────────────────────────────────────────────
 
-def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "") -> str:
+async def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "") -> str:
     """Met à jour le résumé long-terme (max 150 mots)."""
     if not _llm or not new_exchanges:
         return old_summary
@@ -206,7 +221,7 @@ def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "")
     context = (f"Résumé précédent :\n{old_summary}\n\nNouveaux échanges :\n{nouveaux}"
                if old_summary else f"Échanges :\n{nouveaux}")
     try:
-        result = _llm.invoke([
+        result = await _llm.ainvoke([
             SystemMessage(content=(
                 "Tu maintiens la mémoire long-terme d'un joueur dans un jeu de rôle. "
                 "Mets à jour le résumé : faits importants, personnages/lieux, préférences, objectifs. "
@@ -220,7 +235,7 @@ def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "")
         return old_summary
 
 
-def reformuler_question(question: str, history: List[dict]) -> str:
+async def reformuler_question(question: str, history: List[dict]) -> str:
     """Reformule une question vague grâce à l'historique."""
     if not _REFORMULATION_ENABLED:
         return question
@@ -237,9 +252,9 @@ def reformuler_question(question: str, history: List[dict]) -> str:
         return question
     historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
     try:
-        result = llm.invoke([
+        result = await llm.ainvoke([
             SystemMessage(content=(
-                "Tu es un assistant qui reformule des questions. "
+                "Tu est un assistant qui reformule des questions. "
                 "Retourne UNIQUEMENT la question reformulée en une seule phrase, sans répondre, sans explication, sans ponctuation finale."
             )),
             HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
@@ -253,34 +268,37 @@ def reformuler_question(question: str, history: List[dict]) -> str:
         return question
 
 
-def generer_reponse(question: str, passages: List[str], sources: List[str] = None,
+async def generer_reponse(question: str, passages: List[str], sources: List[str] = None,
                     history: List[dict] = None, user_summary: str = "",
-                    vector_memories: List[str] = None) -> str:
+                    vector_memories: List[str] = None,
+                    tie_subjects: set = None) -> str:
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
-    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
+    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories, tie_subjects)
     fallbacks = [llm for llm in [_llm_fallback] if llm is not None]
     chain = _llm.with_fallbacks(fallbacks)
-    return chain.invoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])}).content.strip()
+    result = await chain.ainvoke(messages, config={"callbacks": _callbacks("ask", question=question[:80])})
+    return result.content.strip()
 
 
-def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
+async def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
                    history: List[dict] = None, model_used: Optional[list] = None,
                    user_summary: str = "", vector_memories: List[str] = None,
-                   langfuse_trace_ids: Optional[list] = None) -> Iterator[str]:
+                   langfuse_trace_ids: Optional[list] = None,
+                   tie_subjects: set = None):
     """Streame la réponse token par token. Bascule sur le fallback si erreur."""
     if not _llm:
         raise ValueError("OPENAI_API_KEY manquante dans .env")
-    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories)
+    messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories, tie_subjects)
     cb = _callbacks("ask-stream", question=question[:80])
     handler = cb[0] if cb else None
     if model_used is not None:
         model_used.append(_primary_model)
 
-    def _track_fallback(from_model: str, to_model: str, err: Exception) -> None:
+    async def _track_fallback(from_model: str, to_model: str, err: Exception) -> None:
         try:
             from src.monitoring.tracker import track
-            track("fallback", detail=f"{from_model} → {to_model} | {str(err)[:100]}")
+            await track("fallback", detail=f"{from_model} → {to_model} | {str(err)[:100]}")
         except Exception:
             pass
 
@@ -289,7 +307,7 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
     ]
 
     try:
-        for chunk in _llm.stream(messages, config={"callbacks": cb}):
+        async for chunk in _llm.astream(messages, config={"callbacks": cb}):
             if chunk.content:
                 yield chunk.content
     except Exception as primary_err:
@@ -300,9 +318,9 @@ def stream_reponse(question: str, passages: List[str], sources: List[str] = None
             logger.warning(f"LLM KO ({last_err}), trying {fb_label} → {fb_model}")
             if model_used is not None:
                 model_used[0] = f"{fb_model} [{fb_label}]"
-            _track_fallback(_primary_model, fb_model, last_err)
+            await _track_fallback(_primary_model, fb_model, last_err)
             try:
-                for chunk in fb_llm.stream(messages, config={"callbacks": _callbacks(fb_label)}):
+                async for chunk in fb_llm.astream(messages, config={"callbacks": _callbacks(fb_label)}):
                     if chunk.content:
                         yield chunk.content
                 return

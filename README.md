@@ -232,12 +232,12 @@ Oracle LoreKeeper exposes a [Model Context Protocol](https://modelcontextprotoco
 **Start the server:**
 ```bash
 # Stdio mode (local, embedded in client)
-python mcp_server.py
+python src/mcp_server.py
 
 # SSE mode (remote, network-accessible)
 export MCP_TRANSPORT=sse
 export MCP_PORT=8001
-python mcp_server.py
+python src/mcp_server.py
 ```
 
 **Claude Desktop config** (`%APPDATA%\Claude\claude_desktop_config.json`):

@@ -20,7 +20,7 @@ async def tts(request: Request):
             return JSONResponse({"error": "Texte vide"}, status_code=400)
         from src.tts.tts import generer_audio
         audio = await generer_audio(text)
-        track("tts", detail=f"{len(text)} chars")
+        await track("tts", detail=f"{len(text)} chars")
         return Response(content=audio, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"TTS Error: {e}")
@@ -29,6 +29,7 @@ async def tts(request: Request):
 @media_router.post("/api/stt")
 @limiter.limit("20/minute")
 async def stt(request: Request, audio: UploadFile = File(...)):
+    import asyncio
     try:
         if audio.content_type and audio.content_type.lower() not in ALLOWED_AUDIO:
             return JSONResponse({"error": "Format audio non supporté"}, status_code=400)
@@ -43,14 +44,17 @@ async def stt(request: Request, audio: UploadFile = File(...)):
         stt_base_url = os.getenv("STT_BASE_URL", "https://api.groq.com/openai/v1")
         stt_model = os.getenv("STT_MODEL", "whisper-large-v3")
         client = OpenAI(api_key=stt_api_key, base_url=stt_base_url)
-        transcription = client.audio.transcriptions.create(
-            model=stt_model,
-            file=(audio.filename or "audio.webm", content),
-            # WHY: Pas de language fixé — Whisper détecte automatiquement la langue
-            # pour supporter les utilisateurs francophones ET anglophones.
-        )
+        
+        # Whisper call can take seconds, wrap in thread to keep event loop free
+        def _transcribe():
+            return client.audio.transcriptions.create(
+                model=stt_model,
+                file=(audio.filename or "audio.webm", content),
+            )
+        
+        transcription = await asyncio.to_thread(_transcribe)
         detected_lang = getattr(transcription, "language", "unknown")
-        track("voice", detail=f"{stt_model} | {audio.filename or 'audio.webm'} | lang:{detected_lang}")
+        await track("voice", detail=f"{stt_model} | {audio.filename or 'audio.webm'} | lang:{detected_lang}")
         return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")

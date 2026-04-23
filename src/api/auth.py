@@ -6,7 +6,7 @@ Deux niveaux :
 """
 import os
 import logging
-import threading
+import asyncio
 import time
 import hmac
 from collections import OrderedDict
@@ -27,7 +27,7 @@ _ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true"
 _ALLOW_GUEST_MODE_IN_PROD = os.getenv("ALLOW_GUEST_MODE_IN_PROD", "false").lower() == "true"
 _security = HTTPBearer(auto_error=False)
 _jwt_cache: OrderedDict[str, tuple[float, Optional[str]]] = OrderedDict()
-_jwt_cache_lock = threading.Lock()
+_jwt_cache_lock = asyncio.Lock()
 
 
 # ── Clé monitoring (dashboard) ────────────────────────────────────────────────
@@ -53,10 +53,10 @@ def require_monitoring(request: Request):
 
 # ── JWT Supabase Auth ─────────────────────────────────────────────────────────
 
-def _verify_supabase_jwt(token: str) -> Optional[str]:
+async def _verify_supabase_jwt(token: str) -> Optional[str]:
     """Vérifie le JWT via l'API Supabase et retourne le user_id (UUID)."""
     now = time.time()
-    with _jwt_cache_lock:
+    async with _jwt_cache_lock:
         cached = _jwt_cache.get(token)
         if cached:
             cached_at, cached_user_id = cached
@@ -67,12 +67,13 @@ def _verify_supabase_jwt(token: str) -> Optional[str]:
 
     try:
         from src.monitoring.tracker import _get_client
-        supa = _get_client()
+        supa = await _get_client()
         if not supa:
             return None
-        user_resp = supa.auth.get_user(token)
+        # supabase-py v2 supporte await sur les appels auth
+        user_resp = await supa.auth.get_user(token)
         user_id = str(user_resp.user.id) if user_resp.user else None
-        with _jwt_cache_lock:
+        async with _jwt_cache_lock:
             _jwt_cache[token] = (now, user_id)
             _jwt_cache.move_to_end(token)
             while len(_jwt_cache) > _JWT_CACHE_MAX_SIZE:
@@ -80,7 +81,7 @@ def _verify_supabase_jwt(token: str) -> Optional[str]:
         return user_id
     except Exception as e:
         logger.debug(f"JWT invalide : {e}")
-        with _jwt_cache_lock:
+        async with _jwt_cache_lock:
             _jwt_cache[token] = (now, None)
             _jwt_cache.move_to_end(token)
             while len(_jwt_cache) > _JWT_CACHE_MAX_SIZE:
@@ -110,7 +111,7 @@ async def get_current_user(
             if guest_id.startswith("guest_"):
                 return guest_id
         raise HTTPException(status_code=401, detail="Token d'authentification manquant. Connectez-vous d'abord.")
-    user_id = _verify_supabase_jwt(credentials.credentials)
+    user_id = await _verify_supabase_jwt(credentials.credentials)
     if not user_id:
         raise HTTPException(status_code=401, detail="Token invalide ou expiré.")
     return user_id

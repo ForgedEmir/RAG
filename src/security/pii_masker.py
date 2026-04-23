@@ -7,6 +7,7 @@ car ce RAG traite du lore de jeu où les noms propres sont des entités métier.
 import logging
 import re
 import time
+import asyncio
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,11 @@ def _log_anonymisation(pii_types: list[str]) -> None:
     """Log les types de PII masqués dans Langfuse. Fail-silent si Langfuse down."""
     try:
         from src.monitoring.tracker import track
-        track("pii_masked", detail=f"types={','.join(pii_types)}")
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(track("pii_masked", detail=f"types={','.join(pii_types)}"))
+        except RuntimeError:
+            pass
     except Exception:
         pass
     logger.info(f"[PII] Masqué : {', '.join(pii_types)}")

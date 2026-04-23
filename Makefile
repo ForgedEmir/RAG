@@ -68,4 +68,4 @@ test:
 	pytest src/test-unitaires/ -v
 
 mcp:
-	python mcp_server.py
+	python src/mcp_server.py

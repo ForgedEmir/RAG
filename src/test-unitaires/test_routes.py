@@ -4,7 +4,7 @@ Teste les endpoints /api/ask et /api/reindex.
 """
 import json
 from collections import deque
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
@@ -38,13 +38,23 @@ def parse_sse(content: bytes) -> list:
 # ===== TESTS POUR /api/ask =====
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages")
+@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
 @patch("src.api.routes.stream_reponse")
-def test_ask_question_valide(mock_stream, mock_rechercher, mock_index):
+@patch("src.api.routes.track", new_callable=AsyncMock)
+@patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
+@patch("src.api.routes.cache_check", new_callable=AsyncMock)
+@patch("src.api.routes.valider_entree", new_callable=AsyncMock)
+def test_ask_question_valide(mock_valider, mock_cache, mock_reg, mock_track, mock_stream, mock_rechercher, mock_index):
     """On peut poser une question valide et recevoir une réponse streamée."""
     mock_index.return_value = True
-    mock_rechercher.return_value = (["Passage 1", "Passage 2"], ["source1.md", "source2.md"], [0.9, 0.8])
-    mock_stream.return_value = iter(["Réponse ", "de l'IA"])
+    mock_valider.return_value = {"valid": True}
+    mock_cache.return_value = None
+    mock_rechercher.return_value = (["Passage 1", "Passage 2"], ["source1.md", "source2.md"], [0.9, 0.8], set())
+    
+    async def mock_stream_gen(*args, **kwargs):
+        yield "Réponse "
+        yield "de l'IA"
+    mock_stream.side_effect = mock_stream_gen
 
     response = create_client().post("/api/ask",
                                     json={"question": "Qui est le héros?", "user_id": "user_test"})
@@ -80,11 +90,16 @@ def test_ask_question_vide(mock_index):
 
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages")
-def test_ask_aucun_passage_trouve(mock_rechercher, mock_index):
+@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
+@patch("src.api.routes.valider_entree", new_callable=AsyncMock)
+@patch("src.api.routes.cache_check", new_callable=AsyncMock)
+@patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
+def test_ask_aucun_passage_trouve(mock_reg, mock_cache, mock_valider, mock_rechercher, mock_index):
     """Quand aucun passage n'est trouvé, on reçoit un message d'information."""
     mock_index.return_value = True
-    mock_rechercher.return_value = ([], [], [])
+    mock_valider.return_value = {"valid": True}
+    mock_cache.return_value = None
+    mock_rechercher.return_value = ([], [], [], set())
 
     response = create_client().post("/api/ask",
                                     json={"question": "Question inconnue", "user_id": "user_test"})
@@ -94,13 +109,22 @@ def test_ask_aucun_passage_trouve(mock_rechercher, mock_index):
 
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages")
+@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
 @patch("src.api.routes.stream_reponse")
-def test_ask_erreur_generation(mock_stream, mock_rechercher, mock_index):
+@patch("src.api.routes.valider_entree", new_callable=AsyncMock)
+@patch("src.api.routes.cache_check", new_callable=AsyncMock)
+@patch("src.api.routes.track", new_callable=AsyncMock)
+def test_ask_erreur_generation(mock_track, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_index):
     """Si la génération échoue, un événement erreur est envoyé dans le stream."""
     mock_index.return_value = True
-    mock_rechercher.return_value = (["Passage"], ["source.md"], [0.8])
-    mock_stream.side_effect = Exception("Erreur API")
+    mock_valider.return_value = {"valid": True}
+    mock_cache.return_value = None
+    mock_rechercher.return_value = (["Passage"], ["source.md"], [0.8], set())
+    
+    async def mock_stream_error(*args, **kwargs):
+        if False: yield "" # make it a generator
+        raise Exception("Erreur API")
+    mock_stream.side_effect = mock_stream_error
 
     response = create_client().post("/api/ask",
                                     json={"question": "Question", "user_id": "user_test"})
@@ -115,18 +139,29 @@ def test_ask_erreur_generation(mock_stream, mock_rechercher, mock_index):
 # ===== TESTS POUR LE QUERY REWRITING =====
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.get_history")
-@patch("src.api.routes.reformuler_question")
-@patch("src.api.routes.rechercher_passages")
+@patch("src.api.routes.get_history", new_callable=AsyncMock)
+@patch("src.api.routes.reformuler_question", new_callable=AsyncMock)
+@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
 @patch("src.api.routes.stream_reponse")
-def test_ask_utilise_question_reformulee(mock_stream, mock_rechercher, mock_reformuler,
+@patch("src.api.routes.valider_entree", new_callable=AsyncMock)
+@patch("src.api.routes.cache_check", new_callable=AsyncMock)
+@patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
+@patch("src.api.routes.track", new_callable=AsyncMock)
+@patch("src.api.routes.save_exchange", new_callable=AsyncMock)
+@patch("src.api.routes.cache_store", new_callable=AsyncMock)
+def test_ask_utilise_question_reformulee(mock_store, mock_save, mock_track, mock_reg, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
                                          mock_history, mock_index):
     """La question reformulée est utilisée pour la recherche RAG."""
     mock_index.return_value = True
+    mock_valider.return_value = {"valid": True}
+    mock_cache.return_value = None
     mock_history.return_value = [{"question": "Qui est Lucas ?", "answer": "Un guerrier."}]
     mock_reformuler.return_value = "Quelle est la taille de Lucas le Tranchant ?"
-    mock_rechercher.return_value = (["Lucas mesure 1m30."], ["lore.md"], [0.9])
-    mock_stream.return_value = iter(["1m30"])
+    mock_rechercher.return_value = (["Lucas mesure 1m30."], ["lore.md"], [0.9], set())
+    
+    async def mock_stream_gen(*args, **kwargs):
+        yield "1m30"
+    mock_stream.side_effect = mock_stream_gen
 
     create_client().post("/api/ask",
                          json={"question": "il fait quelle taille ?",
@@ -137,18 +172,25 @@ def test_ask_utilise_question_reformulee(mock_stream, mock_rechercher, mock_refo
 
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.get_history")
-@patch("src.api.routes.reformuler_question")
-@patch("src.api.routes.rechercher_passages")
+@patch("src.api.routes.get_history", new_callable=AsyncMock)
+@patch("src.api.routes.reformuler_question", new_callable=AsyncMock)
+@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
 @patch("src.api.routes.stream_reponse")
-def test_ask_sans_historique_pas_de_reformulation(mock_stream, mock_rechercher, mock_reformuler,
+@patch("src.api.routes.valider_entree", new_callable=AsyncMock)
+@patch("src.api.routes.cache_check", new_callable=AsyncMock)
+def test_ask_sans_historique_pas_de_reformulation(mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
                                                    mock_history, mock_index):
     """Sans historique, reformuler_question retourne la question originale."""
     mock_index.return_value = True
+    mock_valider.return_value = {"valid": True}
+    mock_cache.return_value = None
     mock_history.return_value = []
     mock_reformuler.return_value = "Qui est le roi ?"
-    mock_rechercher.return_value = (["Le roi est Alaric."], ["lore.md"], [0.9])
-    mock_stream.return_value = iter(["Alaric"])
+    mock_rechercher.return_value = (["Le roi est Alaric."], ["lore.md"], [0.9], set())
+    
+    async def mock_stream_gen(*args, **kwargs):
+        yield "Alaric"
+    mock_stream.side_effect = mock_stream_gen
 
     create_client().post("/api/ask",
                          json={"question": "Qui est le roi ?", "user_id": "user_test"})
@@ -161,7 +203,8 @@ def test_ask_sans_historique_pas_de_reformulation(mock_stream, mock_rechercher, 
 
 @patch("src.api.routes.index_data")
 @patch("src.api.auth._MONITORING_KEY", "test_key")
-def test_reindex_sans_force(mock_index):
+@patch("src.api.routes.track", new_callable=AsyncMock)
+def test_reindex_sans_force(mock_track, mock_index):
     mock_index.return_value = True
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
@@ -171,7 +214,8 @@ def test_reindex_sans_force(mock_index):
 
 @patch("src.api.routes.index_data")
 @patch("src.api.auth._MONITORING_KEY", "test_key")
-def test_reindex_avec_force(mock_index):
+@patch("src.api.routes.track", new_callable=AsyncMock)
+def test_reindex_avec_force(mock_track, mock_index):
     mock_index.return_value = True
     response = create_client().post("/api/reindex", json={"force": True}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
@@ -189,7 +233,7 @@ def test_reindex_erreur(mock_index):
 
 
 @patch("src.api.auth._MONITORING_KEY", "test_key")
-@patch("src.monitoring.tracker.get_recent_feedback_events")
+@patch("src.monitoring.tracker.get_recent_feedback_events", new_callable=AsyncMock)
 def test_monitoring_feedbacks_endpoint(mock_feedbacks):
     mock_feedbacks.return_value = [{"trace_id": "trace-1", "value": 1, "rating": 5}]
     response = create_client().get("/api/monitoring/feedbacks?limit=10", headers={"X-Monitoring-Key": "test_key"})

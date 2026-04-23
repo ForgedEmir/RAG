@@ -1,8 +1,6 @@
 """Tests unitaires — Watchdog (détection changements de fichiers)."""
-import os
-import tempfile
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

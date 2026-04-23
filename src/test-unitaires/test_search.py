@@ -2,7 +2,8 @@
 Tests unitaires pour le module search (version LangChain + Qdrant)
 Teste la fonction rechercher_passages et le router adaptatif.
 """
-from unittest.mock import Mock, patch, MagicMock
+import pytest
+from unittest.mock import Mock, patch, AsyncMock
 from langchain_core.documents import Document
 
 from src.search.search import (
@@ -76,6 +77,7 @@ def test_router_reranker_activable_si_flag():
 
 # ===== TESTS POUR rechercher_passages =====
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -83,7 +85,7 @@ def test_router_reranker_activable_si_flag():
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_resultats_multiples(mock_search, mock_get_store):
+async def test_resultats_multiples(mock_search, mock_get_store):
     """On peut chercher et trouver plusieurs passages de plusieurs sources."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = [
@@ -92,7 +94,7 @@ def test_resultats_multiples(mock_search, mock_get_store):
         Document(page_content="Passage 3", metadata={"fichier": "doc3.md", "chunk_id": "doc3_0"})
     ]
 
-    passages, sources, _ = rechercher_passages("Qui est le heros uniquement?")
+    passages, sources, *_ = await rechercher_passages("Qui est le heros uniquement?")
 
     assert len(passages) == 3
     assert passages[0] == "Passage 1"
@@ -101,6 +103,7 @@ def test_resultats_multiples(mock_search, mock_get_store):
     assert "doc3.md" in sources
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -108,17 +111,18 @@ def test_resultats_multiples(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_sans_resultats(mock_search, mock_get_store):
+async def test_sans_resultats(mock_search, mock_get_store):
     """Quand il n'y a aucun résultat, on reçoit des listes vides."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = []
 
-    passages, sources, _ = rechercher_passages("Question introuvable zzzxxx999")
+    passages, sources, *_ = await rechercher_passages("Question introuvable zzzxxx999")
 
     assert len(passages) == 0
     assert len(sources) == 0
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -126,14 +130,14 @@ def test_sans_resultats(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_un_resultat(mock_search, mock_get_store):
+async def test_un_resultat(mock_search, mock_get_store):
     """On peut trouver un seul passage d'une seule source."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = [
         Document(page_content="Unique passage", metadata={"fichier": "unique.md", "chunk_id": "unique_0"})
     ]
 
-    passages, sources, _ = rechercher_passages("Question simple unique seul")
+    passages, sources, *_ = await rechercher_passages("Question simple unique seul")
 
     assert len(passages) == 1
     assert passages[0] == "Unique passage"
@@ -141,6 +145,7 @@ def test_un_resultat(mock_search, mock_get_store):
     assert sources[0] == "unique.md"
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -148,7 +153,7 @@ def test_un_resultat(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_dedoublonne_par_fichier(mock_search, mock_get_store):
+async def test_dedoublonne_par_fichier(mock_search, mock_get_store):
     """La deduplication par fichier ne garde que le meilleur passage par source."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = [
@@ -157,7 +162,7 @@ def test_dedoublonne_par_fichier(mock_search, mock_get_store):
         Document(page_content="Passage 3", metadata={"fichier": "doc2.md", "chunk_id": "doc2_0"})
     ]
 
-    passages, sources, _ = rechercher_passages("Question dedoublonnage")
+    passages, sources, *_ = await rechercher_passages("Question dedoublonnage")
 
     # Après deduplication : 1 passage par fichier → 2 fichiers = 2 passages
     assert len(passages) == 2
@@ -165,6 +170,7 @@ def test_dedoublonne_par_fichier(mock_search, mock_get_store):
     assert "doc2.md" in sources
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -172,7 +178,7 @@ def test_dedoublonne_par_fichier(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_ordre_sources_preserve(mock_search, mock_get_store):
+async def test_ordre_sources_preserve(mock_search, mock_get_store):
     """L'ordre des sources suit les scores RRF (décroissant)."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = [
@@ -181,13 +187,14 @@ def test_ordre_sources_preserve(mock_search, mock_get_store):
         Document(page_content="P3", metadata={"fichier": "doc3.md", "chunk_id": "doc3_0"})
     ]
 
-    passages, sources, _ = rechercher_passages("Question ordre sources")
+    passages, sources, *_ = await rechercher_passages("Question ordre sources")
 
     assert sources[0] == "doc1.md"
     assert sources[1] == "doc2.md"
     assert sources[2] == "doc3.md"
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -195,20 +202,21 @@ def test_ordre_sources_preserve(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_metadonnees_manquantes(mock_search, mock_get_store):
+async def test_metadonnees_manquantes(mock_search, mock_get_store):
     """Si le nom de fichier est manquant, on met 'inconnu'."""
     mock_get_store.return_value = Mock()
     mock_search.return_value = [
         Document(page_content="Passage sans source", metadata={})
     ]
 
-    passages, sources, _ = rechercher_passages("Question metadonnees manquantes")
+    passages, sources, *_ = await rechercher_passages("Question metadonnees manquantes")
 
     assert len(passages) == 1
     assert len(sources) == 1
     assert sources[0] == "inconnu"
 
 
+@pytest.mark.asyncio
 @patch('src.search.search.get_store')
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
@@ -216,14 +224,14 @@ def test_metadonnees_manquantes(mock_search, mock_get_store):
 @patch('src.search.search._bm25_index', None)
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
-def test_parametres_search(mock_search, mock_get_store):
+async def test_parametres_search(mock_search, mock_get_store):
     """La fonction appelle search avec les bons paramètres."""
     mock_store = Mock()
     mock_get_store.return_value = mock_store
     mock_search.return_value = []
 
     question = "Ma question de test"
-    rechercher_passages(question)
+    await rechercher_passages(question)
 
     mock_search.assert_called_once_with(mock_store, question, k=CANDIDATES_SIMPLE)
 

@@ -5,7 +5,6 @@ source est modifié/supprimé, les réponses cachées qui en dépendent doivent
 disparaître, les autres doivent rester.
 """
 import json
-from unittest.mock import Mock, patch
 
 import pytest
 
@@ -18,20 +17,20 @@ class FakeRedis:
     def __init__(self):
         self.store = {}
 
-    def ping(self):
+    async def ping(self):
         return True
 
-    def get(self, key):
+    async def get(self, key):
         return self.store.get(key)
 
-    def set(self, key, value, ex=None):
+    async def set(self, key, value, ex=None):
         self.store[key] = value
         return True
 
-    def mget(self, keys):
+    async def mget(self, keys):
         return [self.store.get(k) for k in keys]
 
-    def delete(self, *keys):
+    async def delete(self, *keys):
         n = 0
         for k in keys:
             if k in self.store:
@@ -39,20 +38,20 @@ class FakeRedis:
                 n += 1
         return n
 
-    def incr(self, key):
+    async def incr(self, key):
         v = int(self.store.get(key, 0)) + 1
         self.store[key] = str(v)
         return v
 
-    def decrby(self, key, amount):
+    async def decrby(self, key, amount):
         v = int(self.store.get(key, 0)) - amount
         self.store[key] = str(v)
         return v
 
-    def expire(self, key, ttl):
+    async def expire(self, key, ttl):
         return True
 
-    def scan(self, cursor, match=None, count=100):
+    async def scan(self, cursor, match=None, count=100):
         # Impl naïve : renvoie tout en un coup, cursor=0 à la fin.
         if match is None:
             keys = list(self.store.keys())
@@ -82,14 +81,14 @@ class _FakePipeline:
         self.ops.append(("expire", key, ttl))
         return self
 
-    def execute(self):
+    async def execute(self):
         for op in self.ops:
             if op[0] == "set":
-                self.parent.set(op[1], op[2], ex=op[3])
+                await self.parent.set(op[1], op[2], ex=op[3])
             elif op[0] == "incr":
-                self.parent.incr(op[1])
+                await self.parent.incr(op[1])
             elif op[0] == "expire":
-                self.parent.expire(op[1], op[2])
+                await self.parent.expire(op[1], op[2])
         self.ops.clear()
 
 
@@ -129,11 +128,12 @@ def fake_redis(monkeypatch):
 # store() persiste les source_files
 # ───────────────────────────────────────────────────────────────────────────────
 
-def test_store_persiste_les_source_files(fake_redis):
+@pytest.mark.asyncio
+async def test_store_persiste_les_source_files(fake_redis):
     """store(..., source_files=[...]) écrit la liste dans la payload Redis."""
     from src.caching.semantic_cache import store
 
-    ok = store("qui est Alaric ?", "Alaric est un roi.", source_files=["alaric.md"])
+    ok = await store("qui est Alaric ?", "Alaric est un roi.", source_files=["alaric.md"])
 
     assert ok is True
     emb_entries = [v for k, v in fake_redis.store.items() if k.startswith("scache:emb:")]
@@ -142,11 +142,12 @@ def test_store_persiste_les_source_files(fake_redis):
     assert payload["source_files"] == ["alaric.md"]
 
 
-def test_store_sans_source_files_liste_vide(fake_redis):
+@pytest.mark.asyncio
+async def test_store_sans_source_files_liste_vide(fake_redis):
     """Sans source_files, la clé existe mais vaut []."""
     from src.caching.semantic_cache import store
 
-    store("question", "reponse")
+    await store("question", "reponse")
 
     emb_entries = [v for k, v in fake_redis.store.items() if k.startswith("scache:emb:")]
     payload = json.loads(emb_entries[0])
@@ -157,14 +158,15 @@ def test_store_sans_source_files_liste_vide(fake_redis):
 # invalidate_for_files() — comportement ciblé
 # ───────────────────────────────────────────────────────────────────────────────
 
-def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
     """Une entrée dont un source_file change doit être supprimée."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
-    store("Q1", "R1", source_files=["alaric.md"])
-    store("Q2", "R2", source_files=["autre.md"])
+    await store("Q1", "R1", source_files=["alaric.md"])
+    await store("Q2", "R2", source_files=["autre.md"])
 
-    removed = invalidate_for_files({"alaric.md"})
+    removed = await invalidate_for_files({"alaric.md"})
 
     assert removed == 1
     # Il reste une seule paire emb/resp
@@ -180,32 +182,35 @@ def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
     assert remaining_emb["source_files"] == ["autre.md"]
 
 
-def test_invalidate_ignore_les_entrees_sans_intersection(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_ignore_les_entrees_sans_intersection(fake_redis):
     """Un fichier non utilisé ne doit rien invalider."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
-    store("Q1", "R1", source_files=["a.md"])
-    store("Q2", "R2", source_files=["b.md"])
+    await store("Q1", "R1", source_files=["a.md"])
+    await store("Q2", "R2", source_files=["b.md"])
 
-    removed = invalidate_for_files({"jamais_utilise.md"})
+    removed = await invalidate_for_files({"jamais_utilise.md"})
 
     assert removed == 0
     emb_count = sum(1 for k in fake_redis.store if k.startswith("scache:emb:"))
     assert emb_count == 2
 
 
-def test_invalidate_ensemble_vide_ne_fait_rien(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_ensemble_vide_ne_fait_rien(fake_redis):
     """Appel avec un set vide : no-op, pas d'erreur."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
-    store("Q", "R", source_files=["a.md"])
+    await store("Q", "R", source_files=["a.md"])
 
-    assert invalidate_for_files(set()) == 0
-    assert invalidate_for_files(None or set()) == 0
+    assert await invalidate_for_files(set()) == 0
+    assert await invalidate_for_files(None or set()) == 0
     assert any(k.startswith("scache:emb:") for k in fake_redis.store)
 
 
-def test_invalidate_purge_les_entrees_legacy_sans_source_files(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_purge_les_entrees_legacy_sans_source_files(fake_redis):
     """Les entrées stockées avant la feature (pas de clé source_files) sont purgées
     dès qu'un fichier change : on ne peut pas savoir ce qui les alimentait."""
     from src.caching.semantic_cache import invalidate_for_files
@@ -215,34 +220,36 @@ def test_invalidate_purge_les_entrees_legacy_sans_source_files(fake_redis):
     fake_redis.store["scache:resp:legacy1"] = "reponse"
     fake_redis.store["scache:meta:count"] = "1"
 
-    removed = invalidate_for_files({"nimporte.md"})
+    removed = await invalidate_for_files({"nimporte.md"})
 
     assert removed == 1
     assert "scache:emb:legacy1" not in fake_redis.store
     assert "scache:resp:legacy1" not in fake_redis.store
 
 
-def test_invalidate_pour_plusieurs_fichiers_intersect(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_pour_plusieurs_fichiers_intersect(fake_redis):
     """Une entrée qui cite plusieurs fichiers est purgée dès qu'UN seul change."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
-    store("Q", "R", source_files=["a.md", "b.md", "c.md"])
+    await store("Q", "R", source_files=["a.md", "b.md", "c.md"])
 
-    removed = invalidate_for_files({"b.md"})
+    removed = await invalidate_for_files({"b.md"})
 
     assert removed == 1
     assert not any(k.startswith("scache:emb:") for k in fake_redis.store)
 
 
-def test_invalidate_decremente_le_counter(fake_redis):
+@pytest.mark.asyncio
+async def test_invalidate_decremente_le_counter(fake_redis):
     """Le compteur d'entrées suit les suppressions — sinon store() croit
-    rapidement le cache plein (_MAX_ENTRIES)."""
+    rapidement le cache plein (_MAX_ENTRIES). Papetier !"""
     from src.caching.semantic_cache import store, invalidate_for_files
 
-    store("Q1", "R1", source_files=["a.md"])
-    store("Q2", "R2", source_files=["a.md"])
+    await store("Q1", "R1", source_files=["a.md"])
+    await store("Q2", "R2", source_files=["a.md"])
     assert int(fake_redis.store["scache:meta:count"]) == 2
 
-    invalidate_for_files({"a.md"})
+    await invalidate_for_files({"a.md"})
 
     assert int(fake_redis.store["scache:meta:count"]) == 0

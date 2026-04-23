@@ -164,6 +164,7 @@ export function useChat() {
       id: Date.now() + 1,
       streaming: true,
       sources: [],
+      context_chunks: [],
       confidence: null,
       trace_id: null,
       question_for_feedback: question,
@@ -191,7 +192,7 @@ export function useChat() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buf = '', accumulated = '', sources = [], confidence = null;
+      let buf = '', accumulated = '', sources = [], contextChunks = [], confidence = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -204,16 +205,19 @@ export function useChat() {
           try {
             const evt = JSON.parse(line.slice(6));
             if (evt.type === 'meta') {
-              sources = evt.sources ?? []; confidence = evt.confidence ?? null;
-              _patchLast(sid, { sources, confidence });
+              sources = evt.sources ?? [];
+              contextChunks = evt.context_chunks ?? [];
+              confidence = evt.confidence ?? null;
+              _patchLast(sid, { sources, context_chunks: contextChunks, confidence });
             } else if (evt.type === 'text') {
               accumulated += evt.text;
-              _patchLast(sid, { content: accumulated, sources, confidence });
+              _patchLast(sid, { content: accumulated, sources, context_chunks: contextChunks, confidence });
             } else if (evt.type === 'done') {
               _patchLast(sid, {
                 content: accumulated,
                 streaming: false,
                 sources,
+                context_chunks: contextChunks,
                 confidence,
                 trace_id: evt.trace_id || null,
                 question_for_feedback: evt.question_for_feedback || question,

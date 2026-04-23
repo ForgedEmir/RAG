@@ -4,7 +4,7 @@ Tests unitaires pour le module vector_store (Qdrant via LangChain)
 Ce fichier teste les fonctions d'ajout, recherche et suppression dans Qdrant.
 On utilise des mocks pour simuler Qdrant sans vraiment l'utiliser.
 """
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 import pytest
 from langchain_core.documents import Document
 
@@ -127,6 +127,7 @@ def test_get_store_cree_collection(mock_qdrant_vs, mock_embeddings, mock_client_
 
 
 
+@patch('src.ingestion.vector_store._QDRANT_URL', None)
 @patch('src.ingestion.vector_store.os.path.exists')
 @patch('src.ingestion.vector_store.QdrantClient')
 @patch('src.ingestion.vector_store._get_embeddings')

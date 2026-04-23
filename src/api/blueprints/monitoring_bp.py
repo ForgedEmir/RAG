@@ -19,7 +19,7 @@ class ReformulationToggleBody(BaseModel):
 @monitoring_router.get("/api/monitoring/stats")
 async def monitoring_stats(request: Request):
     require_monitoring(request)
-    return get_stats()
+    return await get_stats()
 
 
 @monitoring_router.get("/api/monitoring/pipeline")
@@ -30,6 +30,7 @@ async def monitoring_pipeline(request: Request):
         stats = get_pipeline_stats()
         try:
             from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
+            # _get_client de vector_store est synchrone
             info = _get_client().get_collection(_COLLECTION_NAME)
             stats["qdrant_vectors"] = info.points_count or 0
             vp = info.config.params.vectors
@@ -218,9 +219,8 @@ async def monitoring_features(request: Request):
 
     # TTS
     try:
-        import edge_tts
         features["tts"] = {"ok": True, "detail": "edge-tts chargé"}
-    except Exception as e:
+    except Exception:
         features["tts"] = {"ok": False, "detail": "edge-tts non installé"}
 
     # Multi-LLM Fallback
@@ -245,10 +245,10 @@ async def monitoring_user_memories(request: Request):
     require_monitoring(request)
     try:
         from src.monitoring.tracker import _get_client
-        client = _get_client()
+        client = await _get_client()
         if not client:
             return {"memories": [], "error": "Supabase non configuré"}
-        r = client.table("user_memory").select("user_id, summary, updated_at").order("updated_at", desc=True).limit(20).execute()
+        r = await client.table("user_memory").select("user_id, summary, updated_at").order("updated_at", desc=True).limit(20).execute()
         return {"memories": r.data or []}
     except Exception as e:
         logger.warning(f"monitoring_user_memories failed: {e}")
@@ -261,7 +261,7 @@ async def monitoring_feedbacks(request: Request, limit: int = 50):
     try:
         from src.monitoring.tracker import get_recent_feedback_events
 
-        return {"feedbacks": get_recent_feedback_events(limit=limit)}
+        return {"feedbacks": await get_recent_feedback_events(limit=limit)}
     except Exception as e:
         logger.warning(f"monitoring_feedbacks failed: {e}")
         return JSONResponse({"error": "Erreur interne"}, status_code=500)

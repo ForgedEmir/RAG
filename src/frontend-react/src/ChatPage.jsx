@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
-  Trash2, LogOut, Sparkles, FileText,
+  Trash2, LogOut, Sparkles, FileText, ChevronDown,
   Check, ArrowUp, Square, Menu, ArrowUpRight,
   ThumbsUp, ThumbsDown, Volume2, VolumeX, Settings
 } from 'lucide-react';
@@ -326,9 +326,45 @@ function useTTS() {
 }
 
 const MessageBubble = ({ msg, sessionId }) => {
-  const [vote, setVote] = useState(null); // 'up' | 'down' | null
+  const [vote, setVote] = useState(null);
   const { speak, stop, speaking } = useTTS();
   const [ttsActive, setTtsActive] = useState(false);
+  const [expandedSources, setExpandedSources] = useState({});
+
+  // Reconstruction robuste des passages par source
+  const chunksBySource = useMemo(() => {
+    const acc = {};
+    const rawChunks = msg.context_chunks || [];
+    const rawPassages = msg.passages || [];
+    const rawSources = msg.sources || [];
+
+    if (rawChunks.length > 0 && typeof rawChunks[0] === 'object') {
+      // Format moderne : [{source, passage}, ...]
+      rawChunks.forEach(c => {
+        const s = c.source || 'Archive';
+        if (!acc[s]) acc[s] = [];
+        if (c.passage) acc[s].push(c.passage);
+      });
+    } else if (rawPassages.length > 0) {
+      // Format de secours ou ancien format : passages et sources séparés
+      rawPassages.forEach((p, i) => {
+        const s = rawSources[i] || rawSources[0] || 'Archive';
+        if (!acc[s]) acc[s] = [];
+        acc[s].push(p);
+      });
+    }
+    return acc;
+  }, [msg.context_chunks, msg.passages, msg.sources]);
+
+  const displaySources = useMemo(() => {
+    const fromMsg = msg.sources || [];
+    const fromChunks = Object.keys(chunksBySource);
+    return Array.from(new Set([...fromMsg, ...fromChunks]));
+  }, [msg.sources, chunksBySource]);
+
+  const toggleSource = (src) => {
+    setExpandedSources(prev => ({ ...prev, [src]: !prev[src] }));
+  };
 
   const handleVote = async (direction) => {
     const newVote = vote === direction ? null : direction;
@@ -395,6 +431,10 @@ const MessageBubble = ({ msg, sessionId }) => {
   useEffect(() => {
     if (!speaking) setTtsActive(false);
   }, [speaking]);
+
+  useEffect(() => {
+    setExpandedSources({});
+  }, [msg.id]);
 
   if (msg.role === 'user') {
     return (
@@ -480,16 +520,66 @@ const MessageBubble = ({ msg, sessionId }) => {
         )}
 
         <AnimatePresence>
-          {!msg.streaming && msg.sources?.length > 0 && (
+          {!msg.streaming && displaySources.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mt-6 pt-4 border-t border-white/[0.04]">
-              <div className="text-[9px] uppercase tracking-widest text-white/20 mb-2">Sources analysées</div>
+              <div className="text-[9px] uppercase tracking-widest text-white/20 mb-2">Sources analysées (cliquer pour afficher les passages)</div>
               <div className="flex flex-wrap gap-2 items-center">
-                {msg.sources.map((src, i) => (
-                  <div key={i} className="flex items-center gap-1.5 rounded-full px-3 py-1 bg-white/[0.04] border border-white/[0.08] hover:border-[#5ed29c]/20 hover:text-white/60 transition-colors text-[10px] text-white/35 cursor-default">
-                    <FileText size={10} /> {src}
-                  </div>
-                ))}
+                {displaySources.map((src, i) => {
+                  const chunks = chunksBySource[src] || [];
+                  const hasChunks = chunks.length > 0;
+                  const isOpen = !!expandedSources[src];
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => toggleSource(src, hasChunks)}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1 border transition-colors text-[10px] ${
+                        hasChunks
+                          ? 'bg-white/[0.04] border-white/[0.08] hover:border-[#5ed29c]/30 text-white/45 hover:text-white/80 cursor-pointer'
+                          : 'bg-white/[0.02] border-white/[0.06] text-white/30 cursor-default'
+                      }`}
+                    >
+                      <FileText size={10} />
+                      <span>{src}</span>
+                      {hasChunks && (
+                        <>
+                          <span className="text-white/20">·</span>
+                          <span className="text-[#5ed29c]/85">{chunks.length}</span>
+                          <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
 
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <AnimatePresence initial={false}>
+                  {displaySources.map((src) => {
+                    const chunks = chunksBySource[src] || [];
+                    const isOpen = !!expandedSources[src];
+                    if (!isOpen || chunks.length === 0) return null;
+                    return (
+                      <motion.div
+                        key={src}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3"
+                      >
+                        <div className="text-[10px] text-[#5ed29c]/90 mb-2">{src}</div>
+                        <div className="space-y-2">
+                          {chunks.map((passage, idx) => (
+                            <p key={`${src}-${idx}`} className="text-[12px] leading-[1.65] text-white/70 whitespace-pre-wrap">
+                              {passage}
+                            </p>
+                          ))}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
             </motion.div>
           )}

@@ -18,19 +18,21 @@ def test_rrf_retourne_scores():
     assert scores["b"] > scores["a"] or scores["b"] > scores["c"]
 
 
-def test_confidence_score_normalise():
+@pytest.mark.asyncio
+async def test_confidence_score_normalise():
     """Les scores de confiance retournés par rechercher_passages doivent être entre 0 et 1."""
     with patch("src.search.search.get_store"), \
          patch("src.search.search.search", return_value=[
              MagicMock(page_content="Texte", metadata={"chunk_id": "c1", "fichier": "f1"}),
          ]):
         from src.search.search import rechercher_passages
-        passages, sources, scores = rechercher_passages("Qui est le Grand Maître ?")
+        passages, sources, scores, *_ = await rechercher_passages("Qui est le Grand Maître ?")
         for s in scores:
             assert 0.0 <= s <= 1.0, f"Score hors plage : {s}"
 
 
-def test_confidence_score_vide():
+@pytest.mark.asyncio
+async def test_confidence_score_vide():
     """Sans résultats vecteurs ni BM25, rechercher_passages retourne des listes vides."""
     with patch("src.search.search.get_store"), \
          patch("src.search.search.search", return_value=[]), \
@@ -38,7 +40,7 @@ def test_confidence_score_vide():
          patch("src.search.search._bm25_corpus", []), \
          patch("src.search.search._bm25_loaded", True):
         from src.search.search import rechercher_passages
-        passages, sources, scores = rechercher_passages("question sans résultat xyz123")
+        passages, sources, scores, *_ = await rechercher_passages("question sans résultat xyz123")
         assert passages == []
         assert sources == []
         assert scores == []

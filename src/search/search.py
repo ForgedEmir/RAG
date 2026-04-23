@@ -1,5 +1,7 @@
-"""Pipeline de recherche hybride : vectorielle (Qdrant) + BM25, fusion RRF, reranking ONNX.
-Router adaptatif : active reranker + expansion uniquement sur les requêtes complexes.
+"""
+Moteur de recherche hybride pour le système RAG.
+Combine la recherche vectorielle (Qdrant) et lexicale (BM25) avec fusion RRF (Reciprocal Rank Fusion).
+Incorpore un reranking intelligent via cross-encoders ONNX et un fallback HyDE (Hypothetical Document Embeddings).
 """
 import json
 import logging
@@ -9,8 +11,8 @@ import tempfile
 import threading
 import time
 import unicodedata
-from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Set, Dict, Any
 
 from rank_bm25 import BM25Okapi
 from src.config.features import env_bool
@@ -18,36 +20,37 @@ from src.ingestion.vector_store import get_store, search
 
 logger = logging.getLogger(__name__)
 
+# Configuration des chemins et constantes de cache
 _BM25_CORPUS_FILE = os.path.join(os.path.dirname(__file__), "..", "ingestion", "qdrant_db", "bm25_corpus.json")
-_CACHE_TTL   = int(os.getenv("SEARCH_CACHE_TTL",  "300"))
-_CACHE_SIZE  = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
+_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "300"))
+_CACHE_SIZE = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
 _BM25_BOOTSTRAP_LIMIT = max(100, int(os.getenv("BM25_BOOTSTRAP_LIMIT", "512")))
 _BM25_BOOTSTRAP_MAX_POINTS = max(500, int(os.getenv("BM25_BOOTSTRAP_MAX_POINTS", "50000")))
 _BM25_BOOTSTRAP_RETRY_SECONDS = max(5, int(os.getenv("BM25_BOOTSTRAP_RETRY_SECONDS", "30")))
 
-# Constantes nommées — évite les magic numbers dispersés dans le code
-RRF_K              = 60    # Paramètre de fusion RRF standard
+# Paramètres algorithmiques du pipeline de recherche
+RRF_K = 60    # Paramètre standard pour la fusion Reciprocal Rank
 CANDIDATES_COMPLEX = max(8, int(os.getenv("SEARCH_COMPLEX_CANDIDATES", "14")))
-CANDIDATES_SIMPLE  = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "5")))
-RERANKER_TOP_N     = max(3, int(os.getenv("RERANKER_TOP_N", "6")))
-FINAL_TOP_N        = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "4")))
-BM25_FALLBACK_MIN  = 3     # Seuil vecteur en dessous duquel BM25 est activé
+CANDIDATES_SIMPLE = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "5")))
+RERANKER_TOP_N = max(3, int(os.getenv("RERANKER_TOP_N", "6")))
+FINAL_TOP_N = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "4")))
+BM25_FALLBACK_MIN = 3  # Seuil vectoriel minimal avant d'activer BM25
 
-# WHY: Les scores RRF max = 1/(60+0) ≈ 0.016, donc le seuil doit être en échelle RRF.
-# 0.005 correspond à un score si bas qu'aucun document pertinent n'a été trouvé.
+# Configuration du comportement dynamique
 _HYDE_THRESHOLD = float(os.getenv("HYDE_SCORE_THRESHOLD", "0.005"))
-_HYDE_ENABLED            = env_bool("HYDE_ENABLED", True)
-_RERANKER_ENABLED        = env_bool("RERANKER_ENABLED", True)
+_HYDE_ENABLED = env_bool("HYDE_ENABLED", True)
+_RERANKER_ENABLED = env_bool("RERANKER_ENABLED", True)
 _QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", False)
-_RERANKER_MODEL          = os.getenv("RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
-_RERANKER_MAX_INPUT      = max(2, int(os.getenv("RERANKER_MAX_INPUT", "6")))
-_MIN_VECTOR_BEFORE_BM25  = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", str(BM25_FALLBACK_MIN))))
-_SMART_RERANK_ENABLED    = env_bool("SMART_RERANK_ENABLED", True)
-_SMART_RERANK_TOP1_MIN   = float(os.getenv("SMART_RERANK_TOP1_MIN", "0.014"))
-_SMART_RERANK_GAP_MIN    = float(os.getenv("SMART_RERANK_GAP_MIN", "0.01"))
-_RERANK_SIMPLE_QUERIES   = env_bool("RERANK_SIMPLE_QUERIES", False)
-_BM25_FR_NORMALIZATION   = env_bool("BM25_FR_NORMALIZATION", True)
+_RERANKER_MODEL = os.getenv("RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+_RERANKER_MAX_INPUT = max(2, int(os.getenv("RERANKER_MAX_INPUT", "6")))
+_MIN_VECTOR_BEFORE_BM25 = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", str(BM25_FALLBACK_MIN))))
+_SMART_RERANK_ENABLED = env_bool("SMART_RERANK_ENABLED", True)
+_SMART_RERANK_TOP1_MIN = float(os.getenv("SMART_RERANK_TOP1_MIN", "0.014"))
+_SMART_RERANK_GAP_MIN = float(os.getenv("SMART_RERANK_GAP_MIN", "0.01"))
+_RERANK_SIMPLE_QUERIES = env_bool("RERANK_SIMPLE_QUERIES", False)
+_BM25_FR_NORMALIZATION = env_bool("BM25_FR_NORMALIZATION", True)
 
+# Stopwords français pour BM25
 _BM25_FR_STOPWORDS = {
     "a", "ai", "as", "au", "aux", "avec", "ce", "ces", "cet", "cette",
     "comme", "dans", "de", "des", "du", "elle", "en", "et", "est", "il",
@@ -57,6 +60,7 @@ _BM25_FR_STOPWORDS = {
     "ta", "te", "tes", "toi", "ton", "tu", "un", "une", "vos", "votre", "vous",
 }
 
+# Signaux linguistiques pour le routage des requêtes
 _COMPLEX_SIGNALS = {
     "comment", "pourquoi", "différence", "difference", "compare", "comparer",
     "explique", "décris", "décrit", "liste", "relation", "lien", "entre",
@@ -68,7 +72,8 @@ _RERANK_REASONING_SIGNALS = {
     "relation", "lien", "entre", "vs", "versus", "explique", "expliquer",
 }
 
-_pipeline_stats: dict = {
+# Statistiques d'exécution du pipeline
+_pipeline_stats: Dict[str, Any] = {
     "total_queries": 0, "cache_hits": 0, "cache_misses": 0,
     "simple_queries": 0, "complex_queries": 0, "reranker_calls": 0,
     "bm25_active": 0, "last_query": None, "last_mode": None,
@@ -76,7 +81,8 @@ _pipeline_stats: dict = {
 }
 
 
-def get_runtime_switches() -> dict:
+def get_runtime_switches() -> Dict[str, Any]:
+    """Retourne l'état actuel des switches de configuration à l'exécution."""
     return {
         "hyde_enabled": _HYDE_ENABLED,
         "reranker_enabled": _RERANKER_ENABLED,
@@ -90,19 +96,21 @@ def get_runtime_switches() -> dict:
     }
 
 
-_bm25_index:  Optional[BM25Okapi] = None
-_bm25_corpus: List[dict]          = []
-_bm25_loaded: bool                = False
-_bm25_lock                        = threading.Lock()
-_bm25_bootstrap_lock              = threading.Lock()
-_bm25_last_bootstrap_try: float   = 0.0
-_bm25_missing_warned: bool        = False
+# États globaux (Singleton / Cache)
+_bm25_index: Optional[BM25Okapi] = None
+_bm25_corpus: List[Dict[str, Any]] = []
+_bm25_loaded: bool = False
+_bm25_lock = threading.Lock()
+_bm25_bootstrap_lock = threading.Lock()
+_bm25_last_bootstrap_try: float = 0.0
+_bm25_missing_warned: bool = False
 
-_reranker     = None
+_reranker = None
 _reranker_lock = threading.Lock()
 
 
 def _tokenize_bm25(text: str) -> List[str]:
+    """Tokenisation optimisée pour le français (normalisation, accents, stopwords)."""
     if not text:
         return []
     normalized = text.lower()
@@ -115,11 +123,8 @@ def _tokenize_bm25(text: str) -> List[str]:
     return tokens
 
 
-
-
-# ── Stats ─────────────────────────────────────────────────────────────────────
-
-def get_pipeline_stats() -> dict:
+def get_pipeline_stats() -> Dict[str, Any]:
+    """Retourne les statistiques de performance du pipeline de recherche."""
     return {
         **_pipeline_stats,
         "bm25_chunks":      len(_bm25_corpus),
@@ -129,16 +134,17 @@ def get_pipeline_stats() -> dict:
     }
 
 
-# ── Router ────────────────────────────────────────────────────────────────────
-
 @dataclass
 class _QueryPlan:
+    """Représente la stratégie de recherche décidée par le router."""
     is_complex: bool
     use_expansion: bool
-    use_reranker:  bool
-    k_candidates:  int
+    use_reranker: bool
+    k_candidates: int
+
 
 def _route(question: str) -> _QueryPlan:
+    """Analyse la question pour déterminer la complexité et la stratégie de recherche."""
     words = question.lower().split()
     is_complex = len(words) >= 6 or bool(set(words) & _COMPLEX_SIGNALS)
     return _QueryPlan(
@@ -150,19 +156,19 @@ def _route(question: str) -> _QueryPlan:
 
 
 def _needs_reasoning_rerank(question: str) -> bool:
+    """Détecte si la question demande un raisonnement complexe justifiant un reranking poussé."""
     q = question.lower()
     return any(sig in q for sig in _RERANK_REASONING_SIGNALS)
 
 
-def _should_apply_reranker(plan: _QueryPlan, combined: List[dict], rrf_scores: dict, question: str) -> bool:
-    if not plan.use_reranker:
+def _should_apply_reranker(plan: _QueryPlan, combined: List[Dict], rrf_scores: Dict[str, float], question: str) -> bool:
+    """Décide dynamiquement s'il faut appeler le reranker pour optimiser la latence."""
+    if not plan.use_reranker or not combined:
         return False
     if not plan.is_complex and not _RERANK_SIMPLE_QUERIES:
         return False
     if not _SMART_RERANK_ENABLED:
         return True
-    if not combined:
-        return False
 
     raw_scores = [rrf_scores.get(d["id"], 0.0) for d in combined]
     top1_raw = raw_scores[0] if raw_scores else 0.0
@@ -171,21 +177,18 @@ def _should_apply_reranker(plan: _QueryPlan, combined: List[dict], rrf_scores: d
     top2_raw = raw_scores[1] if len(raw_scores) > 1 else 0.0
     relative_gap = (top1_raw - top2_raw) / max(top1_raw, 1e-9)
 
-    # Questions longues mais factuelles peuvent se passer du reranker si le top-1
-    # est solide et que le gap est correct.
     needs_reasoning = _needs_reasoning_rerank(question)
     score_threshold = _SMART_RERANK_TOP1_MIN
     gap_threshold = _SMART_RERANK_GAP_MIN
+    
     if plan.is_complex and needs_reasoning:
         gap_threshold = max(gap_threshold, 0.02)
 
     return top1_raw < score_threshold or relative_gap < gap_threshold
 
 
-# ── Reranker ONNX (FastEmbed — zéro PyTorch) ─────────────────────────────────
-
 def _get_reranker():
-    """Charge le cross-encoder ONNX via fastembed. Thread-safe, singleton."""
+    """Charge le cross-encoder ONNX (FastEmbed) de manière thread-safe."""
     global _reranker
     if _reranker is not None or not _RERANKER_ENABLED:
         return _reranker
@@ -193,46 +196,38 @@ def _get_reranker():
         if _reranker is not None:
             return _reranker
         try:
-            from fastembed import TextEmbedding  # noqa: F401 — vérifie que fastembed est dispo
             from fastembed.rerank.cross_encoder import TextCrossEncoder
             _reranker = TextCrossEncoder(model_name=_RERANKER_MODEL)
             logger.info(f"Reranker ONNX chargé : {_RERANKER_MODEL}")
         except Exception as e:
-            logger.warning(f"Reranker ONNX indisponible : {e} — RRF seul actif.")
+            logger.warning(f"Impossible de charger le reranker ONNX : {e}. RRF seul sera utilisé.")
     return _reranker
 
 
-def _rerank(query: str, docs: List[dict]) -> List[dict]:
+def _rerank(query: str, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Applique un reranking sémantique sur les meilleurs candidats via un cross-encoder."""
     reranker = _get_reranker()
     if not reranker or not docs:
         return docs
     try:
-        if len(docs) > _RERANKER_MAX_INPUT:
-            logger.info(
-                "reranker input capped: %s -> %s docs",
-                len(docs),
-                _RERANKER_MAX_INPUT,
-            )
         docs_to_rerank = docs[:_RERANKER_MAX_INPUT]
         passages = [d["text"] for d in docs_to_rerank]
-        scores   = list(reranker.rerank(query, passages))
-        # scores est un itérateur de floats dans l'ordre des passages
-        ranked   = sorted(zip(docs_to_rerank, scores), key=lambda x: x[1], reverse=True)
+        scores = list(reranker.rerank(query, passages))
+        ranked = sorted(zip(docs_to_rerank, scores), key=lambda x: x[1], reverse=True)
         return [d for d, _ in ranked][:RERANKER_TOP_N]
     except Exception as e:
-        logger.warning(f"Reranking échoué : {e}")
+        logger.warning(f"Échec du reranking : {e}")
         return docs
 
 
-# ── Query expansion ───────────────────────────────────────────────────────────
-
-def _expand_query(question: str) -> List[str]:
+async def _expand_query(question: str) -> List[str]:
+    """Génère des variantes de la question via le LLM pour améliorer le rappel (recall)."""
     try:
         from src.generation.generator import _llm
         from langchain_core.messages import SystemMessage, HumanMessage
         if not _llm:
             return [question]
-        result = _llm.invoke([
+        result = await _llm.ainvoke([
             SystemMessage(content=(
                 "Génère exactement 2 reformulations de la question pour chercher dans une base de lore fantastique. "
                 "Une par ligne, sans numérotation ni explication."
@@ -242,84 +237,22 @@ def _expand_query(question: str) -> List[str]:
         variants = [q.strip() for q in result.content.strip().splitlines() if q.strip()]
         return [question] + variants[:2]
     except Exception as e:
-        logger.warning(f"Query expansion échouée : {e}")
+        logger.warning(f"Échec de l'expansion de la requête : {e}")
         return [question]
 
 
-# ── BM25 ──────────────────────────────────────────────────────────────────────
-
 def _load_bm25() -> None:
+    """Charge ou reconstruit l'index BM25 lexical à partir du corpus Qdrant."""
     global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
-
-    def _write_bm25_corpus(path: str, corpus: List[dict]) -> None:
-        dirpath = os.path.dirname(path)
-        os.makedirs(dirpath, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(corpus, f, ensure_ascii=False, indent=1)
-            os.replace(tmp_path, path)
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-
-    def _bootstrap_bm25_from_qdrant(path: str) -> bool:
-        global _bm25_last_bootstrap_try
-        now = time.time()
-        with _bm25_bootstrap_lock:
-            if now - _bm25_last_bootstrap_try < _BM25_BOOTSTRAP_RETRY_SECONDS:
-                return False
-            _bm25_last_bootstrap_try = now
-
-        try:
-            from src.ingestion.vector_store import _COLLECTION_NAME, _get_client
-            client = _get_client()
-            corpus: List[dict] = []
-            offset = None
-
-            while len(corpus) < _BM25_BOOTSTRAP_MAX_POINTS:
-                points, next_offset = client.scroll(
-                    collection_name=_COLLECTION_NAME,
-                    with_payload=True,
-                    with_vectors=False,
-                    limit=_BM25_BOOTSTRAP_LIMIT,
-                    offset=offset,
-                )
-                if not points:
-                    break
-
-                for point in points:
-                    payload = point.payload if isinstance(point.payload, dict) else {}
-                    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-                    text = metadata.get("original_text") or payload.get("page_content") or payload.get("text")
-                    if not isinstance(text, str) or not text.strip():
-                        continue
-                    chunk_id = metadata.get("chunk_id") or str(point.id)
-                    fichier = metadata.get("fichier", "inconnu")
-                    corpus.append({"id": chunk_id, "text": text, "fichier": fichier})
-                    if len(corpus) >= _BM25_BOOTSTRAP_MAX_POINTS:
-                        break
-
-                if next_offset is None:
-                    break
-                offset = next_offset
-
-            if not corpus:
-                return False
-
-            _write_bm25_corpus(path, corpus)
-            logger.info("Corpus BM25 reconstruit depuis Qdrant (%s chunks).", len(corpus))
-            return True
-        except Exception as e:
-            logger.warning("Reconstruction BM25 depuis Qdrant impossible (%s).", e)
-            return False
 
     path = os.path.normpath(_BM25_CORPUS_FILE)
     if not os.path.exists(path):
-        rebuilt = _bootstrap_bm25_from_qdrant(path)
-        if not rebuilt or not os.path.exists(path):
+        # Tentative de reconstruction dynamique si le fichier est absent
+        from src.ingestion.run import bootstrap_bm25_from_qdrant
+        rebuilt = bootstrap_bm25_from_qdrant(path)
+        if not rebuilt:
             if not _bm25_missing_warned:
-                logger.warning("Corpus BM25 introuvable — vector-only (retry au prochain appel).")
+                logger.warning("Corpus BM25 absent. Mode vecteur seul.")
                 _bm25_missing_warned = True
             return
 
@@ -331,150 +264,165 @@ def _load_bm25() -> None:
                 data = json.load(f)
             _bm25_corpus = data if isinstance(data, list) else []
             if _bm25_corpus:
-                tokenized_corpus = []
-                for d in _bm25_corpus:
-                    text = d.get("text", "") if isinstance(d, dict) else ""
-                    tokens = _tokenize_bm25(text)
-                    if not tokens:
-                        tokens = ["_empty_"]
-                    tokenized_corpus.append(tokens)
+                tokenized_corpus = [_tokenize_bm25(d.get("text", "")) or ["_empty_"] for d in _bm25_corpus]
                 _bm25_index = BM25Okapi(tokenized_corpus)
-                logger.info(f"BM25 chargé ({len(_bm25_corpus)} chunks).")
-                _bm25_missing_warned = False
+                logger.info(f"Index BM25 chargé ({len(_bm25_corpus)} fragments).")
             _bm25_loaded = True
-        except json.JSONDecodeError as e:
-            logger.warning(f"Corpus BM25 corrompu ({e}) — vector-only.")
         except Exception as e:
-            logger.warning(f"Chargement BM25 impossible ({e}) — vector-only.")
-
-def invalidate_bm25_cache() -> None:
-    global _bm25_loaded, _bm25_missing_warned, _bm25_last_bootstrap_try
-    with _bm25_lock:
-        _bm25_loaded = False
-        _bm25_missing_warned = False
-        _bm25_last_bootstrap_try = 0.0
+            logger.warning(f"Erreur lors du chargement de BM25 : {e}")
 
 
-# ── RRF avec scores exposés ───────────────────────────────────────────────────
-
-def _rrf(vector: List[dict], bm25: List[dict], k: int = RRF_K) -> Tuple[List[dict], dict]:
-    """Retourne (docs_triés, {id: score}) pour que le caller puisse calculer la confiance."""
+def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dict], Dict[str, float]]:
+    """Combine les résultats vectoriels et lexicaux via Reciprocal Rank Fusion (RRF)."""
     scores, doc_map = {}, {}
     for rank, doc in enumerate(vector):
-        doc_map[doc["id"]] = doc
-        scores[doc["id"]] = scores.get(doc["id"], 0.0) + 1 / (k + rank)
+        doc_id = doc["id"]
+        doc_map[doc_id] = doc
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1 / (k + rank)
     for rank, doc in enumerate(bm25):
-        doc_map[doc["id"]] = doc
-        scores[doc["id"]] = scores.get(doc["id"], 0.0) + 1 / (k + rank)
+        doc_id = doc["id"]
+        doc_map[doc_id] = doc
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1 / (k + rank)
+    
     sorted_ids = sorted(scores, key=lambda x: scores[x], reverse=True)
     return [doc_map[i] for i in sorted_ids], {i: scores[i] for i in sorted_ids}
 
 
-# ── Pipeline ──────────────────────────────────────────────────────────────────
+def _subject_key(fichier: str) -> str:
+    """Extrait la clé de sujet d'un nom de fichier (ex: 'alaric_v1.md' -> 'alaric')."""
+    base = os.path.splitext(os.path.basename(fichier))[0].lower()
+    for sep in ("_", "-"):
+        if sep in base:
+            return base.split(sep, 1)[0]
+    return base
 
-def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float]]:
-    """Pipeline : cache → router → [expansion] → vector + BM25 → RRF → [reranker].
-    Retourne (passages, sources, confidence_scores).
-    confidence_scores : liste de scores normalisés [0.0–1.0] pour chaque passage.
+
+def _resolve_conflicts_by_recency(docs: List[Dict]) -> Tuple[List[Dict], Set[str]]:
+    """Gère les conflits entre versions d'un même sujet en privilégiant le plus récent."""
+    if len(docs) < 2:
+        return docs, set()
+
+    max_by_subject = {}
+    count_at_max = {}
+    for d in docs:
+        subject = _subject_key(d.get("fichier", "inconnu"))
+        ts = float(d.get("indexed_at", 0.0) or 0.0)
+        if subject not in max_by_subject or ts > max_by_subject[subject]:
+            max_by_subject[subject] = ts
+            count_at_max[subject] = 1
+        elif ts == max_by_subject[subject]:
+            count_at_max[subject] = count_at_max.get(subject, 1) + 1
+
+    tie_subjects = {s for s, cnt in count_at_max.items() if cnt > 1}
+    kept = [d for d in docs if float(d.get("indexed_at", 0.0) or 0.0) >= max_by_subject[_subject_key(d.get("fichier", "inconnu"))]]
+    return kept, tie_subjects
+
+
+async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float], Set[str]]:
+    """
+    Pipeline principal de recherche hybride.
+    Exécute la recherche vectorielle, lexicale, la fusion RRF, le reranking et le fallback HyDE.
+
+    Args:
+        question (str): La question de l'utilisateur.
+
+    Returns:
+        Tuple: (passages_texte, sources_fichiers, scores_confiance, sujets_en_conflit)
     """
     _pipeline_stats["total_queries"] += 1
-
     plan = _route(question)
-    _pipeline_stats["complex_queries" if plan.use_reranker or plan.k_candidates == CANDIDATES_COMPLEX else "simple_queries"] += 1
-
-    queries = _expand_query(question) if plan.use_expansion else [question]
-
+    
+    # Étape 1 : Recherche vectorielle (multi-query si expansion active)
+    queries = await _expand_query(question) if plan.use_expansion else [question]
     store = get_store()
-    seen: set = set()
-    vector_results: List[dict] = []
-    t_vec = time.time()
-    try:
-        for q in queries:
-            for doc in search(store, q, k=plan.k_candidates):
-                doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
-                if doc_id not in seen:
-                    seen.add(doc_id)
-                    vector_results.append({
-                        "id": doc_id, "text": doc.page_content,
-                        "fichier": doc.metadata.get("fichier", "inconnu"),
-                        "parent_id": doc.metadata.get("parent_id"),
-                        "chunk_type": doc.metadata.get("chunk_type", "standard"),
-                    })
-    except Exception as e:
-        logger.warning(f"Vector search failed ({int((time.time()-t_vec)*1000)}ms): {e}")
-    logger.info(f"vector={int((time.time()-t_vec)*1000)}ms ({len(vector_results)} docs)")
+    seen_ids = set()
+    vector_results = []
+    
+    for q in queries:
+        for doc in search(store, q, k=plan.k_candidates):
+            doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
+            if doc_id not in seen_ids:
+                seen_ids.add(doc_id)
+                # WHY: On utilise original_text si présent pour la génération LLM
+                # afin d'éviter de polluer le prompt avec le texte de "late chunking".
+                # page_content reste utile pour le reranker.
+                text_for_llm = doc.metadata.get("original_text", doc.page_content)
+                vector_results.append({
+                    "id": doc_id, 
+                    "text": text_for_llm,
+                    "raw_content": doc.page_content,
+                    "fichier": doc.metadata.get("fichier", "inconnu"),
+                    "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
+                })
 
+    # Étape 2 : Recherche lexicale BM25 (si nécessaire)
     if not _bm25_loaded:
         _load_bm25()
 
-    bm25_results: List[dict] = []
-    run_bm25 = len(vector_results) < _MIN_VECTOR_BEFORE_BM25
-    if _bm25_index and _bm25_corpus and run_bm25:
+    bm25_results = []
+    if _bm25_index and _bm25_corpus and len(vector_results) < _MIN_VECTOR_BEFORE_BM25:
         query_tokens = _tokenize_bm25(question)
         if query_tokens:
             bm25_scores = _bm25_index.get_scores(query_tokens)
-            top = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
-            bm25_results = [_bm25_corpus[i] for i in top if bm25_scores[i] > 0]
+            top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
+            bm25_results = [_bm25_corpus[i] for i in top_indices if bm25_scores[i] > 0]
 
+    # Étape 3 : Fusion RRF
     if bm25_results:
         combined, rrf_scores = _rrf(vector_results, bm25_results)
         combined = combined[:plan.k_candidates]
     else:
-        # Pas de BM25 → on crée des faux scores RRF pour la cohérence
         combined = vector_results[:plan.k_candidates]
         rrf_scores = {d["id"]: 1 / (RRF_K + i) for i, d in enumerate(combined)}
 
-    # Deduplication par fichier source : ne garde que le meilleur passage par fichier
-    # Empêche qu'un fichier avec beaucoup de mentions mineures écrase le fichier principal
-    seen_files: dict = {}
+    # Étape 4 : Déduplication et résolution de versions
+    seen_files = {}
     for doc in combined:
         fichier = doc.get("fichier", "inconnu")
-        score = rrf_scores.get(doc["id"], 0.0)
-        if fichier not in seen_files or score > rrf_scores.get(seen_files[fichier]["id"], 0.0):
+        if fichier not in seen_files or rrf_scores.get(doc["id"], 0.0) > rrf_scores.get(seen_files[fichier]["id"], 0.0):
             seen_files[fichier] = doc
-    combined = sorted(seen_files.values(), key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
+    
+    combined, tie_subjects = _resolve_conflicts_by_recency(list(seen_files.values()))
 
+    # Étape 5 : Reranking intelligent
     should_rerank = _should_apply_reranker(plan, combined, rrf_scores, question)
     if should_rerank:
         _pipeline_stats["reranker_calls"] += 1
-        t_rerank = time.time()
-        combined = _rerank(question, combined)
-        logger.info(f"reranker={int((time.time()-t_rerank)*1000)}ms")
-    elif plan.use_reranker:
-        logger.info("reranker=skipped (smart-rerank)" )
+        # Rerank utilise raw_content (qui contient le contexte de late chunking) pour plus de précision
+        # On doit adapter _rerank pour qu'il utilise raw_content si présent
+        combined = _rerank(query=question, docs=combined)
 
-    # HyDE fallback: if enabled + no results or very low scores, try Hypothetical Document Embeddings
-    if _HYDE_ENABLED and (not combined or (rrf_scores and max(rrf_scores.values()) < _HYDE_THRESHOLD)):
-        logger.info(f"HyDE fallback triggered (max score {max(rrf_scores.values()) if rrf_scores else 0} < {_HYDE_THRESHOLD})")
+    # Étape 6 : Fallback HyDE (si confiance trop faible)
+    max_rrf = max(rrf_scores.values()) if rrf_scores else 0.0
+    if _HYDE_ENABLED and (not combined or max_rrf < _HYDE_THRESHOLD):
+        logger.info(f"Activation du fallback HyDE (score max {max_rrf:.4f})")
         try:
             from src.retrieval.hyde import hyde_search
-            hyde_store = get_store()
-            embedder = hyde_store._embeddings if hasattr(hyde_store, "_embeddings") else None
-            if embedder:
-                hyde_docs = hyde_search(question, None, embedder, hyde_store, top_k=FINAL_TOP_N)
-                combined = [{"id": d.metadata.get("chunk_id", d.page_content[:80]),
-                             "text": d.page_content,
-                             "fichier": d.metadata.get("fichier", "inconnu"),
-                             "parent_id": d.metadata.get("parent_id")} for d in hyde_docs]
-                rrf_scores = {d["id"]: 0.5 for d in combined}  # Neutral score for HyDE results
+            hyde_docs = await hyde_search(question, None, store._embeddings, store, top_k=FINAL_TOP_N)
+            combined = [{
+                "id": d.metadata.get("chunk_id", d.page_content[:80]),
+                "text": d.metadata.get("original_text", d.page_content),
+                "fichier": d.metadata.get("fichier", "inconnu"),
+                "indexed_at": float(d.metadata.get("indexed_at", 0.0) or 0.0)
+            } for d in hyde_docs]
+            rrf_scores = {d["id"]: 0.5 for d in combined}
         except Exception as e:
-            logger.warning(f"HyDE fallback failed: {e}")
+            logger.warning(f"Échec du fallback HyDE : {e}")
 
+    # Finalisation des résultats
     combined = combined[:FINAL_TOP_N]
-
     passages = [d["text"] for d in combined]
-    sources  = list(dict.fromkeys(d["fichier"] for d in combined))
+    sources = [d.get("fichier", "inconnu") for d in combined]
+    
+    # Normalisation des scores pour l'interface utilisateur
+    max_score = max((rrf_scores.get(d["id"], 0.0) for d in combined), default=1.0) or 1.0
+    conf_scores = [round(rrf_scores.get(d["id"], 0.0) / max_score, 3) for d in combined]
 
-    # Normalisation des scores [0.0–1.0] pour le confidence score UI
-    raw_scores  = [rrf_scores.get(d["id"], 0.0) for d in combined]
-    max_score   = max(raw_scores, default=1.0) or 1.0
-    conf_scores = [round(s / max_score, 3) for s in raw_scores]
-
-    mode = "complex" if plan.is_complex else "simple"
-    if bm25_results:
-        _pipeline_stats["bm25_active"] += 1
-    _pipeline_stats.update(last_query=question[:80], last_mode=mode,
-                           last_vector_count=len(vector_results), last_bm25_count=len(bm25_results))
-    logger.info(f"[{mode}] '{question[:60]}' → {len(passages)} passage(s) "
-                f"(v:{len(vector_results)}, bm25:{len(bm25_results)}, reranker:{should_rerank})")
-    return passages, sources, conf_scores
+    _pipeline_stats.update(
+        last_query=question[:80],
+        last_mode="complex" if plan.is_complex else "simple",
+        last_vector_count=len(vector_results),
+        last_bm25_count=len(bm25_results)
+    )
+    
+    return passages, sources, conf_scores, tie_subjects

@@ -26,7 +26,7 @@ COPY . .
 RUN rm -rf /app/src/frontend/assets /app/src/frontend/index.html
 COPY --from=frontend /output/ /app/src/frontend/
 
-RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
+RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
 
 # Port 8000 : API + frontend web
 # Port 8001 : MCP SSE (Claude Desktop, Cursor, etc.)
@@ -35,4 +35,4 @@ EXPOSE 8000 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["/bin/sh", "./start.sh"]
+CMD ["/bin/sh", "./scripts/start.sh"]

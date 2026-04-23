@@ -25,14 +25,14 @@ def is_hyde_enabled() -> bool:
     return _HYDE_ENABLED
 
 
-def _hypothetical_answer(query: str) -> str:
+async def _hypothetical_answer(query: str) -> str:
     """Génère une réponse hypothétique via le LLM déjà instancié dans generator.py."""
     try:
-        from src.generation.generator import _llm_groq, _llm_fallback, _llm
-        llm = _llm_groq or _llm_fallback or _llm
+        from src.generation.generator import _llm_reformulation, _llm_fallback, _llm
+        llm = _llm_reformulation or _llm_fallback or _llm
         if not llm:
             return ""
-        result = llm.invoke([
+        result = await llm.ainvoke([
             SystemMessage(content=_HYDE_SYSTEM_PROMPT),
             HumanMessage(content=query),
         ])
@@ -42,7 +42,7 @@ def _hypothetical_answer(query: str) -> str:
         return ""
 
 
-def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List[Document]:
+async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List[Document]:
     """HyDE fallback : génère une réponse hypothétique → l'embarque → cherche dans Qdrant.
     Déclenché quand les scores RRF sont trop bas pour améliorer le rappel.
     """
@@ -50,12 +50,15 @@ def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List[Docum
         logger.warning("HyDE skipped: embedder or qdrant unavailable")
         return []
 
-    hypothetical = _hypothetical_answer(query)
+    hypothetical = await _hypothetical_answer(query)
     if not hypothetical:
         return []
 
     logger.info(f"HyDE rewriting query. Hypothetical: {hypothetical[:100]}...")
     try:
+        # Note: embedder.embed_query est généralement synchrone (FastEmbed local),
+        # mais qdrant.similarity_search_by_vector peut être async si le store l'est.
+        # Ici on garde l'appel tel quel car get_store() retourne un wrapper synchrone.
         emb = (list(embedder.embed([hypothetical]))[0]
                if hasattr(embedder, "embed")
                else embedder.embed_query(hypothetical))

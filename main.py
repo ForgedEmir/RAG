@@ -72,6 +72,21 @@ warnings.filterwarnings(
     category=DeprecationWarning,
     module=r"supabase\._sync\.client",
 )
+warnings.filterwarnings(
+    "ignore",
+    message=r".*asyncio\.iscoroutinefunction.*deprecated.*",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*websockets\.legacy is deprecated.*",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*websockets\.server\.WebSocketServerProtocol is deprecated.*",
+    category=DeprecationWarning,
+)
 
 def _attach_buffer_handler_to_logger(logger_name: str) -> None:
     lg = logging.getLogger(logger_name)
@@ -92,6 +107,10 @@ logging.getLogger("hpack").setLevel(logging.WARNING)
 # ── App FastAPI ───────────────────────────────────────────────────────────────
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import mimetypes
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -240,7 +259,14 @@ def _warmup() -> None:
         t = time.monotonic()
         try:
             from src.caching.semantic_cache import _get_redis as _get_redis_cache
-            _get_redis_cache()
+            import asyncio
+            try:
+                # Si on est déjà dans une boucle (peu probable ici car lancé par ThreadPoolExecutor)
+                loop = asyncio.get_running_loop()
+                loop.create_task(_get_redis_cache())
+            except RuntimeError:
+                # Sinon on lance une petite boucle
+                asyncio.run(_get_redis_cache())
             logger.info(f"[WARMUP] Redis prêt ({time.monotonic() - t:.1f}s)")
         except Exception as e:
             logger.warning(f"[WARMUP] Redis échoué : {e}")
@@ -376,8 +402,8 @@ _frontend_react_candidates = [
 _frontend_react_dir = next((p for p in _frontend_react_candidates if os.path.isdir(p)), _frontend_react_candidates[0])
 _frontend_react_dist = os.path.join(_frontend_react_dir, "dist")
 _frontend_build_candidates = [
-    _frontend_react_dist,
     os.path.join(_root_dir, "src", "frontend"),
+    _frontend_react_dist,
     os.path.join(_root_dir, "frontend"),
 ]
 
@@ -471,11 +497,8 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(NoCacheStaticMiddleware)
 
-# Assets statiques montés sur /assets/ (JS, CSS, images)
-if os.path.isdir(_assets_dir):
-    app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
-else:
-    logger.warning(f"Frontend assets introuvables: {_assets_dir}. '/assets' non monté.")
+# Servir nativement via spa_fallback plutôt que StaticFiles (évite le bug 404 Starlette + Windows)
+# (Le montage conditionnel a été retiré, nous utilisons uniquement FileResponse)
 
 # Catch-all SPA : sert index.html pour /chat, /monitoring, etc.
 # Doit être APRÈS les routes API et APRÈS /assets
@@ -483,12 +506,16 @@ from fastapi.responses import FileResponse as _FileResponse
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str):
-    if full_path.startswith("api/") or full_path.startswith("assets/"):
+    if full_path.startswith("api/"):
         return JSONResponse({"error": "Not found"}, status_code=404)
-    # Servir les fichiers statiques à la racine (favicon.svg, icons.svg…)
+        
+    # Servir les fichiers statiques (assets/..., favicon.svg, icons.svg…)
     static_file = os.path.join(_frontend, full_path)
     if full_path and os.path.isfile(static_file):
         return _FileResponse(static_file)
+        
+    if full_path.startswith("assets/"):
+        return JSONResponse({"error": "Asset introuvable", "path": static_file}, status_code=404)
     # Toutes les autres routes → index.html (React Router gère côté client)
     if os.path.isfile(_index_file):
         return _FileResponse(_index_file)

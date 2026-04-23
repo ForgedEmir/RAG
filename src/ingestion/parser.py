@@ -1,15 +1,14 @@
 """
-Extraction et nettoyage de texte pour tous les formats supportés :
-.md, .txt, .json, .csv, .xlsx, .xml, .pdf
-
-PDF : utilise LlamaParse si LLAMA_CLOUD_API_KEY est défini, sinon Unstructured.
+Module de parsing de documents pour le système RAG.
+Supporte les formats : .md, .txt, .json, .csv, .xlsx, .xml, .pdf.
+Utilise LlamaParse pour les PDF complexes et Unstructured en repli.
 """
 import os
 import re
 import csv
 import json
 import logging
-from typing import Optional
+from typing import Optional, Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,15 @@ _LLAMA_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
 
 
 def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
-    """Parse un PDF complexe via LlamaParse. Retourne None si indisponible."""
+    """
+    Tente d'extraire le texte d'un PDF en utilisant l'API LlamaParse.
+
+    Args:
+        filepath (str): Chemin vers le fichier PDF.
+
+    Returns:
+        Optional[str]: Texte extrait au format Markdown, ou None si l'API est indisponible ou en cas d'erreur.
+    """
     if not _LLAMA_API_KEY:
         return None
     try:
@@ -26,47 +33,75 @@ def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
         documents = parser.load_data(filepath)
         return "\n\n".join(doc.text for doc in documents if doc.text)
     except ImportError:
-        logger.warning("llama-parse non installé — pip install llama-parse")
+        logger.warning("Bibliothèque 'llama-parse' non installée. Exécutez 'pip install llama-parse'.")
         return None
     except Exception as e:
-        logger.warning(f"LlamaParse échoué pour {filepath}, fallback Unstructured : {e}")
+        logger.warning(f"LlamaParse a échoué pour {filepath}, passage au moteur Unstructured : {e}")
         return None
 
 
 def clean_text(raw_text: str) -> str:
-    """Nettoie un texte brut : supprime HTML, headers Markdown,
-    remplace les variables de jeu, normalise les espaces.
+    """
+    Nettoie et normalise le texte brut extrait des documents.
+    Supprime le HTML, les en-têtes Markdown, gère les variables de jeu et normalise les espaces.
+
+    Args:
+        raw_text (str): Le texte brut à nettoyer.
+
+    Returns:
+        str: Le texte nettoyé et formaté.
     """
     if not raw_text:
         return ""
 
-    text = re.sub(r'<[^>]+>', '', raw_text)                    # HTML
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE) # Titres Markdown
-    text = text.replace('%PLAYER_NAME%', 'le joueur')          # Variables de jeu
+    # Suppression des balises HTML
+    text = re.sub(r'<[^>]+>', '', raw_text)
+    
+    # Suppression des symboles de titres Markdown (#)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # Remplacement des variables de jeu par des termes lisibles
+    text = text.replace('%PLAYER_NAME%', 'le joueur')
     text = re.sub(r'%[A-Z_0-9]+%', lambda m: m.group(0).replace('%', ''), text)
 
-    # Normalise les espaces dans chaque paragraphe
+    # Normalisation des espaces et gestion des paragraphes
     paragraphs = re.split(r'\n\s*\n', text)
-    paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
-    return "\n\n".join(paragraphs)
+    cleaned_paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
+    return "\n\n".join(cleaned_paragraphs)
 
 
 def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
-    """Fallback PDF via unstructured si LlamaParse indisponible."""
+    """
+    Moteur de secours pour le parsing PDF utilisant la bibliothèque Unstructured.
+
+    Args:
+        filepath (str): Chemin vers le fichier PDF.
+
+    Returns:
+        Optional[str]: Texte extrait, ou None en cas d'échec.
+    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("unstructured non installé — pip install unstructured")
+        logger.warning("Bibliothèque 'unstructured' non installée. Exécutez 'pip install unstructured'.")
         return None
     except Exception as e:
-        logger.error(f"unstructured échoué pour {filepath} : {e}")
+        logger.error(f"Échec de l'extraction Unstructured pour {filepath} : {e}")
         return None
 
 
 def _parse_pdf(filepath: str) -> Optional[str]:
-    """Parse un PDF : LlamaParse si disponible, sinon unstructured."""
+    """
+    Orchestre le parsing PDF en privilégiant LlamaParse avant de basculer sur Unstructured.
+
+    Args:
+        filepath (str): Chemin vers le fichier PDF.
+
+    Returns:
+        Optional[str]: Texte complet extrait du PDF.
+    """
     result = _parse_pdf_llamaparse(filepath)
     if result:
         return result
@@ -74,12 +109,17 @@ def _parse_pdf(filepath: str) -> Optional[str]:
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
-    """Lit un fichier selon son extension et retourne son contenu en texte brut."""
-    if not isinstance(filepath, str):
-        return None
+    """
+    Fonction principale pour extraire le texte d'un fichier en fonction de son extension.
 
+    Args:
+        filepath (str): Chemin vers le fichier à traiter.
+
+    Returns:
+        Optional[str]: Le texte brut extrait du fichier, ou None si le format n'est pas supporté ou si le fichier est introuvable.
+    """
     if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable : {filepath}")
+        logger.error(f"Fichier introuvable au chemin spécifié : {filepath}")
         return None
 
     ext = os.path.splitext(filepath)[1].lower()
@@ -92,63 +132,90 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         '.xml': _xml_to_text,
         '.pdf': _parse_pdf,
     }
+    
     loader = loaders.get(ext)
     if not loader:
-        logger.warning(f"Format non supporté : {ext}")
+        logger.warning(f"Format de fichier non supporté : {ext}")
         return None
+        
     try:
         return loader(filepath)
     except Exception as e:
-        logger.error(f"Erreur en lisant {filepath} : {e}")
+        logger.error(f"Erreur lors de la lecture du fichier {filepath} : {e}")
         return None
 
 
 def _read_text_file(filepath: str) -> str:
+    """Lit un fichier texte simple ou Markdown."""
     with open(filepath, 'r', encoding='utf-8') as f:
         return f.read()
 
 
 def _read_json_file(filepath: str) -> str:
+    """Lit et convertit un fichier JSON en texte structuré."""
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
     return _json_to_text(data)
 
 
 def _read_csv(filepath: str) -> str:
+    """Extrait les données d'un fichier CSV en tentant de détecter son dialecte."""
     with open(filepath, 'r', encoding='utf-8') as f:
         sample = f.read(8192)
         f.seek(0)
         dialect = csv.Sniffer().sniff(sample)
-        lines = [" ".join(c for c in row if c.strip()) for row in csv.reader(f, dialect)]
-        return "\n".join(l for l in lines if l)
+        reader = csv.reader(f, dialect)
+        lines = [" ".join(cell for cell in row if cell.strip()) for row in reader]
+        return "\n".join(line for line in lines if line)
 
 
 def _xlsx_to_text(filepath: str) -> str:
-    """Excel → texte : 'Colonne: Valeur | Colonne: Valeur'"""
-    import openpyxl
-    classeur = openpyxl.load_workbook(filepath, read_only=True)
-    lignes = []
+    """
+    Convertit un fichier Excel (.xlsx) en texte au format 'Colonne: Valeur'.
 
-    for nom_feuille in classeur.sheetnames:
-        sheet = classeur[nom_feuille]
-        rows = list(sheet.rows)
-        if not rows:
-            continue
-        headers = [str(cell.value or "") for cell in rows[0]]
-        for row in rows[1:]:
-            parties = [
-                f"{headers[i] if i < len(headers) else f'Col{i}'}: {cell.value}"
-                for i, cell in enumerate(row) if cell.value is not None
-            ]
-            if parties:
-                lignes.append(" | ".join(parties))
+    Args:
+        filepath (str): Chemin vers le fichier Excel.
 
-    classeur.close()
-    return "\n".join(lignes)
+    Returns:
+        str: Texte structuré représentant le contenu des feuilles Excel.
+    """
+    try:
+        import openpyxl
+        classeur = openpyxl.load_workbook(filepath, read_only=True)
+        lignes = []
+
+        for nom_feuille in classeur.sheetnames:
+            sheet = classeur[nom_feuille]
+            rows = list(sheet.rows)
+            if not rows:
+                continue
+            headers = [str(cell.value or "") for cell in rows[0]]
+            for row in rows[1:]:
+                parties = [
+                    f"{headers[i] if i < len(headers) else f'Col{i}'}: {cell.value}"
+                    for i, cell in enumerate(row) if cell.value is not None
+                ]
+                if parties:
+                    lignes.append(" | ".join(parties))
+
+        classeur.close()
+        return "\n".join(lignes)
+    except ImportError:
+        logger.warning("Bibliothèque 'openpyxl' non installée.")
+        return ""
 
 
-def _json_to_text(data, niveau: int = 0) -> str:
-    """Convertit récursivement un objet JSON en texte lisible."""
+def _json_to_text(data: Any, niveau: int = 0) -> str:
+    """
+    Convertit récursivement un objet Python (issu d'un JSON) en texte lisible avec indentation.
+
+    Args:
+        data (Any): L'objet à convertir (dict, list, str, etc.).
+        niveau (int): Niveau d'indentation actuel.
+
+    Returns:
+        str: Représentation textuelle de l'objet.
+    """
     lignes = []
     indent = "  " * niveau
 
@@ -168,18 +235,26 @@ def _json_to_text(data, niveau: int = 0) -> str:
     else:
         lignes.append(f"{indent}{data}")
 
-    return "\n".join(l for l in lignes if l)
+    return "\n".join(line for line in lignes if line)
 
 
 def _xml_to_text(filepath: str) -> str:
-    """Extrait le texte d'un XML via unstructured (gère namespaces, attributs, hiérarchie)."""
+    """
+    Extrait le texte d'un fichier XML en utilisant Unstructured pour gérer la hiérarchie.
+
+    Args:
+        filepath (str): Chemin vers le fichier XML.
+
+    Returns:
+        str: Texte extrait ou chaîne vide en cas d'erreur.
+    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("unstructured non installé — pip install unstructured")
+        logger.warning("Bibliothèque 'unstructured' non installée.")
         return ""
     except Exception as e:
-        logger.error(f"Erreur XML {filepath} : {e}")
+        logger.error(f"Erreur lors du traitement XML de {filepath} : {e}")
         return ""

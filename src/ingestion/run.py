@@ -8,7 +8,8 @@ import logging
 import os
 import tempfile
 import threading
-from typing import List, Set
+import time
+from typing import Dict, List, Set
 
 from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
@@ -95,21 +96,45 @@ def _get_redis():
 
 # ── Mémoire des fichiers indexés ─────────────────────────────────────────────
 
-def load_memory() -> dict:
-    """Lit le fichier de suivi des dates de modification."""
+def _normalize_memory_entry(nom: str, raw) -> dict:
+    """Normalise une entrée de mémoire vers le format {mtime, indexed_at}.
+
+    Accepte l'ancien format (raw = float mtime) pour compat ascendante :
+    on hydrate indexed_at = mtime pour les fichiers déjà connus, quitte à
+    perdre la "vraie" date d'ajout (on n'a pas mieux comme approx).
+    """
+    if isinstance(raw, dict):
+        mtime      = float(raw.get("mtime", 0.0) or 0.0)
+        indexed_at = float(raw.get("indexed_at", mtime) or mtime)
+        return {"mtime": mtime, "indexed_at": indexed_at}
+    # Ancien format : raw est un float (mtime)
+    try:
+        mtime = float(raw)
+    except (TypeError, ValueError):
+        logger.warning(f"Entrée mémoire invalide pour {nom}, ignorée.")
+        return {"mtime": 0.0, "indexed_at": 0.0}
+    return {"mtime": mtime, "indexed_at": mtime}
+
+
+def load_memory() -> Dict[str, dict]:
+    """Lit le fichier de suivi des fichiers indexés.
+
+    Retourne {nom: {mtime, indexed_at}}. Migre silencieusement l'ancien format
+    {nom: mtime_float} vers le nouveau.
+    """
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                return data
+                return {nom: _normalize_memory_entry(nom, raw) for nom, raw in data.items()}
             logger.warning("Mémoire fichiers invalide (type inattendu), reset.")
         except json.JSONDecodeError as e:
             try:
                 with open(MEMORY_FILE, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
                 if isinstance(data, dict):
-                    return data
+                    return {nom: _normalize_memory_entry(nom, raw) for nom, raw in data.items()}
             except Exception:
                 pass
             logger.warning(f"Mémoire fichiers JSON corrompue, reset : {e}")
@@ -252,18 +277,30 @@ def _apply_late_chunking(chunks: List[str]) -> List[str]:
     return contextual
 
 
-def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
+def prepare_files_for_ai(
+    noms_fichiers: Set[str],
+    indexed_at_map: Dict[str, float] = None,
+) -> List[Document]:
     """Traite les fichiers et retourne des Documents prêts à indexer.
+
+    indexed_at_map : {nom: timestamp} — date d'ajout originale d'un fichier déjà
+    connu. Si absent (nouveau fichier), on génère time.time(). Cette date est
+    préservée au re-indexing pour que "fichier modifié" ne redevienne pas
+    "fichier nouveau" du point de vue résolution de conflit.
+
     Pipeline : extraction → vérif hors-sujet → contexte doc → découpage → late chunking → filtrage
     """
     documents = []
     seen_chunk_hashes: Set[str] = set()
     dedup_skipped = 0
+    indexed_at_map = indexed_at_map or {}
+    now = time.time()
 
     for nom in noms_fichiers:
         chemin = os.path.join(DATA_FOLDER, nom)
         if not os.path.exists(chemin):
             continue
+        indexed_at = float(indexed_at_map.get(nom, now))
 
         try:
             ext = os.path.splitext(nom)[1].lower()
@@ -311,6 +348,7 @@ def prepare_files_for_ai(noms_fichiers: Set[str]) -> List[Document]:
                         "original_text":  chunk,
                         "doc_summary":    doc_context.get("doc_summary", ""),
                         "entities":       doc_context.get("entities", []),
+                        "indexed_at":     indexed_at,
                     },
                 ))
 
@@ -335,6 +373,7 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
             "id": doc.metadata.get("chunk_id", f"doc_{i}"),
             "text": bm25_text,
             "fichier": doc.metadata.get("fichier", "inconnu"),
+            "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
         })
     dirpath = os.path.dirname(BM25_CORPUS_FILE)
     fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
@@ -390,26 +429,61 @@ def _is_bm25_corpus_healthy(expected_files: Set[str]) -> bool:
     return True
 
 
+def _build_new_memory(fichiers_actuels: Dict[str, float], memoire: Dict[str, dict]) -> Dict[str, dict]:
+    """Construit la nouvelle mémoire en préservant indexed_at pour les fichiers
+    déjà connus. Un nouveau fichier reçoit indexed_at = now.
+    """
+    now = time.time()
+    result: Dict[str, dict] = {}
+    for nom, mtime in fichiers_actuels.items():
+        existing    = memoire.get(nom) or {}
+        indexed_at  = float(existing.get("indexed_at", now) or now)
+        result[nom] = {"mtime": float(mtime), "indexed_at": indexed_at}
+    return result
+
+
+def _indexed_at_map(memoire: Dict[str, dict]) -> Dict[str, float]:
+    return {nom: float(entry.get("indexed_at", 0.0) or 0.0) for nom, entry in memoire.items()}
+
+
+def _run_async(coro):
+    """Helper pour lancer de l'async depuis du code sync."""
+    import asyncio
+    try:
+        return asyncio.run(coro)
+    except RuntimeError:
+        # Déjà dans une boucle d'événements (rare pour index_data mais possible via tests)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # On ne peut pas facilement attendre ici sans bloquer, 
+            # mais index_data est généralement lancé en thread.
+            return asyncio.ensure_future(coro, loop=loop)
+        else:
+            return loop.run_until_complete(coro)
+
+
 def index_data(force_reindex: bool = False) -> bool:
     """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés."""
     logger.info("Vérification des fichiers de lore...")
     fichiers_actuels = list_current_files()
 
     if force_reindex:
+        # WHY: force_reindex repart de zéro — les indexed_at existants n'ont plus
+        # de sens (collection vidée), chaque fichier devient "nouveau" avec now.
+        new_memory = _build_new_memory(fichiers_actuels, {})
         store = get_store(force_reindex=True)
-        docs  = prepare_files_for_ai(set(fichiers_actuels.keys()))
+        docs  = prepare_files_for_ai(set(fichiers_actuels.keys()), _indexed_at_map(new_memory))
         if docs:
             add_documents(store, docs)
             _save_bm25_corpus(docs)
-            save_memory(fichiers_actuels)
+            save_memory(new_memory)
             logger.info("Réindexation complète terminée.")
         else:
             logger.warning("Collection recréée mais aucun fichier valide trouvé dans data/sample.")
-        # WHY: réindexation complète → tout le contenu peut avoir changé, on vide
-        # le semantic cache en entier pour éviter de servir des réponses périmées.
         try:
             from src.caching.semantic_cache import clear_all as _clear_semantic_cache
-            _clear_semantic_cache()
+            # _clear_semantic_cache est asynchrone
+            _run_async(_clear_semantic_cache())
             logger.info("Semantic cache vidé (force_reindex).")
         except Exception as e:
             logger.warning(f"Impossible de vider le semantic cache : {e}")
@@ -421,7 +495,7 @@ def index_data(force_reindex: bool = False) -> bool:
 
     supprimes = anciens - actuels
     nouveaux  = actuels - anciens
-    modifies  = {n for n in (actuels & anciens) if fichiers_actuels[n] > memoire[n]}
+    modifies  = {n for n in (actuels & anciens) if fichiers_actuels[n] > float(memoire[n].get("mtime", 0.0) or 0.0)}
 
     if not (supprimes or nouveaux or modifies):
         logger.info("Aucun changement détecté.")
@@ -447,23 +521,29 @@ def index_data(force_reindex: bool = False) -> bool:
     if fichiers_impactes:
         try:
             from src.caching.semantic_cache import invalidate_for_files as _invalidate_semantic_cache
-            _invalidate_semantic_cache(fichiers_impactes)
+            # _invalidate_semantic_cache est asynchrone
+            _run_async(_invalidate_semantic_cache(fichiers_impactes))
         except Exception as e:
             logger.warning(f"Impossible d'invalider le semantic cache : {e}")
+
+    # WHY: les fichiers connus gardent leur indexed_at d'origine (pas écrasé
+    # par un edit), les nouveaux reçoivent now.
+    new_memory = _build_new_memory(fichiers_actuels, memoire)
+    indexed_at_map = _indexed_at_map(new_memory)
 
     a_indexer = nouveaux | modifies
     new_docs = []
     if a_indexer:
-        new_docs = prepare_files_for_ai(a_indexer)
+        new_docs = prepare_files_for_ai(a_indexer, indexed_at_map)
         add_documents(store, new_docs)
 
     # WHY: On reconstruit le corpus BM25 uniquement depuis les fichiers changés +
     # les anciens non modifiés, évitant de tout retraiter.
     unchanged   = actuels - a_indexer - supprimes
-    stable_docs = prepare_files_for_ai(unchanged)
+    stable_docs = prepare_files_for_ai(unchanged, indexed_at_map)
     _save_bm25_corpus(new_docs + stable_docs)
 
-    save_memory(fichiers_actuels)
+    save_memory(new_memory)
     logger.info(f"Mise à jour : +{len(nouveaux)} nouveau(x), ~{len(modifies)} modifié(s), -{len(supprimes)} supprimé(s).")
     return True
 

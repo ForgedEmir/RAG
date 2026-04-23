@@ -1,10 +1,11 @@
 import os
 import logging
+import asyncio
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from collections import OrderedDict, deque
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -23,41 +24,41 @@ TRACE_CONTEXT_MAX_SIZE = max(200, int(os.getenv("TRACE_CONTEXT_MAX_SIZE", "5000"
 FEEDBACK_EVENTS_BUFFER_SIZE = max(100, int(os.getenv("FEEDBACK_EVENTS_BUFFER_SIZE", "500")))
 
 _client      = None
-_client_lock = threading.Lock()
+_client_lock = asyncio.Lock()
 _trace_context: dict[str, dict] = {}
-_trace_lock = threading.Lock()
+_trace_lock = asyncio.Lock()
 _feedback_events: deque = deque(maxlen=FEEDBACK_EVENTS_BUFFER_SIZE)
-_feedback_lock = threading.Lock()
+_feedback_lock = asyncio.Lock()
 
-def _get_client():
+async def _get_client():
     global _client
     if _client is not None:
         return _client
-    with _client_lock:
-        # WHY: Double-checked locking évite de créer plusieurs clients en cas de startup concurrent.
+    async with _client_lock:
         if _client is None and SUPABASE_URL and SUPABASE_KEY:
-            from supabase import create_client
-            _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            from supabase import create_async_client
+            # supabase-py v2 : create_async_client doit être awaité
+            _client = await create_async_client(SUPABASE_URL, SUPABASE_KEY)
     return _client
 
-def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
+async def track(event_type: str, detail: str = "", latency_ms: Optional[int] = None) -> None:
     if not TRACKING_ENABLED:
         return
-    client = _get_client()
+    client = await _get_client()
     if not client:
         return
     try:
         data = {"type": event_type, "detail": detail[:MAX_DETAIL_LEN]}
         if latency_ms is not None:
             data["latency_ms"] = latency_ms
-        client.table("events").insert(data).execute()
+        await client.table("events").insert(data).execute()
         if event_type in INJECTION_TYPES:
-            _check_injection_spike(client)
+            await _check_injection_spike(client)
     except Exception as e:
         logger.warning(f"[MONITORING] Supabase : {e}")
 
 
-def _prune_trace_context(now_ts: float) -> None:
+async def _prune_trace_context(now_ts: float) -> None:
     cutoff = now_ts - TRACE_CONTEXT_TTL_SECONDS
     stale_keys = [
         trace_id for trace_id, payload in _trace_context.items()
@@ -73,7 +74,7 @@ def _prune_trace_context(now_ts: float) -> None:
             _trace_context.pop(trace_id, None)
 
 
-def register_trace_context(
+async def register_trace_context(
     trace_id: str,
     question: str,
     answer: str,
@@ -96,15 +97,15 @@ def register_trace_context(
         "_ts": now_ts,
     }
 
-    with _trace_lock:
+    async with _trace_lock:
         _trace_context[entry["trace_id"]] = entry
-        _prune_trace_context(now_ts)
+        await _prune_trace_context(now_ts)
 
 
-def get_trace_context(trace_id: str) -> dict:
+async def get_trace_context(trace_id: str) -> dict:
     if not trace_id:
         return {}
-    with _trace_lock:
+    async with _trace_lock:
         payload = _trace_context.get(str(trace_id)[:128])
         if not payload:
             return {}
@@ -119,7 +120,7 @@ def get_trace_context(trace_id: str) -> dict:
         }
 
 
-def record_feedback_event(
+async def record_feedback_event(
     *,
     value: int,
     rating: int,
@@ -146,23 +147,23 @@ def record_feedback_event(
         "comment": (comment or "")[:300],
     }
 
-    with _feedback_lock:
+    async with _feedback_lock:
         _feedback_events.append(event)
 
 
-def get_recent_feedback_events(limit: int = 50) -> list:
+async def get_recent_feedback_events(limit: int = 50) -> list:
     safe_limit = max(1, min(int(limit or 50), FEEDBACK_EVENTS_BUFFER_SIZE))
-    with _feedback_lock:
+    async with _feedback_lock:
         events = list(_feedback_events)
     if safe_limit < len(events):
         events = events[-safe_limit:]
     events.reverse()
     return events
 
-def _check_injection_spike(client) -> None:
+async def _check_injection_spike(client) -> None:
     try:
         since = (datetime.now(timezone.utc) - timedelta(minutes=SPIKE_WINDOW_MIN)).isoformat()
-        r = (client.table("events").select("id", count="exact")
+        r = await (client.table("events").select("id", count="exact")
              .in_("type", INJECTION_TYPES)
              .gte("created_at", since).execute())
         if (r.count or 0) >= SPIKE_THRESHOLD:
@@ -175,10 +176,10 @@ def _check_injection_spike(client) -> None:
     except Exception:
         pass
 
-def _get_conv_id(client, session_id: str) -> Optional[int]:
+async def _get_conv_id(client, session_id: str) -> Optional[int]:
     if not _is_valid_uuid(session_id):
         return None
-    r = client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
+    r = await client.table("conversations").select("id").eq("session_id", session_id).limit(1).execute()
     return r.data[0]["id"] if r.data else None
 
 def _is_valid_uuid(value: str) -> bool:
@@ -201,15 +202,15 @@ def _normalize_user_id(user_id: str) -> str:
             return candidate
     return user_id
 
-def _get_or_create_conversation(client, session_id: str, user_id: str) -> Optional[int]:
+async def _get_or_create_conversation(client, session_id: str, user_id: str) -> Optional[int]:
     try:
         if not _is_valid_uuid(session_id):
             return None
-        cid = _get_conv_id(client, session_id)
+        cid = await _get_conv_id(client, session_id)
         if cid:
             return cid
         normalized_uid = _normalize_user_id(user_id)
-        inserted = client.table("conversations").insert({"session_id": session_id, "user_id": normalized_uid}).execute()
+        inserted = await client.table("conversations").insert({"session_id": session_id, "user_id": normalized_uid}).execute()
         return inserted.data[0]["id"] if inserted.data else None
     except Exception as e:
         logger.warning(f"[MEMORY] _get_or_create_conversation : {e}")
@@ -232,15 +233,15 @@ def _messages_to_history(messages: list) -> list:
             pending_question = ""
     return pairs
 
-def get_history(session_id: str) -> list:
-    client = _get_client()
+async def get_history(session_id: str) -> list:
+    client = await _get_client()
     if not client or not session_id:
         return []
     try:
-        cid = _get_conv_id(client, session_id)
+        cid = await _get_conv_id(client, session_id)
         if not cid:
             return []
-        r = (client.table("messages").select("id, role, content, created_at")
+        r = await (client.table("messages").select("id, role, content, created_at")
              .eq("conversation_id", cid)
              .order("created_at", desc=True)
              .limit(HISTORY_LIMIT).execute())
@@ -249,15 +250,15 @@ def get_history(session_id: str) -> list:
         logger.warning(f"[MEMORY] get_history : {e}")
         return []
 
-def get_conversation(session_id: str) -> list:
-    client = _get_client()
+async def get_conversation(session_id: str) -> list:
+    client = await _get_client()
     if not client or not session_id:
         return []
     try:
-        cid = _get_conv_id(client, session_id)
+        cid = await _get_conv_id(client, session_id)
         if not cid:
             return []
-        r = (client.table("messages").select("id, role, content, created_at")
+        r = await (client.table("messages").select("id, role, content, created_at")
              .eq("conversation_id", cid)
              .order("created_at").execute())
         return _messages_to_history(r.data or [])
@@ -265,13 +266,13 @@ def get_conversation(session_id: str) -> list:
         logger.warning(f"[MEMORY] get_conversation : {e}")
         return []
 
-def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
-    client = _get_client()
+async def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
+    client = await _get_client()
     if not client or not session_id or not user_id:
         return False
     try:
         normalized_uid = _normalize_user_id(user_id)
-        r = (client.table("conversations").select("id")
+        r = await (client.table("conversations").select("id")
              .eq("session_id", session_id).eq("user_id", normalized_uid)
              .limit(1).execute())
         return bool(r.data)
@@ -279,12 +280,12 @@ def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
         logger.warning(f"[MEMORY] conversation_belongs_to_user : {e}")
         return False
 
-def get_conversation_owner(session_id: str) -> str:
-    client = _get_client()
+async def get_conversation_owner(session_id: str) -> str:
+    client = await _get_client()
     if not client or not session_id:
         return ""
     try:
-        r = (client.table("conversations").select("user_id")
+        r = await (client.table("conversations").select("user_id")
              .eq("session_id", session_id).limit(1).execute())
         # Retourne le UUID pur stocké en base
         return r.data[0].get("user_id", "") if r.data else ""
@@ -292,68 +293,68 @@ def get_conversation_owner(session_id: str) -> str:
         logger.warning(f"[MEMORY] get_conversation_owner : {e}")
         return ""
 
-def delete_conversation(session_id: str) -> None:
-    client = _get_client()
+async def delete_conversation(session_id: str) -> None:
+    client = await _get_client()
     if not client or not session_id:
         return
     try:
-        cid = _get_conv_id(client, session_id)
+        cid = await _get_conv_id(client, session_id)
         if not cid:
             return
-        client.table("messages").delete().eq("conversation_id", cid).execute()
-        client.table("conversations").delete().eq("id", cid).execute()
+        await client.table("messages").delete().eq("conversation_id", cid).execute()
+        await client.table("conversations").delete().eq("id", cid).execute()
     except Exception as e:
         logger.warning(f"[MEMORY] delete_conversation : {e}")
 
-def save_exchange(session_id: str, question: str, answer: str, user_id: str = "") -> None:
-    client = _get_client()
+async def save_exchange(session_id: str, question: str, answer: str, user_id: str = "") -> None:
+    client = await _get_client()
     if not client or not session_id:
         return
     try:
         normalized_uid = _normalize_user_id(user_id)
-        cid = _get_or_create_conversation(client, session_id, normalized_uid)
+        cid = await _get_or_create_conversation(client, session_id, normalized_uid)
         if cid:
-            client.table("messages").insert([
+            await client.table("messages").insert([
                 {"conversation_id": cid, "role": "user", "content": question, "user_id": normalized_uid},
                 {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": normalized_uid},
             ]).execute()
     except Exception as e:
         logger.warning(f"[MEMORY] save_exchange : {e}")
 
-def get_user_summary(user_id: str) -> str:
-    client = _get_client()
+async def get_user_summary(user_id: str) -> str:
+    client = await _get_client()
     if not client or not user_id:
         return ""
     try:
         normalized_uid = _normalize_user_id(user_id)
-        r = client.table("user_memory").select("summary").eq("user_id", normalized_uid).limit(1).execute()
+        r = await client.table("user_memory").select("summary").eq("user_id", normalized_uid).limit(1).execute()
         return r.data[0]["summary"] if r.data else ""
     except Exception as e:
         logger.warning(f"[MEMORY] get_user_summary : {e}")
         return ""
 
-def save_user_summary(user_id: str, summary: str) -> None:
-    client = _get_client()
+async def save_user_summary(user_id: str, summary: str) -> None:
+    client = await _get_client()
     if not client or not user_id:
         return
     try:
         normalized_uid = _normalize_user_id(user_id)
-        client.table("user_memory").upsert({"user_id": normalized_uid, "summary": summary}).execute()
+        await client.table("user_memory").upsert({"user_id": normalized_uid, "summary": summary}).execute()
         logger.info(f"[MEMORY] Résumé mis à jour pour user '{normalized_uid[:8]}…'")
     except Exception as e:
         logger.warning(f"[MEMORY] save_user_summary : {e}")
 
-def get_user_conversations(user_id: str) -> list:
+async def get_user_conversations(user_id: str) -> list:
     """Returns [{id, title, created_at}] for a user, newest first.
     Uses a single join query: conversations → first user message per conversation.
     """
-    client = _get_client()
+    client = await _get_client()
     if not client or not user_id:
         return []
     try:
         normalized_uid = _normalize_user_id(user_id)
         # One query: conversations with their first user message via FK join
-        r = (client.table("conversations")
+        r = await (client.table("conversations")
              .select("id, session_id, created_at, messages(content, role, created_at)")
              .eq("user_id", normalized_uid)
              .eq("messages.role", "user")
@@ -375,21 +376,21 @@ def get_user_conversations(user_id: str) -> list:
         logger.warning(f"[MEMORY] get_user_conversations : {e}")
         return []
 
-def count_user_exchanges(user_id: str) -> int:
-    client = _get_client()
+async def count_user_exchanges(user_id: str) -> int:
+    client = await _get_client()
     if not client or not user_id:
         return 0
     try:
         normalized_uid = _normalize_user_id(user_id)
-        r = (client.table("messages").select("id", count="exact")
+        r = await (client.table("messages").select("id", count="exact")
              .eq("user_id", normalized_uid).eq("role", "user").execute())
         return r.count or 0
     except Exception as e:
         logger.warning(f"[MEMORY] count_user_exchanges : {e}")
         return 0
 
-def get_stats() -> dict:
-    client = _get_client()
+async def get_stats() -> dict:
+    client = await _get_client()
     if not client:
         return {"error": "Supabase non configuré", "counts": {}, "events": []}
     try:
@@ -398,16 +399,20 @@ def get_stats() -> dict:
             "voice", "tts", "upload", "upload_blocked", "reindex", "fallback",
             "feedback_vote", "feedback_legacy",
         ]
-        counts = {t: client.table("events").select("id", count="exact").eq("type", t).execute().count or 0 for t in event_types}
+        counts = {}
+        for t in event_types:
+            r = await client.table("events").select("id", count="exact").eq("type", t).execute()
+            counts[t] = r.count or 0
 
-        latency_r = (client.table("events").select("latency_ms").eq("type", "question")
+        latency_r = await (client.table("events").select("latency_ms").eq("type", "question")
                      .not_.is_("latency_ms", "null").order("created_at", desc=True).limit(STATS_LATENCY_LIMIT).execute())
         latencies = [row["latency_ms"] for row in latency_r.data if row.get("latency_ms")]
         avg_latency = int(sum(latencies) / len(latencies)) if latencies else 0
 
-        recent = client.table("events").select("*").order("created_at", desc=True).limit(STATS_EVENTS_LIMIT).execute()
+        recent = await client.table("events").select("*").order("created_at", desc=True).limit(STATS_EVENTS_LIMIT).execute()
         since = (datetime.now(timezone.utc) - timedelta(minutes=SPIKE_WINDOW_MIN)).isoformat()
-        spike_count = client.table("events").select("id", count="exact").in_("type", INJECTION_TYPES).gte("created_at", since).execute().count or 0
+        r_spike = await client.table("events").select("id", count="exact").in_("type", INJECTION_TYPES).gte("created_at", since).execute()
+        spike_count = r_spike.count or 0
 
         injections_blocked = counts.get("injection_regex", 0) + counts.get("injection_lakera", 0)
         total_questions    = counts.get("question", 0)

@@ -2,7 +2,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 @patch("src.ingestion.run._get_redis", return_value=None)  # pas de Redis en test

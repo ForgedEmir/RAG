@@ -16,10 +16,10 @@ import json
 import logging
 import os
 import re
-import requests
-import threading
-import time
+import httpx
+import asyncio
 from typing import TypedDict
+from redis import asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,17 @@ _LAKERA_MODE      = os.getenv("LAKERA_MODE", "enforce").lower()   # enforce | sh
 _CACHE_TTL        = int(os.getenv("LAKERA_CACHE_TTL", "60"))
 _LAKERA_THRESHOLD = float(os.getenv("LAKERA_THRESHOLD", "0.5"))   # 0.0 (très sensible) → 1.0 (peu sensible)
 
-_HTTP_SESSION = requests.Session()
+_HTTP_CLIENT: httpx.AsyncClient | None = None
+_CLIENT_LOCK = asyncio.Lock()
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """Retourne un client HTTP async singleton."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        async with _CLIENT_LOCK:
+            if _HTTP_CLIENT is None:
+                _HTTP_CLIENT = httpx.AsyncClient(timeout=5.0)
+    return _HTTP_CLIENT
 
 
 class ValidationResult(TypedDict):
@@ -83,44 +93,43 @@ _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
 # ── Redis cache (optionnel) ───────────────────────────────────────────────────
 
 _redis_client = None
-_redis_lock   = threading.Lock()
+_redis_lock   = asyncio.Lock()
 
-def _get_redis():
+async def _get_redis():
     """Retourne un client Redis singleton ou None si indisponible. Fail-open."""
     global _redis_client
     if _redis_client is not None:
         return _redis_client
-    with _redis_lock:
+    async with _redis_lock:
         if _redis_client is None:
             try:
-                import redis
-                r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
-                r.ping()
+                r = aioredis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+                await r.ping()
                 _redis_client = r
             except Exception:
                 pass
     return _redis_client
 
 
-def _cache_get(texte: str) -> "ValidationResult | None":
-    r = _get_redis()
+async def _cache_get(texte: str) -> "ValidationResult | None":
+    r = await _get_redis()
     if not r:
         return None
     try:
         key  = "lakera:" + hashlib.sha256(texte[:100].encode()).hexdigest()
-        data = r.get(key)
+        data = await r.get(key)
         return json.loads(data) if data else None
     except Exception:
         return None
 
 
-def _cache_set(texte: str, result: ValidationResult) -> None:
-    r = _get_redis()
+async def _cache_set(texte: str, result: ValidationResult) -> None:
+    r = await _get_redis()
     if not r:
         return
     try:
         key = "lakera:" + hashlib.sha256(texte[:100].encode()).hexdigest()
-        r.setex(key, _CACHE_TTL, json.dumps(result))
+        await r.setex(key, _CACHE_TTL, json.dumps(result))
     except Exception:
         pass
 
@@ -131,7 +140,11 @@ def _track_false_positive(texte: str) -> None:
     """Log un faux positif Lakera (message bloqué par Lakera mais passé dans la whitelist)."""
     try:
         from src.monitoring.tracker import track
-        track("lakera_false_positive", detail=f"len={len(texte)}")
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(track("lakera_false_positive", detail=f"len={len(texte)}"))
+        except RuntimeError:
+            pass
     except Exception:
         pass
 
@@ -158,7 +171,7 @@ def _check_prompt_extraction(texte: str) -> ValidationResult:
 
 # ── Interface publique ────────────────────────────────────────────────────────
 
-def valider_entree(texte: str) -> ValidationResult:
+async def valider_entree(texte: str) -> ValidationResult:
     """Point d'entrée principal : valide le texte avant envoi au LLM."""
     if not _ENABLED or _LAKERA_MODE == "disabled":
         return {"valid": True, "type": "ok", "reason": "Validation désactivée"}
@@ -173,7 +186,7 @@ def valider_entree(texte: str) -> ValidationResult:
         return extraction
 
     # Lakera Guard (IA) — couvre les attaques subtiles (roleplay, jailbreak, etc.)
-    return _valider_lakera(texte)
+    return await _valider_lakera(texte)
 
 
 def check_patterns(texte: str) -> ValidationResult:
@@ -207,7 +220,7 @@ def _build_lakera_payload(texte: str) -> dict:
     }
 
 
-def _valider_lakera(texte: str) -> ValidationResult:
+async def _valider_lakera(texte: str) -> ValidationResult:
     """Couche Lakera Guard. Cache Redis TTL 60s. Fail-open si API indisponible.
     Mode shadow : analyse sans bloquer, log seulement.
     """
@@ -216,7 +229,7 @@ def _valider_lakera(texte: str) -> ValidationResult:
         return {"valid": True, "type": "ok", "reason": "Lakera Guard non configuré"}
 
     # Cache Redis
-    cached = _cache_get(texte)
+    cached = await _cache_get(texte)
     if cached:
         logger.debug("[LAKERA] Cache hit")
         if _LAKERA_MODE == "shadow" and not cached["valid"]:
@@ -225,11 +238,11 @@ def _valider_lakera(texte: str) -> ValidationResult:
         return cached
 
     try:
-        response = _HTTP_SESSION.post(
+        client = await _get_http_client()
+        response = await client.post(
             _LAKERA_URL,
             headers={"Authorization": f"Bearer {_LAKERA_KEY}"},
             json=_build_lakera_payload(texte),
-            timeout=5,
         )
         response.raise_for_status()
         data = response.json()
@@ -268,29 +281,30 @@ def _valider_lakera(texte: str) -> ValidationResult:
                     logger.info("[LAKERA] prompt_attack sans score et sans motif regex => autorisé.")
 
             if not attack_detected:
-                logger.info(f"[LAKERA] Flagged mais prompt_attack=False (PII/content seulement) — autorisé.")
+                logger.info("[LAKERA] Flagged mais prompt_attack=False (PII/content seulement) — autorisé.")
                 ok_result: ValidationResult = {"valid": True, "type": "ok", "reason": "Pas d'attaque détectée"}
-                _cache_set(texte, ok_result)
+                await _cache_set(texte, ok_result)
                 return ok_result
 
             result: ValidationResult = {
                 "valid": False, "type": "prompt_injection",
                 "reason": "Attaque détectée par Lakera Guard (prompt_attack)",
             }
-            _cache_set(texte, result)
+            await _cache_set(texte, result)
 
             if _LAKERA_MODE == "shadow":
-                logger.warning(f"[LAKERA][SHADOW] prompt_attack détecté — mode shadow, message autorisé.")
+                logger.warning("[LAKERA][SHADOW] prompt_attack détecté — mode shadow, message autorisé.")
                 _track_false_positive(texte)
                 return {"valid": True, "type": "ok", "reason": "Lakera Guard shadow"}
 
-            logger.warning(f"[LAKERA] prompt_attack bloqué.")
+            logger.warning("[LAKERA] prompt_attack bloqué.")
             return result
 
         ok_result = {"valid": True, "type": "ok", "reason": "Aucune menace détectée"}
-        _cache_set(texte, ok_result)
+        await _cache_set(texte, ok_result)
         return ok_result
 
     except Exception as e:
         logger.warning(f"[LAKERA] Indisponible, fail-open : {e}")
         return {"valid": True, "type": "ok", "reason": "Lakera Guard indisponible"}
+

@@ -75,7 +75,7 @@ def test_fichier_inexistant():
     """Un fichier qui n'existe pas retourne None."""
     resultat = extract_text_from_file("fichier_qui_nexiste_pas.txt")
     
-    assert resultat == None
+    assert resultat is None
 
 
 def test_extension_non_supportee():
@@ -88,7 +88,7 @@ def test_extension_non_supportee():
     resultat = extract_text_from_file(nom_fichier)
     
     # Extension non supportée = None
-    assert resultat == None
+    assert resultat is None
     
     os.unlink(nom_fichier)
 

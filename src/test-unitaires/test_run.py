@@ -3,8 +3,7 @@ Tests unitaires pour le module run (orchestration de l'ingestion)
 Teste les fonctions load_memory, save_memory, list_current_files, prepare_files_for_ai, et index_data.
 Version LangChain + Qdrant.
 """
-import json
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch, mock_open
 from langchain_core.documents import Document
 
 from src.ingestion.run import (
@@ -13,8 +12,7 @@ from src.ingestion.run import (
     list_current_files,
     prepare_files_for_ai,
     index_data,
-    MEMORY_FILE,
-    DATA_FOLDER
+    MEMORY_FILE
 )
 
 
@@ -22,15 +20,34 @@ from src.ingestion.run import (
 
 @patch('os.path.exists')
 @patch('builtins.open', new_callable=mock_open, read_data='{"file.md": 1234567890, "doc.txt": 9876543210}')
-def test_load_memory_existe(mock_file, mock_exists):
-    """On peut charger la memoire depuis le fichier JSON."""
+def test_load_memory_existe_ancien_format(mock_file, mock_exists):
+    """Compat ascendante : l'ancien format {nom: mtime_float} est migré vers
+    {nom: {mtime, indexed_at}}. indexed_at = mtime en fallback (on n'a pas mieux)."""
     mock_exists.return_value = True
 
     memory = load_memory()
 
-    assert memory == {"file.md": 1234567890, "doc.txt": 9876543210}
+    assert memory == {
+        "file.md": {"mtime": 1234567890.0, "indexed_at": 1234567890.0},
+        "doc.txt": {"mtime": 9876543210.0, "indexed_at": 9876543210.0},
+    }
     mock_exists.assert_called_once_with(MEMORY_FILE)
     mock_file.assert_called_once_with(MEMORY_FILE, 'r', encoding='utf-8')
+
+
+@patch('os.path.exists')
+@patch(
+    'builtins.open',
+    new_callable=mock_open,
+    read_data='{"file.md": {"mtime": 1000, "indexed_at": 500}}',
+)
+def test_load_memory_nouveau_format(mock_file, mock_exists):
+    """Le nouveau format {nom: {mtime, indexed_at}} est lu tel quel."""
+    mock_exists.return_value = True
+
+    memory = load_memory()
+
+    assert memory == {"file.md": {"mtime": 1000.0, "indexed_at": 500.0}}
 
 
 # ===== TESTS POUR save_memory =====
@@ -163,7 +180,7 @@ def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
     une pour reconstruire le corpus BM25 complet.
     """
     mock_list.return_value = {"file1.md": 1000, "file2.txt": 2000}
-    mock_load.return_value = {"file1.md": 1000}  # file2.txt est nouveau
+    mock_load.return_value = {"file1.md": {"mtime": 1000, "indexed_at": 900}}
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [
         Document(page_content="New chunk", metadata={"fichier": "file2.txt"})
@@ -173,9 +190,9 @@ def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
 
     assert result is True
     # Premier appel : indexation des nouveaux fichiers seulement
-    assert mock_prepare.call_args_list[0] == (({'file2.txt'},),)
+    assert mock_prepare.call_args_list[0][0][0] == {"file2.txt"}
     # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (file1.md)
-    assert mock_prepare.call_args_list[1] == (({'file1.md'},),)
+    assert mock_prepare.call_args_list[1][0][0] == {"file1.md"}
     mock_add.assert_called_once()
     mock_save.assert_called_once()
 
@@ -195,7 +212,7 @@ def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
     une pour reconstruire le corpus BM25 complet.
     """
     mock_list.return_value = {"file.md": 2000}
-    mock_load.return_value = {"file.md": 1000}  # Modifie (timestamp plus recent)
+    mock_load.return_value = {"file.md": {"mtime": 1000, "indexed_at": 500}}
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [
         Document(page_content="Updated", metadata={"fichier": "file.md"})
@@ -206,9 +223,9 @@ def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
     assert result is True
     mock_remove.assert_called_once()  # Supprime l'ancienne version
     # Premier appel : indexation du fichier modifié
-    assert mock_prepare.call_args_list[0] == (({'file.md'},),)
+    assert mock_prepare.call_args_list[0][0][0] == {"file.md"}
     # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (aucun ici)
-    assert mock_prepare.call_args_list[1] == ((set(),),)
+    assert mock_prepare.call_args_list[1][0][0] == set()
     mock_add.assert_called_once()  # Ajoute la nouvelle version
 
 
@@ -229,7 +246,10 @@ def test_index_invalide_semantic_cache_sur_modif(
 ):
     """Quand un fichier change, index_data() doit invalider le semantic cache ciblé."""
     mock_list.return_value = {"file.md": 2000, "autre.md": 500}
-    mock_load.return_value = {"file.md": 1000, "autre.md": 500}  # file.md modifié
+    mock_load.return_value = {
+        "file.md":  {"mtime": 1000, "indexed_at": 100},
+        "autre.md": {"mtime": 500,  "indexed_at": 100},
+    }  # file.md modifié
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "file.md"})]
 
@@ -255,7 +275,7 @@ def test_index_invalide_semantic_cache_sur_nouveau_fichier(
 ):
     """Un nouveau fichier peut contredire une réponse cachée → invalidation ciblée."""
     mock_list.return_value = {"ancien.md": 1000, "nouveau.md": 2000}
-    mock_load.return_value = {"ancien.md": 1000}
+    mock_load.return_value = {"ancien.md": {"mtime": 1000, "indexed_at": 100}}
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "nouveau.md"})]
 
@@ -280,7 +300,10 @@ def test_index_invalide_semantic_cache_sur_suppression(
 ):
     """Un fichier supprimé : on doit invalider les réponses qui s'y référaient."""
     mock_list.return_value = {"reste.md": 1000}
-    mock_load.return_value = {"reste.md": 1000, "retire.md": 500}
+    mock_load.return_value = {
+        "reste.md":  {"mtime": 1000, "indexed_at": 100},
+        "retire.md": {"mtime": 500,  "indexed_at": 50},
+    }
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = []
 

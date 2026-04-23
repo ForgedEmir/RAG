@@ -9,10 +9,23 @@ import src.search.search as search_module
 
 @pytest.fixture(autouse=True)
 def reset_search_state():
-    """Réinitialise BM25, le rate limiter et les constantes avant chaque test."""
+    """Réinitialise BM25, le rate limiter, le cache sémantique et les constantes avant chaque test."""
     search_module._bm25_loaded = False
     search_module._bm25_index = None
     search_module._bm25_corpus = []
+    
+    # Réinitialisation du cache sémantique (Redis ou Mock)
+    try:
+        import asyncio
+        from src.caching.semantic_cache import clear_all
+        try:
+            asyncio.run(clear_all())
+        except RuntimeError:
+            # Déjà dans une boucle, peu probable ici mais fail-safe
+            pass
+    except Exception:
+        pass
+
     # Sauvegarder et restaurer les constantes mutables (patchées par certains tests)
     original_hyde_threshold = search_module._HYDE_THRESHOLD
     original_reranker_enabled = search_module._RERANKER_ENABLED

@@ -1,5 +1,4 @@
 """Tests unitaires — Human-in-the-Loop Feedback endpoint."""
-import pytest
 from collections import deque
 from unittest.mock import patch
 from fastapi import FastAPI

@@ -47,7 +47,8 @@ if _MCP_FAST_MODE:
     os.environ.setdefault("RAG_FAST_MODE", "true")
 apply_feature_profile()
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Point to project root so 'from src.xxx' imports work
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from mcp.server.fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
@@ -58,7 +59,7 @@ logging.basicConfig(level=logging.WARNING)
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 _COLLECTION     = "lore"
-_MCP_FILE_ROOT  = Path(os.getenv("MCP_FILE_ROOT", os.path.join(os.path.dirname(__file__), "data", "sample"))).resolve()
+_MCP_FILE_ROOT  = Path(os.getenv("MCP_FILE_ROOT", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sample"))).resolve()
 _ALLOWED_LOG_EXTENSIONS = {".log", ".txt", ".out"}
 _ALLOWED_SAVE_EXTENSIONS = {".json", ".xml", ".txt", ".log", ".sav", ".dat", ".cfg", ".ini", ".yaml", ".yml", ".nbt"}
 
@@ -76,7 +77,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     if _QDRANT_URL and _QDRANT_API_KEY:
         client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
     else:
-        db_path = os.path.join(os.path.dirname(__file__), "src", "ingestion", "qdrant_db")
+        db_path = os.path.join(os.path.dirname(__file__), "ingestion", "qdrant_db")
         client = QdrantClient(path=db_path)
     try:
         yield AppContext(qdrant=client)
@@ -154,15 +155,16 @@ async def ask_lore(question: str, ctx: Context) -> str:
         from src.generation.generator import stream_reponse
 
         await ctx.report_progress(progress=0.3, total=1.0, message="Recherche vectorielle...")
-        passages, sources, _ = rechercher_passages(question)
+        # rechercher_passages est maintenant asynchrone
+        passages, sources, *_ = await rechercher_passages(question)
 
         if not passages:
             return "Je n'ai trouvé aucun passage pertinent dans les archives pour cette question."
 
         await ctx.report_progress(progress=0.7, total=1.0, message="Génération de la réponse...")
-        # stream_reponse intègre déjà le fallback LLM en cas de 429/erreur provider.
+        # stream_reponse est maintenant asynchrone
         chunks: list[str] = []
-        for chunk in stream_reponse(question, passages, sources=sources, history=[]):
+        async for chunk in stream_reponse(question, passages, sources=sources, history=[]):
             chunks.append(chunk)
         reponse = "".join(chunks).strip()
 
@@ -186,7 +188,8 @@ async def search_lore(query: str, ctx: Context) -> SearchResult:
     await ctx.info(f"Recherche brute : {query!r}")
     try:
         from src.search.search import rechercher_passages
-        passages, sources, conf_scores = rechercher_passages(query)
+        # rechercher_passages est maintenant asynchrone
+        passages, sources, conf_scores, _ = await rechercher_passages(query)
         annotated = []
         for passage, score in zip(passages, conf_scores):
             if score >= 0.7:
@@ -273,7 +276,7 @@ def collection_stats() -> str:
         if _QDRANT_URL and _QDRANT_API_KEY:
             client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
         else:
-            db_path = os.path.join(os.path.dirname(__file__), "src", "ingestion", "qdrant_db")
+            db_path = os.path.join(os.path.dirname(__file__), "ingestion", "qdrant_db")
             client = QdrantClient(path=db_path)
 
         info = client.get_collection(_COLLECTION)
