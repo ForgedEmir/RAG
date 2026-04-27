@@ -112,7 +112,7 @@ cd src/frontend-react && npm install && npm run build && cd ../..
 
 ```bash
 # Download the archive and extract at the project root
-curl -L <SAMPLE_DATA_URL> -o oracle-samples.zip
+curl -L <https://drive.google.com/file/d/1piTkmyQawtADcz1AvW-Wzfj5qXDct0zF/view?usp=share_link> -o oracle-samples.zip
 unzip oracle-samples.zip && rm oracle-samples.zip
 # → populates data/sample/ with demo documents
 ```
@@ -185,6 +185,13 @@ make index      # Force reindex
 | `/api/cache/stats` | GET | monitoring key | Semantic cache statistics |
 | `/api/admin/sources` | GET | monitoring key | Indexed source files |
 | `/api/admin/delete` | DELETE | monitoring key | Remove a source file |
+| `/api/upload` | POST | JWT | Upload a document or archive for ingestion |
+| `/api/admin/upload` | POST | monitoring key | Admin upload (document or archive) |
+
+**Supported upload formats:**
+Documents: `.pdf` `.docx` `.doc` `.xlsx` `.csv` `.txt` `.md` `.json` `.xml`
+Archives: `.zip` `.tar.gz` `.tar.bz2` `.tar.xz` — contents are extracted and each valid document ingested individually.
+Limits: 500 KB per document (env: `MAX_UPLOAD_SIZE_KB`), 50 MB per archive (env: `MAX_ARCHIVE_SIZE_MB`), 100 MB uncompressed, 50 files per archive.
 
 **Request body for `/api/ask`:**
 ```json
