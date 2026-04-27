@@ -108,7 +108,16 @@ pip install -r requirements.txt
 cd src/frontend-react && npm install && npm run build && cd ../..
 ```
 
-### 2. Configure
+### 2. Download sample data
+
+```bash
+# Download the archive and extract at the project root
+curl -L <SAMPLE_DATA_URL> -o oracle-samples.zip
+unzip oracle-samples.zip && rm oracle-samples.zip
+# → populates data/sample/ with demo documents
+```
+
+### 4. Configure
 
 ```bash
 cp .env.example .env
@@ -118,7 +127,7 @@ cp .env.example .env
 
 See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for full environment variable reference.
 
-### 3. Run
+### 5. Run
 
 **Development:**
 ```bash

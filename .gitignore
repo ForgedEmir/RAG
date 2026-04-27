@@ -56,3 +56,7 @@ Schéma/
 
 # Startup lock (Gunicorn multi-worker)
 .startup.lock
+
+# Sample data — download separately (see README)
+data/sample/*
+!data/sample/.gitkeep
