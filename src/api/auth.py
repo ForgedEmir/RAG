@@ -89,6 +89,10 @@ async def _verify_supabase_jwt(token: str) -> Optional[str]:
         return None
 
 
+async def get_tenant_id(user_id: str) -> str:
+    return user_id
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),

@@ -82,6 +82,9 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
             if len(infos) > MAX_ARCHIVE_FILES:
                 raise ValueError(f"Trop de fichiers dans l'archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
             for info in infos:
+                if os.path.isabs(info.filename) or ".." in info.filename.replace("\\", "/").split("/"):
+                    logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", info.filename)
+                    continue
                 with zf.open(info) as src:
                     saved = _safe_write(src.read(), os.path.basename(info.filename))
                     if saved:
