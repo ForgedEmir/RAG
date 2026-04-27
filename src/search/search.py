@@ -33,7 +33,7 @@ RRF_K = 60    # Paramètre standard pour la fusion Reciprocal Rank
 CANDIDATES_COMPLEX = max(8, int(os.getenv("SEARCH_COMPLEX_CANDIDATES", "14")))
 CANDIDATES_SIMPLE = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "5")))
 RERANKER_TOP_N = max(3, int(os.getenv("RERANKER_TOP_N", "6")))
-FINAL_TOP_N = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "4")))
+FINAL_TOP_N = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "6")))
 BM25_FALLBACK_MIN = 3  # Seuil vectoriel minimal avant d'activer BM25
 
 # Configuration du comportement dynamique
@@ -289,12 +289,8 @@ def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dic
 
 
 def _subject_key(fichier: str) -> str:
-    """Extrait la clé de sujet d'un nom de fichier (ex: 'alaric_v1.md' -> 'alaric')."""
-    base = os.path.splitext(os.path.basename(fichier))[0].lower()
-    for sep in ("_", "-"):
-        if sep in base:
-            return base.split(sep, 1)[0]
-    return base
+    """Extrait le nom de base du fichier (sans extension) comme clé unique."""
+    return os.path.splitext(os.path.basename(fichier))[0].lower()
 
 
 def _resolve_conflicts_by_recency(docs: List[Dict]) -> Tuple[List[Dict], Set[str]]:
@@ -318,13 +314,14 @@ def _resolve_conflicts_by_recency(docs: List[Dict]) -> Tuple[List[Dict], Set[str
     return kept, tie_subjects
 
 
-async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float], Set[str]]:
+async def rechercher_passages(question: str, tenant_id: str = "") -> Tuple[List[str], List[str], List[float], Set[str]]:
     """
     Pipeline principal de recherche hybride.
     Exécute la recherche vectorielle, lexicale, la fusion RRF, le reranking et le fallback HyDE.
 
     Args:
         question (str): La question de l'utilisateur.
+        tenant_id (str): Filtre Qdrant par tenant — isolation B2B multi-tenant.
 
     Returns:
         Tuple: (passages_texte, sources_fichiers, scores_confiance, sujets_en_conflit)
@@ -339,7 +336,7 @@ async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List
     vector_results = []
     
     for q in queries:
-        for doc in search(store, q, k=plan.k_candidates):
+        for doc in search(store, q, k=plan.k_candidates, tenant_id=tenant_id):
             doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
             if doc_id not in seen_ids:
                 seen_ids.add(doc_id)
@@ -360,11 +357,11 @@ async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List
         _load_bm25()
 
     bm25_results = []
-    if _bm25_index and _bm25_corpus and len(vector_results) < _MIN_VECTOR_BEFORE_BM25:
+    if _bm25_index and _bm25_corpus:
         query_tokens = _tokenize_bm25(question)
         if query_tokens:
             bm25_scores = _bm25_index.get_scores(query_tokens)
-            top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
+            top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:plan.k_candidates]
             bm25_results = [_bm25_corpus[i] for i in top_indices if bm25_scores[i] > 0]
 
     # Étape 3 : Fusion RRF

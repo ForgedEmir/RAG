@@ -26,7 +26,7 @@ DATA_FOLDER         = os.path.normpath(os.path.join(os.path.dirname(__file__), "
 _DATA_DIR           = os.path.join(os.path.dirname(__file__), "qdrant_db")
 MEMORY_FILE         = os.path.join(_DATA_DIR, "files_metadata.json")
 BM25_CORPUS_FILE    = os.path.join(_DATA_DIR, "bm25_corpus.json")
-SUPPORTED_EXTENSIONS = (".md", ".txt", ".json", ".csv", ".xlsx", ".xml", ".pdf")
+SUPPORTED_EXTENSIONS = (".md", ".txt", ".json", ".csv", ".xlsx", ".xml", ".pdf", ".docx", ".doc")
 PARSER_MODE         = os.getenv("PARSER", "custom")
 _INGESTION_LORE_CLASSIFIER_ENABLED = env_bool("INGESTION_LORE_CLASSIFIER_ENABLED", True)
 _INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED = env_bool("INGESTION_CONTEXTUAL_ENRICHMENT_ENABLED", True)
@@ -152,11 +152,14 @@ def save_memory(fichiers: dict) -> None:
 def list_current_files() -> dict:
     if not os.path.exists(DATA_FOLDER):
         return {}
-    return {
-        nom: os.path.getmtime(os.path.join(DATA_FOLDER, nom))
-        for nom in os.listdir(DATA_FOLDER)
-        if nom.lower().endswith(SUPPORTED_EXTENSIONS)
-    }
+    files = {}
+    for root, _, filenames in os.walk(DATA_FOLDER):
+        for nom in filenames:
+            if nom.lower().endswith(SUPPORTED_EXTENSIONS):
+                # On stocke le chemin relatif par rapport à DATA_FOLDER comme clé
+                rel_path = os.path.relpath(os.path.join(root, nom), DATA_FOLDER)
+                files[rel_path] = os.path.getmtime(os.path.join(root, nom))
+    return files
 
 
 # ── Validation du contenu ────────────────────────────────────────────────────
@@ -169,9 +172,9 @@ def _is_lore_content(texte: str, nom: str) -> bool:
         llm      = _get_llm_checker()
         response = llm.invoke([
             SystemMessage(content=(
-                "Tu valides du contenu pour une base de lore de jeu de rôle fantastique. "
-                "Réponds OUI si le texte contient du lore (personnages, lieux, artefacts, factions, histoire fictive). "
-                "Réponds NON si c'est clairement hors-sujet (recette, code, document réel). "
+                "Tu valides du contenu pour une base de connaissances professionnelle. "
+                "Réponds OUI si le texte contient des informations factuelles, techniques, structurelles ou documentaires utiles. "
+                "Réponds NON si c've du contenu purement promotionnel, vide, ou sans valeur informationnelle. "
                 "En cas de doute, réponds OUI."
             )),
             HumanMessage(content=f"Fichier '{nom}' :\n\n{texte[:2000]}"),
@@ -280,6 +283,8 @@ def _apply_late_chunking(chunks: List[str]) -> List[str]:
 def prepare_files_for_ai(
     noms_fichiers: Set[str],
     indexed_at_map: Dict[str, float] = None,
+    tenant_id: str = "",
+    data_folder: str = None,
 ) -> List[Document]:
     """Traite les fichiers et retourne des Documents prêts à indexer.
 
@@ -287,6 +292,8 @@ def prepare_files_for_ai(
     connu. Si absent (nouveau fichier), on génère time.time(). Cette date est
     préservée au re-indexing pour que "fichier modifié" ne redevienne pas
     "fichier nouveau" du point de vue résolution de conflit.
+    tenant_id : identifiant du tenant, injecté dans chaque chunk pour l'isolation Qdrant.
+    data_folder : dossier source (défaut : DATA_FOLDER global).
 
     Pipeline : extraction → vérif hors-sujet → contexte doc → découpage → late chunking → filtrage
     """
@@ -295,9 +302,10 @@ def prepare_files_for_ai(
     dedup_skipped = 0
     indexed_at_map = indexed_at_map or {}
     now = time.time()
+    folder = data_folder or DATA_FOLDER
 
     for nom in noms_fichiers:
-        chemin = os.path.join(DATA_FOLDER, nom)
+        chemin = os.path.join(folder, nom)
         if not os.path.exists(chemin):
             continue
         indexed_at = float(indexed_at_map.get(nom, now))
@@ -349,6 +357,7 @@ def prepare_files_for_ai(
                         "doc_summary":    doc_context.get("doc_summary", ""),
                         "entities":       doc_context.get("entities", []),
                         "indexed_at":     indexed_at,
+                        "tenant_id":      tenant_id,
                     },
                 ))
 
@@ -462,9 +471,13 @@ def _run_async(coro):
             return loop.run_until_complete(coro)
 
 
-def index_data(force_reindex: bool = False) -> bool:
-    """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés."""
-    logger.info("Vérification des fichiers de lore...")
+def index_data(force_reindex: bool = False, tenant_id: str = "") -> bool:
+    """Met à jour Qdrant avec les fichiers nouveaux/modifiés/supprimés.
+
+    tenant_id : si fourni, les chunks sont tagués et les recherches/suppressions
+    sont isolées à ce tenant. Laisser vide pour l'indexation globale (admin).
+    """
+    logger.info("Vérification des fichiers à indexer (tenant=%s)...", tenant_id or "global")
     fichiers_actuels = list_current_files()
 
     if force_reindex:
@@ -472,12 +485,12 @@ def index_data(force_reindex: bool = False) -> bool:
         # de sens (collection vidée), chaque fichier devient "nouveau" avec now.
         new_memory = _build_new_memory(fichiers_actuels, {})
         store = get_store(force_reindex=True)
-        docs  = prepare_files_for_ai(set(fichiers_actuels.keys()), _indexed_at_map(new_memory))
+        docs  = prepare_files_for_ai(set(fichiers_actuels.keys()), _indexed_at_map(new_memory), tenant_id=tenant_id)
         if docs:
             add_documents(store, docs)
             _save_bm25_corpus(docs)
             save_memory(new_memory)
-            logger.info("Réindexation complète terminée.")
+            logger.info("Réindexation complète terminée (tenant=%s).", tenant_id or "global")
         else:
             logger.warning("Collection recréée mais aucun fichier valide trouvé dans data/sample.")
         try:
@@ -499,6 +512,15 @@ def index_data(force_reindex: bool = False) -> bool:
 
     if not (supprimes or nouveaux or modifies):
         logger.info("Aucun changement détecté.")
+        # Qdrant peut être vide (restart, reset) même si la mémoire dit "tout indexé"
+        try:
+            _store = get_store(force_reindex=False)
+            _info = _store.client.get_collection(_store.collection_name)
+            if (_info.points_count or 0) == 0 and actuels:
+                logger.warning("Qdrant vide mais mémoire non vide — réindexation forcée.")
+                return index_data(force_reindex=True, tenant_id=tenant_id)
+        except Exception as e:
+            logger.warning(f"Impossible de vérifier l'état Qdrant : {e}")
         if not _is_bm25_corpus_healthy(actuels):
             logger.info("Corpus BM25 absent/invalide — tentative de reconstruction légère depuis Qdrant.")
             try:
@@ -511,7 +533,7 @@ def index_data(force_reindex: bool = False) -> bool:
     store = get_store(force_reindex=False)
 
     if supprimes | modifies:
-        remove_files(store, supprimes | modifies)
+        remove_files(store, supprimes | modifies, tenant_id=tenant_id)
 
     # WHY: Purge du semantic cache ciblé sur tous les fichiers qui changent
     # (supprimés, modifiés ET nouveaux). Un fichier "nouveau" peut contredire
@@ -534,13 +556,13 @@ def index_data(force_reindex: bool = False) -> bool:
     a_indexer = nouveaux | modifies
     new_docs = []
     if a_indexer:
-        new_docs = prepare_files_for_ai(a_indexer, indexed_at_map)
+        new_docs = prepare_files_for_ai(a_indexer, indexed_at_map, tenant_id=tenant_id)
         add_documents(store, new_docs)
 
     # WHY: On reconstruit le corpus BM25 uniquement depuis les fichiers changés +
     # les anciens non modifiés, évitant de tout retraiter.
     unchanged   = actuels - a_indexer - supprimes
-    stable_docs = prepare_files_for_ai(unchanged, indexed_at_map)
+    stable_docs = prepare_files_for_ai(unchanged, indexed_at_map, tenant_id=tenant_id)
     _save_bm25_corpus(new_docs + stable_docs)
 
     save_memory(new_memory)

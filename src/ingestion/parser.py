@@ -92,20 +92,62 @@ def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
         return None
 
 
+def _parse_pdf_pypdf(filepath: str) -> Optional[str]:
+    """Extrait le texte d'un PDF en utilisant pypdf (très fiable)."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(filepath)
+        text = ""
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n\n"
+        return text.strip() if text.strip() else None
+    except Exception as e:
+        logger.warning(f"pypdf a échoué pour {filepath} : {e}")
+        return None
+
+
 def _parse_pdf(filepath: str) -> Optional[str]:
     """
-    Orchestre le parsing PDF en privilégiant LlamaParse avant de basculer sur Unstructured.
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte complet extrait du PDF.
+    Orchestre le parsing PDF en privilégiant LlamaParse, puis pypdf, et enfin Unstructured.
     """
+    # 1. LlamaParse (Premium / Markdown)
     result = _parse_pdf_llamaparse(filepath)
     if result:
         return result
+    
+    # 2. PyPDF (Local / Rapide / Fiable)
+    result = _parse_pdf_pypdf(filepath)
+    if result:
+        return result
+
+    # 3. Unstructured (Repli historique)
     return _parse_pdf_unstructured(filepath)
+
+
+def _parse_docx(filepath: str) -> Optional[str]:
+    """Extrait le texte d'un fichier Word (.docx) via python-docx avec fallback unstructured."""
+    try:
+        import docx as _docx
+        doc = _docx.Document(filepath)
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        # Tables
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    paragraphs.append(" | ".join(cells))
+        return "\n\n".join(paragraphs) if paragraphs else None
+    except Exception as e:
+        logger.warning(f"python-docx a échoué pour {filepath}, fallback unstructured : {e}")
+        try:
+            from unstructured.partition.docx import partition_docx
+            elements = partition_docx(filename=filepath)
+            return "\n".join(str(el) for el in elements if str(el).strip()) or None
+        except Exception as e2:
+            logger.error(f"Échec extraction DOCX pour {filepath} : {e2}")
+            return None
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
@@ -131,6 +173,8 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         '.xlsx': _xlsx_to_text,
         '.xml': _xml_to_text,
         '.pdf': _parse_pdf,
+        '.docx': _parse_docx,
+        '.doc': _parse_docx,
     }
     
     loader = loaders.get(ext)

@@ -1,7 +1,7 @@
 [project]
-name = "oracle-lorekeeper-mcp"
+name = "rabelia-rag"
 version = "0.1.0"
-description = "Serveur MCP exposant le RAG d'Aethelgard Online (Oracle LoreKeeper)"
+description = "RABELIA — RAG Belgique IA, moteur documentaire B2B de grade production"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,10 +16,11 @@ dependencies = [
     "qdrant-client>=1.7.0",
     "fastembed>=0.2.0",
     "pydantic>=2.0.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.scripts]
-oracle-lorekeeper-mcp = "mcp_server:main"
+rabelia-mcp = "mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,11 +1,13 @@
+import asyncio
 import logging
+import mimetypes
 import os
 import re
-from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import JSONResponse
-from src.api.auth import require_monitoring
+from fastapi import APIRouter, Depends, Request, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse
+from src.api.auth import get_current_user, get_tenant_id, require_monitoring
 from src.api.limiter import limiter
-from src.ingestion.run import index_data
+from src.ingestion.run import index_data, SUPPORTED_EXTENSIONS
 from src.monitoring.tracker import track
 from src.security.validator import valider_entree
 
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 admin_router = APIRouter()
 
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_KB", "500")) * 1024
-ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx", ".pdf"}
+ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx", ".pdf", ".docx", ".doc"}
 DATA_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "sample"))
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,120}$")
 
@@ -38,7 +40,7 @@ def _count_points_for_filename(filename: str) -> int | None:
         from src.ingestion.vector_store import get_store
         store = get_store(force_reindex=False)
         result = store.client.count(
-            collection_name="lore",
+            collection_name="knowledge",
             count_filter=Filter(
                 should=[FieldCondition(key="metadata.fichier", match=MatchValue(value=filename))]
             ),
@@ -49,6 +51,110 @@ def _count_points_for_filename(filename: str) -> int | None:
         logger.warning(f"Vérification Qdrant impossible pour '{filename}': {e}")
         return None
 
+
+def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
+    """Extrait un échantillon de texte pour la validation sécurité."""
+    text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
+    lines = text.splitlines()
+    if len(lines) > 40:
+        mid = len(lines) // 2
+        return "\n".join(lines[:20] + lines[max(0, mid - 5):mid + 5] + lines[-20:])
+    if not text and ext in {".pdf", ".xlsx"}:
+        return f"BINARY_FILE:{ext}:{safe_name}:{len(content)}"
+    return text
+
+
+# ── Endpoint /api/upload — accessible à tous les users authentifiés ───────────
+
+@admin_router.post("/api/upload")
+@limiter.limit("10/hour")
+async def tenant_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user),
+):
+    """Upload multi-tenant : valide → Supabase Storage → ingestion Qdrant avec tenant_id."""
+    tenant_id = await get_tenant_id(user_id)
+
+    safe_name = _sanitize_filename(file.filename or "")
+    if not safe_name:
+        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return JSONResponse(
+            {"error": f"Extension non supportée. Formats : {', '.join(sorted(ALLOWED_EXTENSIONS))}"},
+            status_code=400,
+        )
+
+    content = await file.read()
+    if not content:
+        return JSONResponse({"error": "Fichier vide."}, status_code=400)
+    if len(content) > MAX_UPLOAD_SIZE:
+        size_kb = len(content) // 1024
+        return JSONResponse(
+            {"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {MAX_UPLOAD_SIZE // 1024} Ko."},
+            status_code=400,
+        )
+
+    sample = _read_sample(content, ext, safe_name)
+    validation = await valider_entree(sample)
+    if not validation["valid"]:
+        logger.warning(f"[UPLOAD] Bloqué [{validation['type']}] tenant={tenant_id} fichier='{safe_name}'")
+        await track("upload_blocked", detail=f"tenant={tenant_id} | {safe_name} | {validation['type']}")
+        return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
+
+    # ── Supabase Storage (bucket "tenant-docs", path "tenant_id/filename") ──
+    storage_path = f"{tenant_id}/{safe_name}"
+    storage_ok = False
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if supa:
+            await supa.storage.from_("tenant-docs").upload(
+                path=storage_path,
+                file=content,
+                file_options={
+                    "content-type": file.content_type or "application/octet-stream",
+                    "upsert": "true",
+                },
+            )
+            storage_ok = True
+            logger.info(f"[UPLOAD] Supabase Storage OK : {storage_path}")
+    except Exception as e:
+        logger.warning(f"[UPLOAD] Supabase Storage échoué pour '{storage_path}': {e}")
+
+    # ── Écriture locale dans data/sample/<tenant_id>/ pour le pipeline ──────
+    tenant_data_dir = os.path.join(DATA_DIR, tenant_id)
+    os.makedirs(tenant_data_dir, exist_ok=True)
+    destination = os.path.join(tenant_data_dir, safe_name)
+    existed_before = os.path.exists(destination)
+    with open(destination, "wb") as f:
+        f.write(content)
+
+    # ── Ingestion en arrière-plan (non bloquant) ─────────────────────────────
+    async def _run_ingestion():
+        try:
+            from src.ingestion.run import index_data as _index
+            await asyncio.to_thread(_index, False, tenant_id)
+            logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} fichier={safe_name}")
+        except Exception as e:
+            logger.error(f"[UPLOAD] Ingestion échouée — tenant={tenant_id} : {e}")
+
+    asyncio.create_task(_run_ingestion())
+
+    action = "replace" if existed_before else "upload"
+    await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} Ko")
+    return {
+        "message": f"'{safe_name}' {'remplacé' if existed_before else 'uploadé'}. Ingestion en cours.",
+        "filename": safe_name,
+        "tenant_id": tenant_id,
+        "storage_path": storage_path,
+        "storage_ok": storage_ok,
+    }
+
+
+# ── Routes admin ──────────────────────────────────────────────────────────────
 
 @admin_router.get("/api/admin/sources")
 async def admin_sources(request: Request):
@@ -140,6 +246,99 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     if reindex_warning:
         payload["warning"] = "Fichier uploadé, mais la réindexation automatique a échoué."
     return payload
+
+
+@admin_router.get("/api/file/{filename:path}")
+async def serve_file(filename: str, request: Request, user_id: str = Depends(get_current_user)):
+    """Serve a file from tenant storage for in-browser preview."""
+    safe_name = _sanitize_filename(os.path.basename(filename))
+    if not safe_name:
+        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+
+    tenant_id = await get_tenant_id(user_id)
+
+    # Look in tenant subdirectory first, then root DATA_DIR
+    candidates = [
+        os.path.join(DATA_DIR, tenant_id, safe_name),
+        os.path.join(DATA_DIR, safe_name),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            mime, _ = mimetypes.guess_type(safe_name)
+            mime = mime or "application/octet-stream"
+            # Force inline display for text/PDF; attachment otherwise
+            if mime.startswith("text/") or mime == "application/pdf":
+                headers = {"Content-Disposition": f'inline; filename="{safe_name}"'}
+            else:
+                headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
+            return FileResponse(path, media_type=mime, headers=headers)
+
+    return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+
+
+@admin_router.get("/api/file-text/{filename:path}")
+async def serve_file_text(filename: str, request: Request, user_id: str = Depends(get_current_user)):
+    """Return the extracted plain text of a file (PDF → pypdf, others → raw read)."""
+    safe_name = _sanitize_filename(os.path.basename(filename))
+    if not safe_name:
+        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+
+    tenant_id = await get_tenant_id(user_id)
+    candidates = [
+        os.path.join(DATA_DIR, tenant_id, safe_name),
+        os.path.join(DATA_DIR, safe_name),
+    ]
+    path = next((p for p in candidates if os.path.isfile(p)), None)
+    if not path:
+        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+
+    try:
+        ext = os.path.splitext(safe_name)[1].lower()
+        if ext == ".pdf":
+            from src.ingestion.parser import _parse_pdf_pypdf
+            text = _parse_pdf_pypdf(path) or ""
+        elif ext in (".docx", ".doc"):
+            from src.ingestion.parser import _parse_docx
+            text = _parse_docx(path) or ""
+        elif ext == ".xlsx":
+            from src.ingestion.parser import _xlsx_to_text
+            text = _xlsx_to_text(path) or ""
+        else:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(text)
+    except Exception as e:
+        logger.error(f"file-text error for {safe_name}: {e}")
+        return JSONResponse({"error": "Impossible d'extraire le texte."}, status_code=500)
+
+
+@admin_router.get("/api/file-xlsx/{filename:path}")
+async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depends(get_current_user)):
+    """Return Excel file as structured JSON: [{sheet, headers, rows}]."""
+    safe_name = _sanitize_filename(os.path.basename(filename))
+    if not safe_name or not safe_name.lower().endswith(".xlsx"):
+        return JSONResponse({"error": "Fichier invalide."}, status_code=400)
+    tenant_id = await get_tenant_id(user_id)
+    candidates = [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]
+    path = next((p for p in candidates if os.path.isfile(p)), None)
+    if not path:
+        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        sheets = []
+        for name in wb.sheetnames:
+            ws = wb[name]
+            rows = [[str(c.value) if c.value is not None else "" for c in row] for row in ws.iter_rows()]
+            if not rows:
+                continue
+            sheets.append({"sheet": name, "headers": rows[0], "rows": rows[1:]})
+        wb.close()
+        return JSONResponse(sheets)
+    except Exception as e:
+        logger.error(f"file-xlsx error for {safe_name}: {e}")
+        return JSONResponse({"error": "Impossible de lire le fichier Excel."}, status_code=500)
 
 
 @admin_router.delete("/api/admin/delete")
