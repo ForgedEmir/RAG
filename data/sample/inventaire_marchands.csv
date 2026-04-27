@@ -1,0 +1,6 @@
+id_marchand;nom_marchand;localisation;objet_vendu;prix_or;condition_deblocage;lore_objet
+M01;Elara la Contrebandière;Lisière de la Forêt;Baume de Racine-Sang;15;Aucune;Un onguent basique qui sent la terre humide. Soigne les morsures de loups.
+M01;Elara la Contrebandière;Lisière de la Forêt;Cape d'Ombre-Loup;150;Defaite_Boss:Kaelen;Tissée avec la fourrure purifiée de Kaelen. Rend indétectable par les monstres de niveau 1 à 5.
+M02;Kael le Forgeron Fou;Entrée des Cavernes;Pioche en Adamantium;300;Niveau_Joueur:8;Indispensable pour miner les minerais rares dans les Cavernes d'Oubli.
+M02;Kael le Forgeron Fou;Entrée des Cavernes;Dynamite Runique;500;Defaite_Boss:Gorz;Fabriquée à partir du cœur de pierre de Gorz. Permet d'exploser les murs secrets des Ruines.
+M03;Ombre Marchande;Ruines de l'Ancien Empire;Larme du Roi Fou;2000;Defaite_Boss:Spectre du Roi Fou;Une gemme qui pleure éternellement. Permet de voir les plateformes invisibles menant à la Citadelle.

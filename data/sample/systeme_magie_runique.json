@@ -1,0 +1,25 @@
+{
+  "disciplines_magiques": {
+    "Pyromancie_Sombre": {
+      "niveau_deblocage": 5,
+      "maitre_apprentissage": "Lucas l'Ancien",
+      "lore": "Une magie instable née après la fracture de la Citadelle Volante. Elle consume l'âme de son lanceur si elle est mal maîtrisée.",
+      "efficace_contre": ["Les Bêtes Corrompues", "Kaelen le Loup Sombre"],
+      "inefficace_contre": ["Les Sans-Âmes", "Gorz le Gardien de Pierre"]
+    },
+    "Cristallomancie": {
+      "niveau_deblocage": 10,
+      "maitre_apprentissage": "Stèle de Gorz",
+      "lore": "La magie tellurique de l'Ancien Empire. Elle permet de manipuler la roche et de percer les armures physiques.",
+      "efficace_contre": ["Les Sans-Âmes", "Spectre du Roi Fou"],
+      "inefficace_contre": ["Le Culte du Vide"]
+    },
+    "Tissage_du_Vide": {
+      "niveau_deblocage": 18,
+      "maitre_apprentissage": "Grimoire de l'Archimage Vyn (Loot)",
+      "lore": "Interdite depuis 300 ans. Elle permet d'altérer la gravité, indispensable pour survivre dans la Citadelle Volante.",
+      "efficace_contre": ["Le Culte du Vide", "Archimage Vyn"],
+      "inefficace_contre": ["Aucun - Magie Absolue"]
+    }
+  }
+}
