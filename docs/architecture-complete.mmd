@@ -1,0 +1,137 @@
+flowchart TB
+  %% =====================
+  %% Clients & presentation
+  %% =====================
+  subgraph CLIENTS[Clients]
+    Browser[Web browser]
+    ClaudeDesktop[Claude Desktop / MCP client]
+    AdminUser[Admin / monitoring user]
+  end
+
+  subgraph FRONTEND[Presentation layer]
+    ReactApp[React + Vite + Tailwind frontend]
+    MonitoringUI[Monitoring dashboard]
+    ChatUI[Chat / docs / architecture pages]
+  end
+
+  %% =============
+  %% API gateway
+  %% =============
+  subgraph API[FastAPI application]
+    Routes[API routes\n/api/ask /api/feedback /health /auth /monitoring /admin]
+    Auth[Auth & session\nSupabase JWT or guest]
+    PII[PII masking]
+    Validate[Security validation\nLakera Guard optional]
+    Cache[Semantic cache\nRedis]
+    Context[Context assembly\nconversation history + user summary + vector memories]
+    Rewrite[Query reformulation\noptional]
+  end
+
+  %% =============
+  %% Retrieval
+  %% =============
+  subgraph RETRIEVAL[Retrieval layer]
+    Embed[FastEmbed ONNX embedding]
+    Vector[Qdrant vector search]
+    BM25[BM25 lexical search]
+    Fuse[RRF fusion]
+    Rerank[Cross-encoder reranking\nsmart skip]
+    HyDE[HyDE fallback]
+  end
+
+  %% =============
+  %% Generation
+  %% =============
+  subgraph GENERATION[Generation layer]
+    Prompt[Prompt builder\nretrieved passages + context]
+    PrimaryLLM[Primary LLM\nCerebras / OpenRouter]
+    FallbackLLM[Fallback LLM\nGroq]
+    Stream[SSE token stream]
+  end
+
+  %% =============
+  %% Persistence
+  %% =============
+  subgraph DATA[Persistent services]
+    Supabase[(Supabase\nAuth + sessions + conversations + events)]
+    Qdrant[(Qdrant\nvector DB)]
+    Redis[(Redis\ncache + rate limits)]
+    Langfuse[(Langfuse\ntraces + evals)]
+  end
+
+  %% =============
+  %% Ingestion pipeline
+  %% =============
+  subgraph INGESTION[Ingestion pipeline]
+    Sources[data/sample\nMD TXT PDF CSV XLSX JSON XML]
+    Loader[Document loader]
+    Parser[Parser]
+    Chunker[Chunking]
+    Enrich[Contextual enrichment\noptional]
+    Index[Indexing\nembeddings + BM25 corpus]
+    Watchdog[Watchdog / reindex]
+  end
+
+  %% =====================
+  %% Main runtime flow
+  %% =====================
+  Browser --> ReactApp
+  ClaudeDesktop --> Routes
+  AdminUser --> MonitoringUI
+  ReactApp --> ChatUI
+  ChatUI --> Routes
+  MonitoringUI --> Routes
+
+  Routes --> Auth --> PII --> Validate --> Cache
+  Cache -->|miss| Context
+  Cache -->|hit| Stream
+
+  Context --> Rewrite --> Embed
+  Embed --> Vector
+  Rewrite --> BM25
+  Vector --> Fuse
+  BM25 --> Fuse
+  Fuse --> Rerank --> HyDE --> Prompt
+  Rerank --> Prompt
+  HyDE --> Prompt
+
+  Prompt --> PrimaryLLM --> Stream
+  PrimaryLLM -->|429 / timeout| FallbackLLM --> Stream
+
+  Stream --> ReactApp
+  Stream --> ChatUI
+
+  %% =====================
+  %% Background persistence
+  %% =====================
+  Routes -. background .-> Supabase
+  Routes -. background .-> Redis
+  Routes -. background .-> Langfuse
+  Routes -. background .-> Qdrant
+
+  %% =====================
+  %% Ingestion flow
+  %% =====================
+  Sources --> Loader --> Parser --> Chunker --> Enrich --> Index
+  Index --> Qdrant
+  Index --> Redis
+  Index --> Supabase
+  Watchdog --> Sources
+  Watchdog --> Index
+
+  %% =====================
+  %% Styling hints
+  %% =====================
+  classDef orange fill:#F59E0B,stroke:#F59E0B,color:#000;
+  classDef blue fill:#1d4ed8,stroke:#60a5fa,color:#fff;
+  classDef purple fill:#6d28d9,stroke:#a78bfa,color:#fff;
+  classDef green fill:#065f46,stroke:#34d399,color:#fff;
+  classDef slate fill:#0f172a,stroke:#334155,color:#fff;
+  classDef dark fill:#111111,stroke:#444,color:#fff;
+
+  class ReactApp,ChatUI,MonitoringUI orange;
+  class Routes,Auth,PII,Validate,Cache,Context,Rewrite slate;
+  class Embed,Vector,BM25,Fuse,Rerank,HyDE blue;
+  class Prompt,PrimaryLLM,FallbackLLM,Stream purple;
+  class Supabase,Qdrant,Redis,Langfuse green;
+  class Sources,Loader,Parser,Chunker,Enrich,Index,Watchdog dark;

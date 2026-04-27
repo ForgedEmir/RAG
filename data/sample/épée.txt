@@ -1,0 +1,34 @@
+Flamme-Âme — L'Épée d'Lucas le Tranchant
+
+Description générale
+Flamme-Âme est une épée longue unique en son genre, forgée dans un alliage de métal rouge et
+noir dont les origines restent inconnues des forgerons du Royaume. Ses veines internes abritent
+des boules de feu vivantes, visibles à travers la lame translucide qui pulse d'une lueur
+orangée en permanence. La chaleur qu'elle dégage est suffisante pour faire fondre une armure
+standard en moins d'une minute de contact prolongé.
+
+Histoire et origine
+L'épée a été forgée par le maître forgeron Caldren lors de la troisième année du règne d'Alaric,
+sur commande expresse du Roi après les exploits d'Lucas lors de la Nuit des Larmes. Caldren
+aurait passé trois années entières à la perfectionner, utilisant des cristaux de lave des
+Terres Oubliées pour capturer les flammes à l'intérieur de la lame. Il mourut avant d'avoir
+pu révéler le secret de sa fabrication, rendant l'arme irremplaçable et unique au monde.
+
+Propriétés magiques
+- Frappe létale : En combat singulier, la chaleur accumulée dans la lame atteint un pic
+  permettant de percer n'importe quelle défense en un seul coup précis.
+- Résistance au Vide : La magie de feu contenue dans l'épée repousse naturellement les
+  entités ombreuses liées à la Confrérie du Vide et au Gardien du Vide.
+- Lien de sang : Seul Lucas peut la manier sans subir de brûlures graves. Quiconque tente
+  de s'en emparer voit sa peau noircir au contact de la poignée.
+
+Statut dans le lore
+L'épée est répertoriée au Grand Temple de la Lumière sous le registre des Armes Légendaires,
+entrée numéro 47. Elle figure également dans le Sceptre du Commandement du Roi Alaric comme
+preuve de la grandeur du Royaume. La Confrérie du Vide cherche activement à la détruire ou
+à la capturer, estimant qu'elle est l'une des rares armes capables de menacer leur Gardien.
+
+Lien avec la quête principale
+Des prophéties retrouvées dans les ruines des Terres Oubliées suggèrent que Flamme-Âme et
+l'Épée de Vorpal sont les deux faces d'une même arme originelle, séparées il y a des millénaires.
+Les réunir pourrait ouvrir un portail vers le cœur du Vide — ou déclencher une catastrophe.
