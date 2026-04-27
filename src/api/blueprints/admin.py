@@ -1,8 +1,11 @@
 import asyncio
+import io
 import logging
 import mimetypes
 import os
 import re
+import tarfile
+import zipfile
 from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 from src.api.auth import get_current_user, get_tenant_id, require_monitoring
@@ -15,7 +18,11 @@ logger = logging.getLogger(__name__)
 admin_router = APIRouter()
 
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_KB", "500")) * 1024
+MAX_ARCHIVE_SIZE = int(os.getenv("MAX_ARCHIVE_SIZE_MB", "50")) * 1024 * 1024
 ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx", ".pdf", ".docx", ".doc"}
+ARCHIVE_EXTENSIONS = {".zip", ".tar.gz", ".tar.bz2", ".tar.xz"}
+MAX_ARCHIVE_FILES = 50
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024  # 100 MB
 DATA_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "sample"))
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,120}$")
 
@@ -32,6 +39,78 @@ def _sanitize_filename(raw_name: str) -> str:
     if not _SAFE_FILENAME_RE.match(name):
         return ""
     return name
+
+
+def _is_archive(filename: str) -> bool:
+    name = filename.lower()
+    return any(name.endswith(ext) for ext in ARCHIVE_EXTENSIONS)
+
+
+def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str]:
+    """Extract archive safely into target_dir. Returns list of filenames written to disk.
+
+    Enforces: zip-slip protection, zip-bomb limit, file count limit, extension filtering.
+    """
+    name = filename.lower()
+    real_target = os.path.realpath(target_dir)
+    extracted: list[str] = []
+
+    def _safe_write(data: bytes, basename: str) -> str | None:
+        safe = _sanitize_filename(basename)
+        if not safe:
+            return None
+        if os.path.splitext(safe)[1].lower() not in ALLOWED_EXTENSIONS:
+            return None
+        dest = os.path.join(target_dir, safe)
+        # Zip-slip guard: resolved destination must stay inside target_dir
+        if not os.path.realpath(dest).startswith(real_target + os.sep):
+            logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", basename)
+            return None
+        with open(dest, "wb") as f:
+            f.write(data)
+        return safe
+
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            infos = [i for i in zf.infolist() if not i.is_dir()]
+            total = sum(i.file_size for i in infos)
+            if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    f"Archive trop volumineuse décompressée "
+                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                )
+            if len(infos) > MAX_ARCHIVE_FILES:
+                raise ValueError(f"Trop de fichiers dans l'archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
+            for info in infos:
+                with zf.open(info) as src:
+                    saved = _safe_write(src.read(), os.path.basename(info.filename))
+                    if saved:
+                        extracted.append(saved)
+    else:
+        mode = (
+            "r:gz" if name.endswith(".tar.gz") else
+            "r:bz2" if name.endswith(".tar.bz2") else
+            "r:xz" if name.endswith(".tar.xz") else
+            "r:"
+        )
+        with tarfile.open(fileobj=io.BytesIO(content), mode=mode) as tf:
+            members = [m for m in tf.getmembers() if m.isfile()]
+            total = sum(m.size for m in members)
+            if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    f"Archive trop volumineuse décompressée "
+                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                )
+            if len(members) > MAX_ARCHIVE_FILES:
+                raise ValueError(f"Trop de fichiers dans l'archive ({len(members)} > {MAX_ARCHIVE_FILES} max)")
+            for member in members:
+                fobj = tf.extractfile(member)
+                if fobj:
+                    saved = _safe_write(fobj.read(), os.path.basename(member.name))
+                    if saved:
+                        extracted.append(saved)
+
+    return extracted
 
 
 def _count_points_for_filename(filename: str) -> int | None:
@@ -80,23 +159,84 @@ async def tenant_upload(
     if not safe_name:
         return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
 
+    is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    if not is_arch and ext not in ALLOWED_EXTENSIONS:
+        all_formats = sorted(ALLOWED_EXTENSIONS | ARCHIVE_EXTENSIONS)
         return JSONResponse(
-            {"error": f"Extension non supportée. Formats : {', '.join(sorted(ALLOWED_EXTENSIONS))}"},
+            {"error": f"Extension non supportée. Formats : {', '.join(all_formats)}"},
             status_code=400,
         )
 
     content = await file.read()
     if not content:
         return JSONResponse({"error": "Fichier vide."}, status_code=400)
-    if len(content) > MAX_UPLOAD_SIZE:
+
+    size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
+    if len(content) > size_limit:
         size_kb = len(content) // 1024
         return JSONResponse(
-            {"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {MAX_UPLOAD_SIZE // 1024} Ko."},
+            {"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {size_limit // 1024} Ko."},
             status_code=400,
         )
 
+    tenant_data_dir = os.path.join(DATA_DIR, tenant_id)
+    os.makedirs(tenant_data_dir, exist_ok=True)
+
+    # ── Archive path ─────────────────────────────────────────────────────────
+    if is_arch:
+        try:
+            extracted_names = _extract_archive(content, safe_name, tenant_data_dir)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+        if not extracted_names:
+            return JSONResponse(
+                {"error": "Aucun fichier valide trouvé dans l'archive (formats acceptés : "
+                          f"{', '.join(sorted(ALLOWED_EXTENSIONS))})."},
+                status_code=400,
+            )
+
+        storage_ok_count = 0
+        try:
+            from src.monitoring.tracker import _get_client
+            supa = await _get_client()
+            if supa:
+                for fname in extracted_names:
+                    fpath = os.path.join(tenant_data_dir, fname)
+                    with open(fpath, "rb") as fh:
+                        fdata = fh.read()
+                    try:
+                        await supa.storage.from_("tenant-docs").upload(
+                            path=f"{tenant_id}/{fname}",
+                            file=fdata,
+                            file_options={"content-type": "application/octet-stream", "upsert": "true"},
+                        )
+                        storage_ok_count += 1
+                    except Exception as e:
+                        logger.warning("[UPLOAD] Supabase Storage échoué pour '%s/%s': %s", tenant_id, fname, e)
+        except Exception as e:
+            logger.warning("[UPLOAD] Supabase Storage archive échoué: %s", e)
+
+        async def _run_ingestion_archive():
+            try:
+                from src.ingestion.run import index_data as _index
+                await asyncio.to_thread(_index, False, tenant_id)
+                logger.info("[UPLOAD] Ingestion archive OK — tenant=%s fichiers=%s", tenant_id, extracted_names)
+            except Exception as e:
+                logger.error("[UPLOAD] Ingestion archive échouée — tenant=%s : %s", tenant_id, e)
+
+        asyncio.create_task(_run_ingestion_archive())
+        await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} fichiers")
+        return {
+            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}'. Ingestion en cours.",
+            "files": extracted_names,
+            "count": len(extracted_names),
+            "tenant_id": tenant_id,
+            "storage_ok": storage_ok_count,
+        }
+
+    # ── Regular file path (unchanged) ────────────────────────────────────────
     sample = _read_sample(content, ext, safe_name)
     validation = await valider_entree(sample)
     if not validation["valid"]:
@@ -125,8 +265,6 @@ async def tenant_upload(
         logger.warning(f"[UPLOAD] Supabase Storage échoué pour '{storage_path}': {e}")
 
     # ── Écriture locale dans data/sample/<tenant_id>/ pour le pipeline ──────
-    tenant_data_dir = os.path.join(DATA_DIR, tenant_id)
-    os.makedirs(tenant_data_dir, exist_ok=True)
     destination = os.path.join(tenant_data_dir, safe_name)
     existed_before = os.path.exists(destination)
     with open(destination, "wb") as f:
@@ -173,17 +311,55 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     if not safe_name:
         return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
 
+    is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    if not is_arch and ext not in ALLOWED_EXTENSIONS:
         return JSONResponse({"error": f"Extension non supportée. Formats : {', '.join(ALLOWED_EXTENSIONS)}"}, status_code=400)
 
     content = await file.read()
     if not content:
         return JSONResponse({"error": "Fichier vide."}, status_code=400)
-    if len(content) > MAX_UPLOAD_SIZE:
-        size_kb, limit_kb = len(content) // 1024, MAX_UPLOAD_SIZE // 1024
+
+    size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
+    if len(content) > size_limit:
+        size_kb, limit_kb = len(content) // 1024, size_limit // 1024
         return JSONResponse({"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {limit_kb} Ko."}, status_code=400)
 
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    # ── Archive path ─────────────────────────────────────────────────────────
+    if is_arch:
+        try:
+            extracted_names = _extract_archive(content, safe_name, DATA_DIR)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+        if not extracted_names:
+            return JSONResponse(
+                {"error": f"Aucun fichier valide trouvé dans l'archive (formats acceptés : {', '.join(sorted(ALLOWED_EXTENSIONS))})."},
+                status_code=400,
+            )
+
+        changed = None
+        reindex_warning = None
+        try:
+            changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
+        except Exception as e:
+            reindex_warning = str(e)
+            logger.warning("Admin archive réindexation échouée: %s", e)
+
+        await track("upload", detail=f"archive={safe_name} | {len(extracted_names)} fichiers")
+        payload = {
+            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}' et indexé(s).",
+            "files": extracted_names,
+            "count": len(extracted_names),
+            "ingestion": {"changed": changed},
+        }
+        if reindex_warning:
+            payload["warning"] = "Fichiers extraits, mais la réindexation automatique a échoué."
+        return payload
+
+    # ── Regular file path (unchanged) ────────────────────────────────────────
     try:
         text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
     except Exception:
@@ -207,7 +383,6 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
         await track("upload_blocked", detail=f"{safe_name} | {validation['type']}")
         return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
 
-    os.makedirs(DATA_DIR, exist_ok=True)
     destination = os.path.join(DATA_DIR, safe_name)
     existed_before = os.path.exists(destination)
 
