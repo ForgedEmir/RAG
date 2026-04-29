@@ -159,9 +159,9 @@ async def health_check():
     except Exception:
         checks["qdrant"] = False
     try:
-        supabase = get_supabase()
+        supabase = await get_supabase()
         if supabase:
-            supabase.table("events").select("id").limit(1).execute()
+            await supabase.table("events").select("id").limit(1).execute()
             checks["supabase"] = True
         else:
             checks["supabase"] = False

@@ -272,6 +272,16 @@ def _load_bm25() -> None:
             logger.warning(f"Erreur lors du chargement de BM25 : {e}")
 
 
+def invalidate_bm25_cache() -> None:
+    """Réinitialise l'index BM25 pour forcer un rechargement au prochain appel."""
+    global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
+    with _bm25_lock:
+        _bm25_index = None
+        _bm25_corpus = []
+        _bm25_loaded = False
+        _bm25_missing_warned = False
+
+
 def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dict], Dict[str, float]]:
     """Combine les résultats vectoriels et lexicaux via Reciprocal Rank Fusion (RRF)."""
     scores, doc_map = {}, {}

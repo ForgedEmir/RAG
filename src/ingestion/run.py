@@ -402,6 +402,58 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
         logger.warning(f"Impossible d'invalider le cache BM25 : {e}")
 
 
+def bootstrap_bm25_from_qdrant(output_path: str) -> bool:
+    """Reconstruit le corpus BM25 en scrollant tous les points Qdrant.
+
+    Appelé quand le fichier corpus est absent mais Qdrant a des données.
+    Returns True si le corpus a pu être écrit, False sinon.
+    """
+    try:
+        from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
+        client = _get_client()
+        corpus = []
+        offset = None
+        while True:
+            results, offset = client.scroll(
+                collection_name=_COLLECTION_NAME,
+                offset=offset,
+                limit=256,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in results:
+                payload = point.payload or {}
+                metadata = payload.get("metadata", {})
+                text = metadata.get("original_text") or payload.get("page_content", "")
+                if not isinstance(text, str) or not text.strip():
+                    continue
+                corpus.append({
+                    "id":         metadata.get("chunk_id", str(point.id)),
+                    "text":       text,
+                    "fichier":    metadata.get("fichier", "inconnu"),
+                    "indexed_at": float(metadata.get("indexed_at", 0.0) or 0.0),
+                })
+            if offset is None:
+                break
+        if not corpus:
+            return False
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        dirpath = os.path.dirname(output_path)
+        fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(corpus, f, ensure_ascii=False, indent=1)
+            os.replace(tmp_path, output_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        logger.info("Corpus BM25 reconstruit depuis Qdrant (%d chunks).", len(corpus))
+        return True
+    except Exception as e:
+        logger.warning("Bootstrap BM25 depuis Qdrant impossible : %s", e)
+        return False
+
+
 def _is_bm25_corpus_healthy(expected_files: Set[str]) -> bool:
     """Valide rapidement le corpus BM25 persistant.
 

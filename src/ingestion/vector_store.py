@@ -260,25 +260,31 @@ def add_documents(store: QdrantVectorStore, documents: List[Document]) -> None:
     logger.info(f"{len(documents)} documents indexés.")
 
 
-def remove_files(store: QdrantVectorStore, fichiers: Set[str]) -> None:
+def remove_files(store: QdrantVectorStore, fichiers: Set[str], tenant_id: str = "") -> None:
     """Supprime tous les chunks associés à une liste de fichiers."""
     if not fichiers:
         return
     try:
+        file_filter = Filter(should=[
+            FieldCondition(key="metadata.fichier", match=MatchValue(value=nom))
+            for nom in fichiers
+        ])
+        combined = Filter(must=[
+            file_filter,
+            FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id)),
+        ]) if tenant_id else file_filter
         store.client.delete(
             collection_name=_COLLECTION_NAME,
-            points_selector=FilterSelector(
-                filter=Filter(should=[
-                    FieldCondition(key="metadata.fichier", match=MatchValue(value=nom))
-                    for nom in fichiers
-                ])
-            ),
+            points_selector=FilterSelector(filter=combined),
         )
         logger.info(f"{len(fichiers)} fichier(s) retiré(s) de Qdrant.")
     except Exception as e:
         logger.warning(f"Impossible de supprimer les fichiers : {e}")
 
 
-def search(store: QdrantVectorStore, question: str, k: int = 3) -> List[Document]:
+def search(store: QdrantVectorStore, question: str, k: int = 3, tenant_id: str = "") -> List[Document]:
     """Recherche les k documents les plus proches de la question."""
+    if tenant_id:
+        f = Filter(must=[FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))])
+        return store.similarity_search(question, k=k, filter=f)
     return store.similarity_search(question, k=k)
