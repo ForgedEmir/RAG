@@ -1,8 +1,8 @@
 """
 Tests unitaires pour le semantic cache.
-On valide surtout le contrat d'invalidation ciblée (#174) : lorsqu'un fichier
-source est modifié/supprimé, les réponses cachées qui en dépendent doivent
-disparaître, les autres doivent rester.
+We mostly validate the targeted invalidation contract (#174): when a file
+source is modified/deleted, the cached responses depending on it must
+disappear, others must stay.
 """
 import json
 
@@ -10,7 +10,7 @@ import pytest
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Fake Redis — in-memory, juste ce qui est utilisé par semantic_cache
+# Fake Redis — in-memory, just what is used by semantic_cache
 # ───────────────────────────────────────────────────────────────────────────────
 
 class FakeRedis:
@@ -52,7 +52,7 @@ class FakeRedis:
         return True
 
     async def scan(self, cursor, match=None, count=100):
-        # Impl naïve : renvoie tout en un coup, cursor=0 à la fin.
+        # Naive impl: returns all at once, cursor=0 at end.
         if match is None:
             keys = list(self.store.keys())
         else:
@@ -98,21 +98,21 @@ class _FakePipeline:
 
 @pytest.fixture
 def fake_redis(monkeypatch):
-    """Injecte un FakeRedis dans le module et réinitialise l'état singleton."""
+    """Injects a FakeRedis in the module and resets singleton state."""
     import src.caching.semantic_cache as sc
 
     fake = FakeRedis()
 
     # Singleton Redis
     sc._redis = fake
-    # État local du matrix / version check
+    # Local state of the matrix / version check
     sc._matrix = None
     sc._matrix_keys = []
     sc._matrix_ts = 0.0
     sc._matrix_valid = False
     sc._cache_initialized = True  # Court-circuite _ensure_cache_version
 
-    # _embed appelle FastEmbed → on stub pour rester hermétique
+    # _embed calls FastEmbed -> stub to stay hermetic
     monkeypatch.setattr(sc, "_embed", lambda text: [1.0, 0.0, 0.0])
 
     yield fake
@@ -130,7 +130,7 @@ def fake_redis(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_store_persiste_les_source_files(fake_redis):
-    """store(..., source_files=[...]) écrit la liste dans la payload Redis."""
+    """store(..., source_files=[...]) writes the list in Redis payload."""
     from src.caching.semantic_cache import store
 
     ok = await store("qui est Alaric ?", "Alaric est un roi.", source_files=["alaric.md"])
@@ -144,7 +144,7 @@ async def test_store_persiste_les_source_files(fake_redis):
 
 @pytest.mark.asyncio
 async def test_store_sans_source_files_liste_vide(fake_redis):
-    """Sans source_files, la clé existe mais vaut []."""
+    """Without source_files, key exists but is []."""
     from src.caching.semantic_cache import store
 
     await store("question", "reponse")
@@ -155,12 +155,12 @@ async def test_store_sans_source_files_liste_vide(fake_redis):
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-# invalidate_for_files() — comportement ciblé
+# invalidate_for_files() - targeted behavior
 # ───────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
-    """Une entrée dont un source_file change doit être supprimée."""
+    """An entry with a changed source_file must be deleted."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
     await store("Q1", "R1", source_files=["alaric.md"])
@@ -175,7 +175,7 @@ async def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
     assert emb_count == 1
     assert resp_count == 1
 
-    # C'est bien Q2 qui reste (autre.md n'est pas touché)
+    # That's good Q2 that stays (autre.md is untouched)
     remaining_emb = next(
         json.loads(v) for k, v in fake_redis.store.items() if k.startswith("scache:emb:")
     )
@@ -184,7 +184,7 @@ async def test_invalidate_pour_fichier_modifie_purge_entree(fake_redis):
 
 @pytest.mark.asyncio
 async def test_invalidate_ignore_les_entrees_sans_intersection(fake_redis):
-    """Un fichier non utilisé ne doit rien invalider."""
+    """An unused file must not invalidate anything."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
     await store("Q1", "R1", source_files=["a.md"])
@@ -211,11 +211,11 @@ async def test_invalidate_ensemble_vide_ne_fait_rien(fake_redis):
 
 @pytest.mark.asyncio
 async def test_invalidate_purge_les_entrees_legacy_sans_source_files(fake_redis):
-    """Les entrées stockées avant la feature (pas de clé source_files) sont purgées
-    dès qu'un fichier change : on ne peut pas savoir ce qui les alimentait."""
+    """Entries stored before the feature (no source_files key) are purged
+    as soon as a file changes: we can't know what fed them."""
     from src.caching.semantic_cache import invalidate_for_files
 
-    # Entrée legacy écrite "à la main" — pas de source_files
+    # Legacy entry written 'by hand' - no source_files
     fake_redis.store["scache:emb:legacy1"] = json.dumps({"embedding": [1.0, 0.0, 0.0], "query": "Q"})
     fake_redis.store["scache:resp:legacy1"] = "reponse"
     fake_redis.store["scache:meta:count"] = "1"
@@ -229,7 +229,7 @@ async def test_invalidate_purge_les_entrees_legacy_sans_source_files(fake_redis)
 
 @pytest.mark.asyncio
 async def test_invalidate_pour_plusieurs_fichiers_intersect(fake_redis):
-    """Une entrée qui cite plusieurs fichiers est purgée dès qu'UN seul change."""
+    """An entry citing multiple files is purged if ONE changes."""
     from src.caching.semantic_cache import store, invalidate_for_files
 
     await store("Q", "R", source_files=["a.md", "b.md", "c.md"])
@@ -242,7 +242,7 @@ async def test_invalidate_pour_plusieurs_fichiers_intersect(fake_redis):
 
 @pytest.mark.asyncio
 async def test_invalidate_decremente_le_counter(fake_redis):
-    """Le compteur d'entrées suit les suppressions — sinon store() croit
+    """Entry counter follows deletions - otherwise store() thinks
     rapidement le cache plein (_MAX_ENTRIES). Papetier !"""
     from src.caching.semantic_cache import store, invalidate_for_files
 

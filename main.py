@@ -1,4 +1,4 @@
-"""Oracle LoreKeeper — Point d'entrée FastAPI."""
+"""Oracle LoreKeeper — FastAPI entry point."""
 import os
 import logging
 import threading
@@ -15,12 +15,12 @@ from src.config.features import apply_feature_profile, env_bool
 apply_feature_profile()
 _is_dev = os.getenv("ENV", "production").lower() == "development"
 
-# Sentry (optionnel)
+# Sentry (optional)
 if dsn := os.getenv("SENTRY_DSN"):
     import sentry_sdk
     sentry_sdk.init(dsn=dsn, traces_sample_rate=0.2)
 
-# ── Buffer de logs en mémoire ─────────────────────────────────────────
+# ── In-memory log buffer ──────────────────────────────────────────────
 _LOG_BUFFER_SIZE = max(100, int(os.getenv("LOG_BUFFER_SIZE", "1000")))
 _log_buffer: deque = deque(maxlen=_LOG_BUFFER_SIZE)
 
@@ -98,7 +98,7 @@ def _attach_buffer_handler_to_logger(logger_name: str) -> None:
 for _name in ("uvicorn", "uvicorn.error", "gunicorn", "gunicorn.error", "gunicorn.access", "py.warnings"):
     _attach_buffer_handler_to_logger(_name)
 
-# Silencer les logs HTTP externes (Supabase, Qdrant, OpenRouter) — trop verbeux en prod
+# Silence verbose external HTTP logs (Supabase, Qdrant, OpenRouter)
 logging.getLogger("src.security.pii_masker").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -149,9 +149,9 @@ def _pid_is_alive(pid: int) -> bool:
         return False
 
 def _is_first_worker() -> bool:
-    """Utilise un fichier lock pour qu'un seul worker lance le warmup/indexation.
-    Un lock vieux de plus de 60s est considéré périmé (crash, Stop-Process, redémarrage).
-    Dans la même session, les workers démarrent en quelques secondes → lock < 10s → non supprimé.
+    """Uses a lock file so only one worker starts warmup/indexing.
+    A lock older than 60s is considered stale (crash, Stop-Process, restart).
+    In the same session, workers start in a few seconds → lock < 10s → not removed.
     """
     if os.path.exists(_LOCK_FILE):
         stale_reason = None
@@ -162,20 +162,20 @@ def _is_first_worker() -> bool:
             if lock_pid and not _pid_is_alive(lock_pid):
                 stale_reason = f"owner pid {lock_pid} absent"
         except Exception:
-            stale_reason = "lock illisible"
+            stale_reason = "unreadable lock"
 
         if stale_reason is None:
             try:
                 age = time.time() - os.path.getmtime(_LOCK_FILE)
                 if age > 60:
-                    stale_reason = f"verrou périmé ({age:.0f}s)"
+                    stale_reason = f"stale lock ({age:.0f}s)"
             except Exception:
-                stale_reason = "mtime lock indisponible"
+                stale_reason = "lock mtime unavailable"
 
         if stale_reason:
             try:
                 os.remove(_LOCK_FILE)
-                logger.info(f"[STARTUP] Verrou supprimé ({stale_reason}).")
+                logger.info(f"[STARTUP] Lock removed ({stale_reason}).")
             except Exception:
                 pass
     try:
@@ -187,11 +187,11 @@ def _is_first_worker() -> bool:
         return False
 
 def _warmup() -> None:
-    """Pré-charge les composants runtime.
+    """Preloads runtime components.
 
-    Modes disponibles via STARTUP_WARMUP_MODE:
-    - parallel: vitesse max, CPU plus élevé au boot
-    - phased: démarrage progressif, CPU plus stable
+    Available modes via STARTUP_WARMUP_MODE:
+    - parallel: max speed, higher CPU at boot
+    - phased: progressive startup, more stable CPU
     """
     import time
 
@@ -203,8 +203,8 @@ def _warmup() -> None:
             try:
                 client = _get_client()
                 count = client.count(_COLLECTION_NAME).count
-                # Vérifie aussi la dimension — une collection 384-dim avec 30 points
-                # sera quand même effacée au 1er appel get_store() → mieux vaut re-indexer maintenant
+                # Also check the dimension — a 384-dim collection with 30 points
+                # will still be erased on the 1st get_store() call → better re-index now
                 needs_reindex = False
                 if count > 0:
                     try:
@@ -212,22 +212,22 @@ def _warmup() -> None:
                         current_dim = _get_vector_size()
                         coll_dim = client.get_collection(_COLLECTION_NAME).config.params.vectors.size
                         if coll_dim != current_dim:
-                            logger.warning(f"[WARMUP] Dimension mismatch ({coll_dim} vs {current_dim}) → re-indexation forcée.")
+                            logger.warning(f"[WARMUP] Dimension mismatch ({coll_dim} vs {current_dim}) → forced re-index.")
                             needs_reindex = True
                     except Exception as e:
-                        logger.warning(f"[WARMUP] Vérification dimension impossible : {e}")
+                        logger.warning(f"[WARMUP] Dimension check failed: {e}")
                 else:
-                    logger.info("[WARMUP] Qdrant vide: indexation en arrière-plan prévue (pas de force_reindex en warmup).")
-                logger.info(f"[WARMUP] FastEmbed prêt, Qdrant '{_COLLECTION_NAME}': {count} points ({time.monotonic() - t:.1f}s)")
+                    logger.info("[WARMUP] Qdrant empty: background indexing scheduled (no force_reindex in warmup).")
+                logger.info(f"[WARMUP] FastEmbed ready, Qdrant '{_COLLECTION_NAME}': {count} points ({time.monotonic() - t:.1f}s)")
                 if needs_reindex and _WARMUP_FORCE_REINDEX_ON_DIM_MISMATCH:
                     from src.ingestion.run import index_data
                     index_data(force_reindex=True)
                     count2 = client.count(_COLLECTION_NAME).count
-                    logger.info(f"[WARMUP] Re-indexation terminée : {count2} points.")
+                    logger.info(f"[WARMUP] Re-indexation complete: {count2} points.")
             except Exception as e:
-                logger.info(f"[WARMUP] FastEmbed prêt ({time.monotonic() - t:.1f}s) (count check: {e})")
+                logger.info(f"[WARMUP] FastEmbed ready ({time.monotonic() - t:.1f}s) (count check: {e})")
         except Exception as e:
-            logger.warning(f"[WARMUP] FastEmbed échoué : {e}")
+            logger.warning(f"[WARMUP] FastEmbed failed: {e}")
 
     def _load_reranker():
         t = time.monotonic()
@@ -236,24 +236,24 @@ def _warmup() -> None:
             reranker = _get_reranker()
             if reranker:
                 if _WARMUP_ENABLE_RERANKER_PRIME:
-                    # Prime ONNX execution graph — sans ça la 1ère inférence réelle prend ~10s
+                    # Prime ONNX execution graph — without this the 1st real inference takes ~10s
                     list(reranker.rerank("warmup query", ["warmup passage"]))
-                    logger.info(f"[WARMUP] Reranker prêt + ONNX primed ({time.monotonic() - t:.1f}s)")
+                    logger.info(f"[WARMUP] Reranker ready + ONNX primed ({time.monotonic() - t:.1f}s)")
                 else:
-                    logger.info(f"[WARMUP] Reranker chargé (prime désactivé) ({time.monotonic() - t:.1f}s)")
+                    logger.info(f"[WARMUP] Reranker loaded (prime disabled) ({time.monotonic() - t:.1f}s)")
             else:
-                logger.info(f"[WARMUP] Reranker indisponible ({time.monotonic() - t:.1f}s)")
+                logger.info(f"[WARMUP] Reranker unavailable ({time.monotonic() - t:.1f}s)")
         except Exception as e:
-            logger.warning(f"[WARMUP] Reranker échoué : {e}")
+            logger.warning(f"[WARMUP] Reranker failed: {e}")
 
     def _load_bm25():
         t = time.monotonic()
         try:
             from src.search.search import _load_bm25
             _load_bm25()
-            logger.info(f"[WARMUP] BM25 prêt ({time.monotonic() - t:.1f}s)")
+            logger.info(f"[WARMUP] BM25 ready ({time.monotonic() - t:.1f}s)")
         except Exception as e:
-            logger.warning(f"[WARMUP] BM25 échoué : {e}")
+            logger.warning(f"[WARMUP] BM25 failed: {e}")
 
     def _load_redis():
         t = time.monotonic()
@@ -261,41 +261,41 @@ def _warmup() -> None:
             from src.caching.semantic_cache import _get_redis as _get_redis_cache
             import asyncio
             try:
-                # Si on est déjà dans une boucle (peu probable ici car lancé par ThreadPoolExecutor)
+                # If we are already in a loop (unlikely here since started by ThreadPoolExecutor)
                 loop = asyncio.get_running_loop()
                 loop.create_task(_get_redis_cache())
             except RuntimeError:
-                # Sinon on lance une petite boucle
+                # Otherwise we start a small loop
                 asyncio.run(_get_redis_cache())
-            logger.info(f"[WARMUP] Redis prêt ({time.monotonic() - t:.1f}s)")
+            logger.info(f"[WARMUP] Redis ready ({time.monotonic() - t:.1f}s)")
         except Exception as e:
-            logger.warning(f"[WARMUP] Redis échoué : {e}")
+            logger.warning(f"[WARMUP] Redis failed: {e}")
 
     def _load_llm():
         t = time.monotonic()
         try:
-            # Force l'import du module generator → initialise Langfuse + crée le client LLM
-            # Sans ça, Langfuse s'initialise pendant la 1ère requête et ajoute ~2-3s
+            # Force import of generator module → initializes Langfuse + creates LLM client
+            # Without this, Langfuse initializes during the 1st request and adds ~2-3s
             import src.generation.generator as _gen  # noqa: F401
             try:
-                # Prime callback stack (Langfuse) pour éviter l'init à la première requête.
+                # Prime callback stack (Langfuse) to avoid init on first request.
                 _gen._callbacks("startup-warmup")
             except Exception:
                 pass
-            # Prime la connexion HTTP Groq (reformulation) — évite le cold start ~3s sur la 1ère requête
+            # Prime Groq HTTP connection (reformulation) — avoids ~3s cold start on 1st request
             if _gen._llm_reformulation:
                 try:
                     _gen._llm_reformulation.invoke("ok", config={"max_tokens": 1})
                 except Exception:
                     pass
-            logger.info(f"[WARMUP] LLM + Langfuse prêts ({time.monotonic() - t:.1f}s)")
+            logger.info(f"[WARMUP] LLM + Langfuse ready ({time.monotonic() - t:.1f}s)")
         except Exception as e:
-            logger.warning(f"[WARMUP] LLM init échoué : {e}")
+            logger.warning(f"[WARMUP] LLM init failed: {e}")
 
     t0 = time.monotonic()
     mode = _STARTUP_WARMUP_MODE
     if mode not in {"parallel", "phased"}:
-        logger.warning("[WARMUP] STARTUP_WARMUP_MODE invalide (%s), fallback parallel.", mode)
+        logger.warning("[WARMUP] STARTUP_WARMUP_MODE invalid (%s), fallback parallel.", mode)
         mode = "parallel"
 
     logger.info("[WARMUP] Mode: %s", mode)
@@ -312,18 +312,18 @@ def _warmup() -> None:
         for t in threads:
             t.join()
 
-        # Charge BM25 après la phase embeddings/Qdrant pour éviter d'afficher
-        # un corpus obsolète juste avant une réindexation forcée.
+        # Load BM25 after the embeddings/Qdrant phase to avoid showing
+        # an obsolete corpus just before a forced re-indexation.
         _load_bm25()
     else:
-        # WHY: En mode phased, on étale les tâches coûteuses pour réduire les pics CPU.
+        # WHY: In phased mode, we spread out expensive tasks to reduce CPU spikes.
         steps = [_load_redis, _load_llm, _load_embeddings, _load_bm25, _load_reranker]
         for i, step in enumerate(steps):
             step()
             if _WARMUP_STEP_DELAY_SECONDS > 0 and i < len(steps) - 1:
                 time.sleep(_WARMUP_STEP_DELAY_SECONDS)
 
-    logger.info(f"[WARMUP] Terminé ({time.monotonic() - t0:.1f}s)")
+    logger.info(f"[WARMUP] Done ({time.monotonic() - t0:.1f}s)")
 
 
 @asynccontextmanager
@@ -332,24 +332,24 @@ async def lifespan(app: FastAPI):
     first = _is_first_worker()
     if first:
         if _STARTUP_WARMUP_ENABLED:
-            # Pré-charge FastEmbed + Reranker ONNX de façon BLOQUANTE avant d'accepter des requêtes
-            # → élimine la latence à froid sur la première requête (~4–10s sans ça)
+            # BLOCKING preload of FastEmbed + Reranker ONNX before accepting requests
+            # → eliminates cold start latency on first request (~4–10s without this)
             await asyncio.to_thread(_warmup)
         else:
-            logger.info("[STARTUP] Warmup désactivé (STARTUP_WARMUP_ENABLED=false).")
+            logger.info("[STARTUP] Warmup disabled (STARTUP_WARMUP_ENABLED=false).")
 
         if _STARTUP_INDEX_ENABLED:
-            # WHY: Évite le pic mémoire warmup + index_data en parallèle (source de SIGKILL OOM).
-            # L'indexation démarre après warmup dans un thread séparé.
+            # WHY: Avoid memory spike of warmup + index_data in parallel (source of SIGKILL OOM).
+            # Indexing starts after warmup in a separate thread.
             threading.Thread(target=index_data, kwargs={"force_reindex": False}, daemon=True).start()
         else:
-            logger.info("[STARTUP] Indexation initiale désactivée (STARTUP_INDEX_ENABLED=false).")
+            logger.info("[STARTUP] Initial indexing disabled (STARTUP_INDEX_ENABLED=false).")
 
         if _WATCHDOG_ENABLED:
-            # Watchdog sur data/sample/ pour réindexer automatiquement si un fichier change
+            # Watchdog on data/sample/ to automatically reindex if a file changes
             start_watchdog()
         else:
-            logger.info("[STARTUP] Watchdog désactivé (WATCHDOG_ENABLED=false).")
+            logger.info("[STARTUP] Watchdog disabled (WATCHDOG_ENABLED=false).")
     yield
     if first:
         if _WATCHDOG_ENABLED:
@@ -378,7 +378,7 @@ _allowed_origins = [o.strip() for o in os.getenv(
 
 
 
-# CORS permissif comme avant (dev et test)
+# Permissive CORS (dev and test)
 _allowed_origins = [o.strip() for o in os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:8080,http://127.0.0.1:8080"
@@ -393,7 +393,7 @@ app.add_middleware(
 
 register_routes(app, _log_buffer)
 
-# Fichiers statiques (frontend) — no-cache en dev pour éviter les versions périmées
+# Static files (frontend) — no-cache in dev to avoid stale versions
 _root_dir = os.path.dirname(__file__)
 _frontend_react_candidates = [
     os.path.join(_root_dir, "frontend"),
@@ -421,7 +421,7 @@ def _ensure_frontend_build() -> None:
     if not os.path.isfile(package_json):
         return
 
-    logger.info("Frontend non buildé: tentative de build automatique (npm run build)")
+    logger.info("Frontend not built: attempting automatic build (npm run build)")
     npm_commands = [
         ["npm", "run", "build"],
         ["npm.cmd", "run", "build"],
@@ -449,9 +449,9 @@ def _ensure_frontend_build() -> None:
             last_error = str(e)
 
     logger.warning(
-        "Build frontend automatique impossible. Installez Node.js/npm ou lancez manuellement: "
+        "Automatic frontend build failed. Install Node.js/npm or run manually: "
         f"cd {os.path.relpath(_frontend_react_dir, _root_dir)} && npm install && npm run build"
-        + (f" | Détail: {last_error}" if last_error else "")
+        + (f" | Detail: {last_error}" if last_error else "")
     )
 
 
@@ -478,18 +478,18 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
         response: Response = await call_next(request)
         path = request.url.path
         if _is_dev and (path.startswith("/assets/") or path.endswith(".html") or path == "/"):
-            # Dev uniquement : désactive le cache pour voir les changements immédiatement
+            # Dev only: disable cache to see changes immediately
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         elif path.startswith("/assets/"):
-            # Prod : évite les assets obsolètes derrière certains reverse proxies/CDN.
-            # On pourra assouplir plus tard quand le déploiement sera stabilisé.
+            # Prod: avoid obsolete assets behind some reverse proxies/CDNs.
+            # We can relax this later when the deployment is stabilized.
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         elif path.endswith(".html") or path == "/":
-            # Prod : HTML non mis en cache (pour détecter les nouvelles versions)
+            # Prod: HTML not cached (to detect new versions)
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -497,11 +497,11 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(NoCacheStaticMiddleware)
 
-# Servir nativement via spa_fallback plutôt que StaticFiles (évite le bug 404 Starlette + Windows)
-# (Le montage conditionnel a été retiré, nous utilisons uniquement FileResponse)
+# Serve natively via spa_fallback rather than StaticFiles (avoids Starlette + Windows 404 bug)
+# (Conditional mounting has been removed, we only use FileResponse)
 
-# Catch-all SPA : sert index.html pour /chat, /monitoring, etc.
-# Doit être APRÈS les routes API et APRÈS /assets
+# Catch-all SPA: serves index.html for /chat, /monitoring, etc.
+# Must be AFTER API routes and AFTER /assets
 from fastapi.responses import FileResponse as _FileResponse
 
 @app.get("/{full_path:path}", include_in_schema=False)
@@ -509,20 +509,20 @@ async def spa_fallback(full_path: str):
     if full_path.startswith("api/"):
         return JSONResponse({"error": "Not found"}, status_code=404)
         
-    # Servir les fichiers statiques (assets/..., favicon.svg, icons.svg…)
+    # Serve static files (assets/..., favicon.svg, icons.svg...)
     static_file = os.path.join(_frontend, full_path)
     if full_path and os.path.isfile(static_file):
         return _FileResponse(static_file)
         
     if full_path.startswith("assets/"):
-        return JSONResponse({"error": "Asset introuvable", "path": static_file}, status_code=404)
-    # Toutes les autres routes → index.html (React Router gère côté client)
+        return JSONResponse({"error": "Asset not found", "path": static_file}, status_code=404)
+    # All other routes → index.html (React Router handles client-side)
     if os.path.isfile(_index_file):
         return _FileResponse(_index_file)
     return JSONResponse(
         {
-            "error": "Frontend non buildé",
-            "detail": "Lancez le build frontend (npm run build) ou démarrez en Docker.",
+            "error": "Frontend not built",
+            "detail": "Run the frontend build (npm run build) or start in Docker.",
         },
         status_code=503,
     )

@@ -44,7 +44,7 @@ async def test_lakera_cache_hit_skips_http_call():
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
         from src.security.validator import _valider_lakera
-        result = await _valider_lakera("Question de test")
+        result = await _valider_lakera("Test question")
 
     assert result == cached
     mock_client.post.assert_not_called()

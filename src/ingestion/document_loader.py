@@ -1,6 +1,6 @@
 """
-Charge un fichier et extrait son texte via Unstructured.
-Si Unstructured échoue, bascule sur le parser maison.
+Loads a file and extracts its text via Unstructured.
+If Unstructured fails, falls back to the custom parser.
 """
 import os
 import logging
@@ -13,17 +13,17 @@ logger = logging.getLogger(__name__)
 
 
 def _try_partition(filepath: str) -> list:
-    """Import paresseux d'Unstructured pour éviter les crashes au démarrage."""
+    """Lazy import of Unstructured to avoid crashes on startup."""
     from unstructured.partition.auto import partition
     return partition(filepath)
 
 
 def load_document(filepath: str) -> List[Document]:
-    """Lit un fichier et retourne des Documents LangChain nettoyés.
-    Essaye Unstructured d'abord, puis le parser custom en fallback.
+    """Reads a file and returns cleaned LangChain Documents.
+    Tries Unstructured first, then custom parser as fallback.
     """
     if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable : {filepath}")
+        logger.error(f"File not found: {filepath}")
         return []
 
     try:
@@ -39,12 +39,12 @@ def load_document(filepath: str) -> List[Document]:
         return docs
 
     except Exception as e:
-        logger.warning(f"Unstructured a échoué pour {filepath} : {e}. Fallback activé.")
+        logger.warning(f"Unstructured failed for {filepath}: {e}. Fallback enabled.")
         return _fallback_custom(filepath)
 
 
 def _fallback_custom(filepath: str) -> List[Document]:
-    """Parser maison en cas d'échec d'Unstructured."""
+    """Custom parser in case Unstructured fails."""
     texte = extract_text_from_file(filepath)
     if texte:
         texte = clean_text(texte)
@@ -54,7 +54,7 @@ def _fallback_custom(filepath: str) -> List[Document]:
 
 
 def extract_text_with_unstructured(filepath: str) -> Optional[str]:
-    """Extrait tout le texte d'un fichier en une seule chaîne."""
+    """Extracts all text from a file into a single string."""
     docs = load_document(filepath)
     if not docs:
         return None

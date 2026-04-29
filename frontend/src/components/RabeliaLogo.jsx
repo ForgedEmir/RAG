@@ -10,7 +10,7 @@ export default function RabeliaLogo({ size = 'md' }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1.1 }}>
         <span style={{ fontWeight: 600, fontSize: dims.name, letterSpacing: '0.01em' }}>RABELIA</span>
         <span style={{ fontSize: dims.sub, color: 'var(--fg-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          Assistant documentaire
+          Document assistant
         </span>
       </div>
     </div>

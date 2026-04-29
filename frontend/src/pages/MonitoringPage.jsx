@@ -6,8 +6,8 @@ import RabeliaLogo from '../components/RabeliaLogo.jsx';
 
 const TABS = [
   { id: 'overview', label: 'Vue d\'ensemble', icon: 'activity' },
-  { id: 'features', label: 'Fonctionnalités', icon: 'cpu' },
-  { id: 'logs', label: 'Journaux', icon: 'terminal' },
+  { id: 'features', label: 'Features', icon: 'cpu' },
+  { id: 'logs', label: 'Logs', icon: 'terminal' },
   { id: 'sources', label: 'Sources', icon: 'database' },
 ];
 
@@ -16,7 +16,7 @@ async function apiFetch(path, monitoringKey, options = {}) {
     ...options,
     headers: { 'X-Monitoring-Key': monitoringKey, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  if (res.status === 403) throw new Error('Clé invalide');
+  if (res.status === 403) throw new Error('Invalid key');
   if (!res.ok) throw new Error(`Erreur HTTP: ${res.status}`);
   return res.json();
 }
@@ -26,7 +26,7 @@ async function apiFetchSafe(path, monitoringKey, options = {}) {
   try {
     return await apiFetch(path, monitoringKey, options);
   } catch (e) {
-    if (e.message === 'Clé invalide') throw e; // propagate auth errors
+    if (e.message === 'Invalid key') throw e; // propagate auth errors
     return null;
   }
 }
@@ -49,11 +49,11 @@ function fmtMs(ms) {
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return 'À l\'instant';
-  if (m < 60) return `Il y a ${m} min`;
+  if (m < 1) return 'Just now';
+  if (m < 60) return `${m} min ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `Il y a ${h}h`;
-  return `Il y a ${Math.floor(h / 24)}j`;
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 export default function MonitoringPage({ user, onLogout }) {
@@ -72,7 +72,7 @@ export default function MonitoringPage({ user, onLogout }) {
       sessionStorage.setItem('monitoringKey', keyInput.trim());
       setApiKey(keyInput.trim());
     } catch (err) {
-      setKeyError(err.message || 'Clé invalide');
+      setKeyError(err.message || 'Invalid key');
     }
   };
 
@@ -122,10 +122,10 @@ export default function MonitoringPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || 'Guest'}
             </div>
           </div>
-          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Déconnexion">
+          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Logout">
             <Icon name="logout" size={14} />
           </button>
         </div>
@@ -139,16 +139,16 @@ export default function MonitoringPage({ user, onLogout }) {
           borderBottom: '1px solid var(--border-default)',
           background: 'var(--bg-surface)',
         }}>
-          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Monitoring système</h1>
+          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>System Monitoring</h1>
           {apiKey && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />Connecté</span>
+              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />Connected</span>
               <button
                 className="rb-btn rb-btn--ghost"
                 style={{ fontSize: 12 }}
                 onClick={() => { sessionStorage.removeItem('monitoringKey'); setApiKey(''); setKeyInput(''); }}
               >
-                Changer la clé
+                Change key
               </button>
             </div>
           )}
@@ -186,9 +186,9 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
       }}>
         <Icon name="lock" size={22} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Accès monitoring</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Monitoring Access</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px', lineHeight: 1.55 }}>
-        Saisissez votre clé de monitoring pour accéder aux métriques système.
+        Enter your monitoring key to access system metrics.
       </p>
       {keyError && (
         <div style={{ marginBottom: 12, padding: '8px 12px', background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 6, fontSize: 12, color: 'var(--danger)', textAlign: 'left' }}>
@@ -196,7 +196,7 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
         </div>
       )}
       <form onSubmit={onSubmit} style={{ textAlign: 'left' }}>
-        <label className="rb-label">Clé de monitoring</label>
+        <label className="rb-label">Monitoring key</label>
         <input
           className="rb-input rb-input--lg"
           type="password"
@@ -207,7 +207,7 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
           style={{ marginBottom: 12 }}
         />
         <button className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block" type="submit">
-          Accéder au tableau de bord
+          Access dashboard
         </button>
       </form>
     </div>
@@ -274,7 +274,7 @@ function OverviewTab({ apiKey }) {
             background: data.health?.status === 'ok' ? 'var(--ok)' : 'var(--warn)',
           }} />
           <span style={{ fontSize: 15, fontWeight: 600 }}>
-            {data.health?.status === 'ok' ? 'Système opérationnel' : 'Performances dégradées'}
+            {data.health?.status === 'ok' ? 'System operational' : 'Degraded performances'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -294,27 +294,27 @@ function OverviewTab({ apiKey }) {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <StatCard title="Total requêtes" value={s?.total_questions?.toLocaleString()} icon="message" />
-        <StatCard title="Latence médiane" value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? `P95: ${s.latency_p95}ms` : null} />
-        <StatCard title="Injections bloquées" value={s?.injections_blocked} icon="shield" />
-        <StatCard title="Taux d'erreur" value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? `${s.questions_last_24h} req. / 24h` : null} />
+        <StatCard title="Total requests" value={s?.total_questions?.toLocaleString()} icon="message" />
+        <StatCard title="Median latency" value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? `P95: ${s.latency_p95}ms` : null} />
+        <StatCard title="Blocked injections" value={s?.injections_blocked} icon="shield" />
+        <StatCard title="Error rate" value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? `${s.questions_last_24h} req / 24h` : null} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
         {/* Events */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>
-            Derniers événements
+            Recent events
           </h3>
           <div className="rb-scroll" style={{ maxHeight: 320, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ color: 'var(--fg-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Heure</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Time</th>
                   <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Type</th>
-                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>Détail</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>Latence</th>
+                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>Detail</th>
+                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>Latency</th>
                 </tr>
               </thead>
               <tbody>
@@ -345,7 +345,7 @@ function OverviewTab({ apiKey }) {
                     </tr>
                   );
                 })}
-                {!s && <tr><td colSpan={4} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>Chargement…</td></tr>}
+                {!s && <tr><td colSpan={4} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>Loading...</td></tr>}
               </tbody>
             </table>
           </div>
@@ -354,13 +354,13 @@ function OverviewTab({ apiKey }) {
         {/* Cache */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 16px' }}>
-            Cache sémantique
+            Semantic Cache
           </h3>
           {c ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--fg-secondary)' }}>Occupation</span>
+                  <span style={{ color: 'var(--fg-secondary)' }}>Usage</span>
                   <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ok)', fontSize: 11 }}>{c.entries} / {c.max}</span>
                 </div>
                 <div style={{ height: 6, background: 'var(--bg-muted)', borderRadius: 3, overflow: 'hidden' }}>
@@ -369,7 +369,7 @@ function OverviewTab({ apiKey }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Seuil</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Threshold</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{c.threshold * 100}%</div>
                 </div>
                 <div>
@@ -378,7 +378,7 @@ function OverviewTab({ apiKey }) {
                 </div>
               </div>
             </div>
-          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>}
+          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>}
         </div>
       </div>
 
@@ -386,15 +386,15 @@ function OverviewTab({ apiKey }) {
       <div className="rb-card" style={{ padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-            Derniers feedbacks
+            Recent feedbacks
           </h3>
           <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-            {data.feedbacks.length} évènement(s)
+            {data.feedbacks.length} event(s)
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {data.feedbacks.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>Aucun feedback récent.</div>
+            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>No recent feedback.</div>
           )}
           {data.feedbacks.slice(0, 8).map((fb, i) => {
             const good = Number(fb.value) > 0;
@@ -406,14 +406,14 @@ function OverviewTab({ apiKey }) {
               }}>
                 <div style={{ minWidth: 0, paddingRight: 12 }}>
                   <div style={{ fontSize: 12, color: 'var(--fg-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {fb.question || 'Sans contexte question'}
+                    {fb.question || 'Without question context'}
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--fg-muted)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
                     {timeAgo(fb.created_at)} · {fb.trace_id || '—'}
                   </div>
                 </div>
                 <span className={'rb-pill ' + (good ? 'rb-pill--ok' : 'rb-pill--danger')}>
-                  {good ? '👍 Utile' : '👎 Pas utile'}
+                  {good ? '👍 Helpful' : '👎 Not helpful'}
                 </span>
               </div>
             );
@@ -425,10 +425,10 @@ function OverviewTab({ apiKey }) {
 }
 
 const FEATURE_TITLES = {
-  vector: 'Recherche vectorielle', bm25: 'BM25 Lexical', reranker: 'Reranker ONNX',
-  contextual: 'Contextual Retrieval', reformulation: 'Reformulation LLM', pii: 'Masquage PII',
-  judge: 'LLM-as-Judge', feedback: 'Feedback', confidence: 'Scores confiance',
-  watchdog: 'Watchdog fichiers', tts: 'Text-to-Speech', fallback: 'Fallback LLM',
+  vector: 'Vector Search', bm25: 'BM25 Lexical', reranker: 'ONNX Reranker',
+  contextual: 'Contextual Retrieval', reformulation: 'LLM Reformulation', pii: 'PII Masking',
+  judge: 'LLM-as-Judge', feedback: 'Feedback', confidence: 'Confidence Scores',
+  watchdog: 'Watchdog files', tts: 'Text-to-Speech', fallback: 'Fallback LLM',
 };
 const FEATURE_ICONS = {
   vector: 'database', bm25: 'doc', reranker: 'bar_chart', contextual: 'brain',
@@ -463,9 +463,9 @@ function FeaturesTab({ apiKey }) {
             <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
               Contextual Retrieval
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>Amélioration du contexte</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>Context Improvement</h2>
             <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.55 }}>
-              Technique ajoutant un résumé global à chaque chunk pour préserver le sens lors de la recherche vectorielle.
+              Technique adding a global summary to each chunk to preserve meaning during vector search.
             </p>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
@@ -482,7 +482,7 @@ function FeaturesTab({ apiKey }) {
                 {ctx.coverage_pct}%
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Couverture</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Coverage</div>
             <div style={{ fontSize: 11, color: 'var(--fg-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
               {ctx.with_contextual_summary} / {ctx.sample_size}
             </div>
@@ -549,7 +549,7 @@ function LogsTab({ apiKey }) {
           <Icon name="search" size={13} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
           <input
             className="rb-input"
-            placeholder="Filtrer les logs…"
+            placeholder="Filter logs..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
             style={{ paddingLeft: 30 }}
@@ -565,7 +565,7 @@ function LogsTab({ apiKey }) {
             {l}
           </button>
         ))}
-        <button className="rb-btn rb-btn--ghost" style={{ padding: '0 10px' }} onClick={fetchLogs} title="Rafraîchir">
+        <button className="rb-btn rb-btn--ghost" style={{ padding: '0 10px' }} onClick={fetchLogs} title="Refresh">
           <Icon name="refresh" size={14} />
         </button>
       </div>
@@ -578,7 +578,7 @@ function LogsTab({ apiKey }) {
         }} className="rb-scroll">
           {filtered.length === 0 && (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>
-              Aucun log correspondant
+              No matching log
             </div>
           )}
           {filtered.map((log, i) => (
@@ -623,7 +623,7 @@ function SourcesTab({ apiKey }) {
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   const handleDelete = async (filename) => {
-    if (!confirm(`Supprimer "${filename}" ?`)) return;
+    if (!confirm(`Delete "${filename}" ?`)) return;
     try {
       await apiFetch('/api/admin/delete', apiKey, {
         method: 'DELETE',
@@ -644,20 +644,20 @@ function SourcesTab({ apiKey }) {
         headers: { 'X-Monitoring-Key': apiKey },
         body: formData,
       });
-      if (res.ok) { fetchFiles(); setReindexMsg({ ok: true, text: `${file.name} importé et indexé.` }); }
-      else { setReindexMsg({ ok: false, text: 'Échec de l\'import.' }); }
+      if (res.ok) { fetchFiles(); setReindexMsg({ ok: true, text: `${file.name} imported and indexed.` }); }
+      else { setReindexMsg({ ok: false, text: 'Import failed.' }); }
     } catch (_) {
-      setReindexMsg({ ok: false, text: 'Erreur réseau.' });
+      setReindexMsg({ ok: false, text: 'Network error.' });
     }
     setTimeout(() => setReindexMsg(null), 4000);
   };
 
   const handleReindex = async () => {
-    if (!confirm('Lancer une réindexation complète ?')) return;
+    if (!confirm('Start a full reindex?')) return;
     setReindexing(true);
     try {
       await apiFetch('/api/reindex', apiKey, { method: 'POST' });
-      setReindexMsg({ ok: true, text: 'Réindexation lancée en arrière-plan.' });
+      setReindexMsg({ ok: true, text: 'Reindexing started in the background.' });
       setTimeout(() => fetchFiles(), 5000);
     } catch (e) {
       setReindexMsg({ ok: false, text: e.message });
@@ -671,9 +671,9 @@ function SourcesTab({ apiKey }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Sources indexées</h2>
+          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Indexed sources</h2>
           <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-            {files.length} fichier{files.length !== 1 ? 's' : ''} dans la base
+            {files.length} file{files.length !== 1 ? 's' : ''} in the database
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -684,7 +684,7 @@ function SourcesTab({ apiKey }) {
             disabled={reindexing}
           >
             <Icon name="refresh" size={13} />
-            {reindexing ? 'Indexation…' : 'Réindexer tout'}
+            {reindexing ? 'Indexing...' : 'Reindex all'}
           </button>
           <button
             className="rb-btn rb-btn--primary"
@@ -692,7 +692,7 @@ function SourcesTab({ apiKey }) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Icon name="upload" size={13} />
-            Importer
+            Import
           </button>
           <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
         </div>
@@ -718,14 +718,14 @@ function SourcesTab({ apiKey }) {
           fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
           textTransform: 'uppercase', color: 'var(--fg-muted)',
         }}>
-          <span>Fichier</span>
-          <span>Statut</span>
+          <span>File</span>
+          <span>Status</span>
           <span />
         </div>
         {loading ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>
         ) : files.length === 0 ? (
-          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Aucun fichier indexé</div>
+          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>No indexed file</div>
         ) : files.map((f, i) => (
           <div key={i} style={{
             display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px',
@@ -738,13 +738,13 @@ function SourcesTab({ apiKey }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
             </div>
             <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-              <span className="rb-dot" />indexé
+              <span className="rb-dot" />indexed
             </span>
             <button
               className="rb-btn rb-btn--ghost"
               style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
               onClick={() => handleDelete(f)}
-              title="Supprimer"
+              title="Delete"
             >
               <Icon name="trash" size={13} />
             </button>

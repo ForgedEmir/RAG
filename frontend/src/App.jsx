@@ -29,7 +29,7 @@ export default function App() {
       }
       setLoading(false);
     });
-    // timeout fallback si Supabase non configuré
+    // timeout fallback if Supabase not configured
     const t = setTimeout(() => setLoading(false), 3000);
     return () => { unsub(); clearTimeout(t); };
   }, []);
@@ -43,7 +43,7 @@ export default function App() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
-        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Chargement…</div>
+        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Loading...</div>
       </div>
     );
   }

@@ -1,6 +1,6 @@
 """
 Tests unitaires pour le module monitoring/tracker.
-Teste get_history, save_exchange et track avec le schéma conversations/messages.
+Tests get_history, save_exchange and track with conversations/messages schema.
 """
 import pytest
 import uuid
@@ -40,7 +40,7 @@ async def test_get_history_retourne_echanges(mock_get_client):
     conv_result = MagicMock()
     conv_result.data = [{"id": 42}]
 
-    # Deuxième appel : messages → retourne les messages (desc, puis reversed dans le code)
+    # Second call: messages -> returns messages (desc, then reversed in code)
     messages_result = MagicMock()
     messages_result.data = [
         {"role": "assistant", "content": "Deuxieme reponse"},
@@ -49,8 +49,8 @@ async def test_get_history_retourne_echanges(mock_get_client):
         {"role": "user",      "content": "Premiere question"},
     ]
 
-    # On chaîne les mocks selon l'ordre d'appel
-    # .execute() doit être un AsyncMock
+    # Chain the mocks according to call order
+    # .execute() must be an AsyncMock
     table_mock = mock_client.table.return_value
     
     # Mock pour _get_conv_id (conversations)
@@ -61,8 +61,8 @@ async def test_get_history_retourne_echanges(mock_get_client):
     messages_exec_mock = AsyncMock(return_value=messages_result)
     table_mock.select.return_value.eq.return_value.order.return_value.limit.return_value.execute = messages_exec_mock
 
-    # WHY: On doit aussi gérer le cas où select() est appelé sans paramètres ou avec d'autres
-    # mais ici le code appelle séquentiellement.
+    # WHY: Must also handle the case where select() is called without parameters or with others
+    # but here the code calls sequentially.
 
     resultat = await get_history(_VALID_SESSION)
 
@@ -74,7 +74,7 @@ async def test_get_history_retourne_echanges(mock_get_client):
 
 @pytest.mark.asyncio
 @patch('src.monitoring.tracker._get_client', new_callable=AsyncMock)
-async def test_get_history_erreur_supabase(mock_get_client):
+async def test_get_history_supabase_error(mock_get_client):
     """Si Supabase echoue, retourne une liste vide sans lever d'exception."""
     from src.monitoring.tracker import get_history
 
@@ -112,13 +112,13 @@ async def test_save_exchange_insere_correctement(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
 
-    # Mock _get_or_create_conversation : conversations.select → pas de résultat → insert
+    # Mock _get_or_create_conversation: conversations.select -> no result -> insert
     conv_select = MagicMock()
     conv_select.data = []  # conversation n'existe pas encore
     conv_insert = MagicMock()
     conv_insert.data = [{"id": 99}]
 
-    # On doit gérer les deux appels successifs à table("conversations")
+    # Must handle the two successive calls to table('conversations')
     conversations_table = MagicMock()
     conversations_table.select.return_value.eq.return_value.limit.return_value.execute = AsyncMock(return_value=conv_select)
     conversations_table.insert.return_value.execute = AsyncMock(return_value=conv_insert)
@@ -137,7 +137,7 @@ async def test_save_exchange_insere_correctement(mock_get_client):
 
     await save_exchange(_VALID_SESSION, "Qui est Lucas ?", "Lucas est un guerrier.", "user-1")
 
-    # Vérifie que 2 messages ont été insérés
+    # Checks that 2 messages were inserted
     insert_call = messages_table.insert.call_args[0][0]
     assert len(insert_call) == 2
     assert insert_call[0]["role"] == "user"

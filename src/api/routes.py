@@ -17,7 +17,7 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
-from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse, send_langfuse_score
+from src.generation.generator import generate_user_summary, reformulate_question, stream_response, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
@@ -26,7 +26,7 @@ from src.monitoring.tracker import (
     get_user_summary, record_feedback_event, register_trace_context, save_exchange,
     save_user_summary, track,
 )
-from src.search.search import rechercher_passages
+from src.search.search import search_passages
 from src.security.validator import valider_entree
 
 # ── Semantic cache ────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ _executor                 = concurrent.futures.ThreadPoolExecutor(max_workers=BA
 
 
 def _get_user_lock(uid: str) -> threading.Lock:
-    # WHY: Pruning evite une croissance mémoire non bornée en environnement multi-user.
+    # WHY: Pruning prevents unbounded memory growth in multi-user environments.
     with _locks_mutex:
         if len(_user_locks) >= MAX_LOCK_CACHE_SIZE and uid not in _user_locks:
             removed = 0
@@ -62,17 +62,17 @@ def _get_user_lock(uid: str) -> threading.Lock:
 
 
 async def _run_background_summary(uid: str, history: list) -> None:
-    # WHY: Lock non-bloquant garantit qu'une seule tâche de résumé tourne par user.
+    # WHY: No-blocking lock ensures only one summary task runs per user at a time.
     lock = _get_user_lock(uid)
     if not lock.acquire(blocking=False):
         return
     try:
         old_summary = await get_user_summary(uid)
-        new_summary = await generer_resume_utilisateur(history, old_summary)
+        new_summary = await generate_user_summary(history, old_summary)
         if new_summary:
             try:
-                from src.security.pii_masker import masquer
-                new_summary = masquer(new_summary)
+                from src.security.pii_masker import mask
+                new_summary = mask(new_summary)
             except Exception:
                 pass
             await save_user_summary(uid, new_summary)
@@ -107,12 +107,12 @@ async def _resolve_feedback_context(session_id: str = "", question: str = "", an
 
 
 def _build_context_chunks(passages: list[str], sources: list[str]) -> list[dict]:
-    """Construit les passages exacts transmis au LLM avec leur source associée."""
+    """Build the exact passages passed to the LLM with their associated source."""
     chunks = []
     if not passages:
         return chunks
     for i, passage in enumerate(passages):
-        src = sources[i] if i < len(sources) else "source inconnue"
+        src = sources[i] if i < len(sources) else "unknown source"
         chunks.append({"source": src, "passage": passage})
     return chunks
 
@@ -197,38 +197,38 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     question = body.question.strip()
 
     if not question:
-        return JSONResponse({"error": "Question vide"}, status_code=400)
+        return JSONResponse({"error": "Empty question"}, status_code=400)
 
     if not user_id:
-        return JSONResponse({"error": "Authentification requise."}, status_code=401)
+        return JSONResponse({"error": "Authentication required."}, status_code=401)
 
     if body.session_id:
         owner = await get_conversation_owner(body.session_id)
         from src.monitoring.tracker import _normalize_user_id as _norm_uid
         if owner and owner != _norm_uid(user_id):
-            return JSONResponse({"error": "Accès refusé"}, status_code=403)
+            return JSONResponse({"error": "Access denied"}, status_code=403)
 
-    # Masquage PII avant validation sécurité
+    # PII masking before security validation
     try:
-        from src.security.pii_masker import masquer
-        question = masquer(question)
+        from src.security.pii_masker import mask
+        question = mask(question)
     except Exception as e:
-        logger.debug(f"PII masker ignoré : {e}")
+        logger.debug(f"PII masker skipped: {e}")
 
     validation = await valider_entree(question)
     if not validation["valid"]:
         bt = validation.get("type", "")
         reason = (validation.get("reason", "") or "").lower()
-        # Lakera retourne souvent type=prompt_injection; on le distingue via la raison.
+        # Lakera often returns type=prompt_injection; we distinguish via the reason field.
         is_lakera = (
             bt in ("jailbreak", "lakera", "lakera_prompt_attack")
             or "lakera" in reason
             or "prompt_attack" in reason
         )
         await track("injection_lakera" if is_lakera else "injection_regex", detail=question[:200])
-        msg = ("⚠️ L'Oracle a détecté une tentative de manipulation des arcanes sacrées."
+        msg = ("⚠️ The Oracle has detected an attempt to manipulate the sacred arcana."
                if bt in ("prompt_injection", "jailbreak") else
-               "🔮 L'Oracle ne répond qu'aux questions sur le lore du jeu.")
+               "🔮 The Oracle only answers questions about the game lore.")
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'context_chunks': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n",
@@ -247,7 +247,6 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         await register_trace_context(trace_id, question, cached_text, body.session_id, user_id)
         logger.info(f"[{req_id}] Cached response returned")
         if body.session_id:
-            # On lance en arrière-plan sans attendre (ou on attend si on veut être sûr)
             asyncio.create_task(save_exchange(body.session_id, question, cached_text, user_id))
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': cached_sources, 'passages': [], 'context_chunks': cached_chunks, 'confidence': 100})}\n\n",
@@ -257,12 +256,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # Les 3 appels sont indépendants; exécution parallèle.
     history_task = get_history(body.session_id)
     summary_task = get_user_summary(user_id)
-    memories_task = search_user_memories(user_id, question) # search_user_memories est synchrone (vector_memory.py)
-    
-    # On mixe les tâches async et sync (via to_thread pour le sync)
+    memories_task = search_user_memories(user_id, question)
     history, summary, memories = await asyncio.gather(
         history_task, 
         summary_task, 
@@ -281,15 +277,15 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         memories = []
 
     t_ref = time.time()
-    query = await reformuler_question(question, history)
+    query = await reformulate_question(question, history)
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, raw_sources, conf_scores, tie_subjects = await rechercher_passages(query)
+    passages, raw_sources, conf_scores, tie_subjects = await search_passages(query)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
-        no_data_msg = "Les archives ne contiennent aucune information sur ce sujet."
+        no_data_msg = "The archives contain no information on this subject."
         await register_trace_context(trace_id, question, no_data_msg, body.session_id, user_id)
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'context_chunks': [], 'confidence': 0})}\n\n",
@@ -299,7 +295,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # Score de confiance moyen (0–100 %)
+    # Average confidence score (0–100 %)
     confidence_pct = round(sum(conf_scores) / len(conf_scores) * 100) if conf_scores else 0
     unique_sources = list(dict.fromkeys(raw_sources))
 
@@ -313,8 +309,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             langfuse_ids = []
             try:
-                # stream_reponse est maintenant asynchrone (générateur asynchrone)
-                async for chunk in stream_reponse(question, passages, unique_sources, history,
+                async for chunk in stream_response(question, passages, unique_sources, history,
                                             model_used=model_used, user_summary=summary,
                                             vector_memories=memories,
                                             langfuse_trace_ids=langfuse_ids,
@@ -338,7 +333,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             model_name = model_used[0] if model_used else "unknown"
             if timed_out:
-                yield f"data: {json.dumps({'type': 'text', 'text': ' [Reponse interrompue pour respecter la latence cible.]'})}\n\n"
+                yield f"data: {json.dumps({'type': 'text', 'text': ' [Response truncated to respect target latency.]'})}\n\n"
                 model_name = f"{model_name} [timeout]"
 
             answer = "".join(accumulated)
@@ -377,9 +372,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
 @router.post("/api/feedback")
 async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current_user)):
-    """Cycle Human-in-the-Loop : stocke le feedback, déclenche le judge si rating ≤ 2."""
+    """Human-in-the-Loop cycle: stores feedback, triggers judge if rating ≤ 2."""
     if not (1 <= body.rating <= 5):
-        return JSONResponse({"error": "rating doit être entre 1 et 5"}, status_code=400)
+        return JSONResponse({"error": "rating must be between 1 and 5"}, status_code=400)
 
     async def _persist_and_judge():
         from src.monitoring.tracker import _get_client
@@ -388,7 +383,6 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
         client = await _get_client()
         if client and _is_uuid(body.session_id):
             try:
-                # supabase-py v2 supporte await sur .execute()
                 await client.table("feedback").insert({
                     "session_id": body.session_id,
                     "user_id":    user_id,
@@ -419,21 +413,21 @@ async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current
 async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(get_current_user)):
     trace_id = (body.trace_id or "").strip()
     if not trace_id:
-        return JSONResponse({"error": "trace_id requis"}, status_code=400)
+        return JSONResponse({"error": "trace_id required"}, status_code=400)
     if body.value not in (-1, 1):
-        return JSONResponse({"error": "value doit etre -1 ou 1"}, status_code=400)
+        return JSONResponse({"error": "value must be -1 or 1"}, status_code=400)
 
     context = await get_trace_context(trace_id)
     trace_owner = (context.get("user_id") or "").strip()
     from src.monitoring.tracker import _normalize_user_id as _norm_uid
     if trace_owner and trace_owner != _norm_uid(user_id):
-        return JSONResponse({"error": "Acces refuse"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
 
     session_id = (body.session_id or context.get("session_id") or "").strip()
     if session_id:
         owner = await get_conversation_owner(session_id)
         if owner and owner != _norm_uid(user_id):
-            return JSONResponse({"error": "Acces refuse"}, status_code=403)
+            return JSONResponse({"error": "Access denied"}, status_code=403)
 
     question, answer = await _resolve_feedback_context(
         session_id,
@@ -482,37 +476,36 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
 async def trigger_reindex(request: Request, body: ReindexBody):
     require_monitoring(request)
     try:
-        # index_data est lourd et synchrone, on le lance dans un thread
         result = await asyncio.to_thread(index_data, force_reindex=body.force)
         await track("reindex", detail=f"force={body.force} | {'changed' if result else 'none'}")
-        return {"message": "Indexation terminée." if result else "Déjà à jour."}
+        return {"message": "Indexation complete." if result else "Already up to date."}
     except Exception as e:
         logger.error(f"Reindex error: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @router.get("/api/conversations")
 async def get_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     return {"exchanges": await get_conversation(session_id)}
 
 
 @router.get("/api/conversations/list")
 async def list_user_conversations(user_id: str = Depends(get_current_user)):
     if not user_id:
-        return JSONResponse({"error": "Authentification requise"}, status_code=401)
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
     return {"conversations": await get_user_conversations(user_id)}
 
 
 @router.get("/api/conversations/messages")
 async def get_messages_for_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     client = None
     try:
         from src.monitoring.tracker import _get_client, _get_conv_id
@@ -534,9 +527,9 @@ async def get_messages_for_session(session_id: str = "", user_id: str = Depends(
 @router.delete("/api/conversations")
 async def delete_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     await delete_conversation(session_id)
     return {"ok": True}
 
@@ -558,7 +551,7 @@ async def get_cache_stats(request: Request):
 
 
 def register_routes(app: FastAPI, log_buffer: deque = None) -> None:
-    # WHY: Attacher le buffer à l'app state évite les imports circulaires dans le monitoring.
+    # WHY: Attaching the buffer to app state avoids circular imports in monitoring.
     if log_buffer is not None:
         app.state.log_buffer = log_buffer
     app.include_router(router)

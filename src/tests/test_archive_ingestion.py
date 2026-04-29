@@ -46,7 +46,7 @@ def test_is_archive_rejette_documents():
 # ── _extract_archive — cas nominaux ───────────────────────────────────────────
 
 def _make_zip(files: dict[str, bytes]) -> bytes:
-    """Construit un ZIP en mémoire. files = {nom: contenu}"""
+    """Builds a ZIP in memory. files = {name: content}"""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for name, data in files.items():
@@ -55,7 +55,7 @@ def _make_zip(files: dict[str, bytes]) -> bytes:
 
 
 def _make_tar_gz(files: dict[str, bytes]) -> bytes:
-    """Construit un .tar.gz en mémoire."""
+    """Builds a .tar.gz in memory."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         for name, data in files.items():
@@ -85,10 +85,10 @@ def test_tar_gz_happy_path(tmp_path):
     assert (tmp_path / "guide.md").read_bytes() == b"# Guide\nContenu."
 
 
-# ── _extract_archive — sécurité ───────────────────────────────────────────────
+# ── _extract_archive — security ───────────────────────────────────────────────
 
 def test_zip_slip_bloque(tmp_path):
-    """Un chemin traversant (../../evil.txt) ne doit pas être écrit hors du répertoire cible."""
+    """A directory traversal path (../../evil.txt) must not be written outside the target directory."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("../../evil.txt", b"attaque")
@@ -96,7 +96,7 @@ def test_zip_slip_bloque(tmp_path):
     content = buf.getvalue()
 
     extracted = _extract_archive(content, "archive.zip", str(tmp_path))
-    # Seul le fichier légitime est extrait
+    # Only the legitimate file is extracted
     assert extracted == ["legitime.txt"]
     # Le fichier malveillant n'existe pas hors de tmp_path
     assert not (tmp_path.parent / "evil.txt").exists()
@@ -104,15 +104,15 @@ def test_zip_slip_bloque(tmp_path):
 
 
 def test_zip_bomb_bloque(tmp_path):
-    """Une archive dont la taille déclarée dépasse 100 Mo lève une ValueError."""
+    """An archive whose declared size exceeds 100 MB raises a ValueError."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
-        # On falsifie la taille déclarée en écrivant un petit fichier
+        # We fake the declared size by writing a small file
         # puis en patchant le champ file_size dans l'index central.
         zf.writestr("gros.txt", b"x")
 
     # Patch direct : on remplace file_size dans le header central (offset connu)
-    # Alternative simple : créer beaucoup de petits fichiers pour dépasser le seuil.
+    # Simple alternative: create many small files to exceed the threshold.
     # On utilise la seconde approche — plus robuste.
     buf2 = io.BytesIO()
     chunk = b"A" * (1024 * 1024)  # 1 Mo par fichier
@@ -120,23 +120,23 @@ def test_zip_bomb_bloque(tmp_path):
         for i in range(101):
             zf.writestr(f"fichier_{i:03d}.txt", chunk)
 
-    with pytest.raises(ValueError, match="volumineuse"):
+    with pytest.raises(ValueError, match="too large"):
         _extract_archive(buf2.getvalue(), "bombe.zip", str(tmp_path))
 
 
-def test_limite_nombre_fichiers(tmp_path):
-    """Un ZIP avec plus de 50 fichiers lève une ValueError."""
+def test_max_file_count(tmp_path):
+    """A ZIP with more than 50 files raises a ValueError."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for i in range(51):
             zf.writestr(f"doc_{i:02d}.txt", b"contenu")
 
-    with pytest.raises(ValueError, match="Trop de fichiers"):
+    with pytest.raises(ValueError, match="Too many files"):
         _extract_archive(buf.getvalue(), "trop.zip", str(tmp_path))
 
 
 def test_extension_non_supportee_ignoree(tmp_path):
-    """Un fichier .exe dans une archive est silencieusement ignoré."""
+    """An .exe file in an archive is silently ignored."""
     content = _make_zip({
         "virus.exe": b"MZ malware",
         "valide.txt": b"contenu ok",
@@ -147,7 +147,7 @@ def test_extension_non_supportee_ignoree(tmp_path):
 
 
 def test_archive_zip_dans_zip_ignoree(tmp_path):
-    """Une archive imbriquée (.zip dans .zip) est ignorée — extension non supportée."""
+    """A nested archive (.zip in .zip) is ignored — unsupported extension."""
     inner = _make_zip({"inner.txt": b"interieur"})
     outer = _make_zip({"nested.zip": inner, "doc.md": b"# Doc"})
     extracted = _extract_archive(outer, "outer.zip", str(tmp_path))

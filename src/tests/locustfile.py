@@ -1,11 +1,11 @@
-"""Test de charge Oracle LoreKeeper — 20 utilisateurs simultanés.
+"""Oracle LoreKeeper load test — 20 concurrent users.
 Lancement : locust --headless -u 20 -r 2 --run-time 60s --host http://127.0.0.1:8000
 """
 import os
 import random
 from locust import HttpUser, task, between
 
-# Questions variées basées sur les fichiers de lore réels
+# Various questions based on real lore files
 QUESTIONS = [
     "Qui est Lucas ?",
     "Qui est Ediz ?",
@@ -13,14 +13,14 @@ QUESTIONS = [
     "Quelles sont les factions principales ?",
     "Quels lieux existe-t-il dans le lore ?",
     "Qui sont les personnages principaux ?",
-    "Raconte-moi un événement important du lore.",
+    "Tell me an important lore event.",
     "Quels sont les PNJ connus ?",
     "Comment s'appelle le roi ?",
     "Qu'est-ce que le donjon ?",
-    "Quels pouvoirs possède Ediz ?",
+    "What powers does Ediz have?",
     "Quelle est l'histoire de Lucas ?",
     "Quelles factions s'affrontent ?",
-    "Décris un lieu important du lore.",
+    "Describe an important lore location.",
     "Qui est Emir dans le lore ?",
 ]
 
@@ -31,7 +31,7 @@ TEST_GUEST_ID = os.getenv("LOCUST_GUEST_ID", "guest_locust_test")
 
 
 class LoreKeeperUser(HttpUser):
-    wait_time = between(1, 4)  # délai réaliste entre les questions
+    wait_time = between(1, 4)  # realistic delay between questions
 
     def _auth_headers(self):
         if TEST_JWT:

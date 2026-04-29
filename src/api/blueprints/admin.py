@@ -64,7 +64,7 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
         dest = os.path.join(target_dir, safe)
         # Zip-slip guard: resolved destination must stay inside target_dir
         if not os.path.realpath(dest).startswith(real_target + os.sep):
-            logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", basename)
+            logger.warning("[ARCHIVE] Zip-slip blocked: '%s'", basename)
             return None
         with open(dest, "wb") as f:
             f.write(data)
@@ -76,14 +76,14 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
             total = sum(i.file_size for i in infos)
             if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                 raise ValueError(
-                    f"Archive trop volumineuse décompressée "
-                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                    f"Decompressed archive too large "
+                    f"({total // 1024 // 1024} MB > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} MB max)"
                 )
             if len(infos) > MAX_ARCHIVE_FILES:
-                raise ValueError(f"Trop de fichiers dans l'archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
+                raise ValueError(f"Too many files in the archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
             for info in infos:
                 if os.path.isabs(info.filename) or ".." in info.filename.replace("\\", "/").split("/"):
-                    logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", info.filename)
+                    logger.warning("[ARCHIVE] Zip-slip blocked: '%s'", info.filename)
                     continue
                 with zf.open(info) as src:
                     saved = _safe_write(src.read(), os.path.basename(info.filename))
@@ -101,11 +101,11 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
             total = sum(m.size for m in members)
             if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                 raise ValueError(
-                    f"Archive trop volumineuse décompressée "
-                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                    f"Decompressed archive too large "
+                    f"({total // 1024 // 1024} MB > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} MB max)"
                 )
             if len(members) > MAX_ARCHIVE_FILES:
-                raise ValueError(f"Trop de fichiers dans l'archive ({len(members)} > {MAX_ARCHIVE_FILES} max)")
+                raise ValueError(f"Too many files in the archive ({len(members)} > {MAX_ARCHIVE_FILES} max)")
             for member in members:
                 fobj = tf.extractfile(member)
                 if fobj:
@@ -124,18 +124,18 @@ def _count_points_for_filename(filename: str) -> int | None:
         result = store.client.count(
             collection_name="knowledge",
             count_filter=Filter(
-                should=[FieldCondition(key="metadata.fichier", match=MatchValue(value=filename))]
+                should=[FieldCondition(key="metadata.filename", match=MatchValue(value=filename))]
             ),
             exact=True,
         )
         return int(getattr(result, "count", 0))
     except Exception as e:
-        logger.warning(f"Vérification Qdrant impossible pour '{filename}': {e}")
+        logger.warning(f"Qdrant check impossible for '{filename}': {e}")
         return None
 
 
 def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
-    """Extrait un échantillon de texte pour la validation sécurité."""
+    """Extracts a text sample for security validation."""
     text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
     lines = text.splitlines()
     if len(lines) > 40:
@@ -146,7 +146,7 @@ def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
     return text
 
 
-# ── Endpoint /api/upload — accessible à tous les users authentifiés ───────────
+# ── /api/upload endpoint — accessible to all authenticated users ───────────
 
 @admin_router.post("/api/upload")
 @limiter.limit("10/hour")
@@ -155,31 +155,31 @@ async def tenant_upload(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
 ):
-    """Upload multi-tenant : valide → Supabase Storage → ingestion Qdrant avec tenant_id."""
+    """Multi-tenant upload: validates → Supabase Storage → Qdrant ingestion with tenant_id."""
     tenant_id = await get_tenant_id(user_id)
 
     safe_name = _sanitize_filename(file.filename or "")
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
     if not is_arch and ext not in ALLOWED_EXTENSIONS:
         all_formats = sorted(ALLOWED_EXTENSIONS | ARCHIVE_EXTENSIONS)
         return JSONResponse(
-            {"error": f"Extension non supportée. Formats : {', '.join(all_formats)}"},
+            {"error": f"Unsupported extension. Formats: {', '.join(all_formats)}"},
             status_code=400,
         )
 
     content = await file.read()
     if not content:
-        return JSONResponse({"error": "Fichier vide."}, status_code=400)
+        return JSONResponse({"error": "Empty file."}, status_code=400)
 
     size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
     if len(content) > size_limit:
         size_kb = len(content) // 1024
         return JSONResponse(
-            {"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {size_limit // 1024} Ko."},
+            {"error": f"File too large ({size_kb} KB). Max: {size_limit // 1024} KB."},
             status_code=400,
         )
 
@@ -195,7 +195,7 @@ async def tenant_upload(
 
         if not extracted_names:
             return JSONResponse(
-                {"error": "Aucun fichier valide trouvé dans l'archive (formats acceptés : "
+                {"error": "No valid file found in the archive (accepted formats: "
                           f"{', '.join(sorted(ALLOWED_EXTENSIONS))})."},
                 status_code=400,
             )
@@ -217,22 +217,22 @@ async def tenant_upload(
                         )
                         storage_ok_count += 1
                     except Exception as e:
-                        logger.warning("[UPLOAD] Supabase Storage échoué pour '%s/%s': %s", tenant_id, fname, e)
+                        logger.warning("[UPLOAD] Supabase Storage failed for '%s/%s': %s", tenant_id, fname, e)
         except Exception as e:
-            logger.warning("[UPLOAD] Supabase Storage archive échoué: %s", e)
+            logger.warning("[UPLOAD] Supabase Storage archive failed: %s", e)
 
         async def _run_ingestion_archive():
             try:
                 from src.ingestion.run import index_data as _index
                 await asyncio.to_thread(_index, False, tenant_id)
-                logger.info("[UPLOAD] Ingestion archive OK — tenant=%s fichiers=%s", tenant_id, extracted_names)
+                logger.info("[UPLOAD] Archive ingestion OK — tenant=%s files=%s", tenant_id, extracted_names)
             except Exception as e:
-                logger.error("[UPLOAD] Ingestion archive échouée — tenant=%s : %s", tenant_id, e)
+                logger.error("[UPLOAD] Archive ingestion failed — tenant=%s : %s", tenant_id, e)
 
         asyncio.create_task(_run_ingestion_archive())
-        await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} fichiers")
+        await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} files")
         return {
-            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}'. Ingestion en cours.",
+            "message": f"{len(extracted_names)} file(s) extracted from '{safe_name}'. Ingestion in progress.",
             "files": extracted_names,
             "count": len(extracted_names),
             "tenant_id": tenant_id,
@@ -243,9 +243,9 @@ async def tenant_upload(
     sample = _read_sample(content, ext, safe_name)
     validation = await valider_entree(sample)
     if not validation["valid"]:
-        logger.warning(f"[UPLOAD] Bloqué [{validation['type']}] tenant={tenant_id} fichier='{safe_name}'")
+        logger.warning(f"[UPLOAD] Blocked [{validation['type']}] tenant={tenant_id} file='{safe_name}'")
         await track("upload_blocked", detail=f"tenant={tenant_id} | {safe_name} | {validation['type']}")
-        return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
+        return JSONResponse({"error": "Suspicious content. Upload rejected."}, status_code=400)
 
     # ── Supabase Storage (bucket "tenant-docs", path "tenant_id/filename") ──
     storage_path = f"{tenant_id}/{safe_name}"
@@ -263,31 +263,31 @@ async def tenant_upload(
                 },
             )
             storage_ok = True
-            logger.info(f"[UPLOAD] Supabase Storage OK : {storage_path}")
+            logger.info(f"[UPLOAD] Supabase Storage OK: {storage_path}")
     except Exception as e:
-        logger.warning(f"[UPLOAD] Supabase Storage échoué pour '{storage_path}': {e}")
+        logger.warning(f"[UPLOAD] Supabase Storage failed for '{storage_path}': {e}")
 
-    # ── Écriture locale dans data/sample/<tenant_id>/ pour le pipeline ──────
+    # ── Local write in data/sample/<tenant_id>/ for the pipeline ──────
     destination = os.path.join(tenant_data_dir, safe_name)
     existed_before = os.path.exists(destination)
     with open(destination, "wb") as f:
         f.write(content)
 
-    # ── Ingestion en arrière-plan (non bloquant) ─────────────────────────────
+    # ── Background ingestion (non-blocking) ─────────────────────────────
     async def _run_ingestion():
         try:
             from src.ingestion.run import index_data as _index
             await asyncio.to_thread(_index, False, tenant_id)
-            logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} fichier={safe_name}")
+            logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} file={safe_name}")
         except Exception as e:
-            logger.error(f"[UPLOAD] Ingestion échouée — tenant={tenant_id} : {e}")
+            logger.error(f"[UPLOAD] Ingestion failed — tenant={tenant_id} : {e}")
 
     asyncio.create_task(_run_ingestion())
 
     action = "replace" if existed_before else "upload"
-    await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} Ko")
+    await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} KB")
     return {
-        "message": f"'{safe_name}' {'remplacé' if existed_before else 'uploadé'}. Ingestion en cours.",
+        "message": f"'{safe_name}' {'replaced' if existed_before else 'uploaded'}. Ingestion in progress.",
         "filename": safe_name,
         "tenant_id": tenant_id,
         "storage_path": storage_path,
@@ -295,7 +295,7 @@ async def tenant_upload(
     }
 
 
-# ── Routes admin ──────────────────────────────────────────────────────────────
+# ── Admin routes ──────────────────────────────────────────────────────────────
 
 @admin_router.get("/api/admin/sources")
 async def admin_sources(request: Request):
@@ -326,21 +326,21 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
 
     safe_name = _sanitize_filename(file.filename or "")
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
     if not is_arch and ext not in ALLOWED_EXTENSIONS:
-        return JSONResponse({"error": f"Extension non supportée. Formats : {', '.join(ALLOWED_EXTENSIONS)}"}, status_code=400)
+        return JSONResponse({"error": f"Unsupported extension. Formats: {', '.join(ALLOWED_EXTENSIONS)}"}, status_code=400)
 
     content = await file.read()
     if not content:
-        return JSONResponse({"error": "Fichier vide."}, status_code=400)
+        return JSONResponse({"error": "Empty file."}, status_code=400)
 
     size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
     if len(content) > size_limit:
         size_kb, limit_kb = len(content) // 1024, size_limit // 1024
-        return JSONResponse({"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {limit_kb} Ko."}, status_code=400)
+        return JSONResponse({"error": f"File too large ({size_kb} KB). Max: {limit_kb} KB."}, status_code=400)
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -353,7 +353,7 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
 
         if not extracted_names:
             return JSONResponse(
-                {"error": f"Aucun fichier valide trouvé dans l'archive (formats acceptés : {', '.join(sorted(ALLOWED_EXTENSIONS))})."},
+                {"error": f"No valid file found in the archive (accepted formats: {', '.join(sorted(ALLOWED_EXTENSIONS))})."},
                 status_code=400,
             )
 
@@ -363,24 +363,24 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
             changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
         except Exception as e:
             reindex_warning = str(e)
-            logger.warning("Admin archive réindexation échouée: %s", e)
+            logger.warning("Admin archive reindexing failed: %s", e)
 
-        await track("upload", detail=f"archive={safe_name} | {len(extracted_names)} fichiers")
+        await track("upload", detail=f"archive={safe_name} | {len(extracted_names)} files")
         payload = {
-            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}' et indexé(s).",
+            "message": f"{len(extracted_names)} file(s) extracted from '{safe_name}' and indexed.",
             "files": extracted_names,
             "count": len(extracted_names),
             "ingestion": {"changed": changed},
         }
         if reindex_warning:
-            payload["warning"] = "Fichiers extraits, mais la réindexation automatique a échoué."
+            payload["warning"] = "Files extracted, but automatic reindexing failed."
         return payload
 
     # ── Regular file path (unchanged) ────────────────────────────────────────
     try:
         text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
     except Exception:
-        return JSONResponse({"error": "Encodage invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid encoding."}, status_code=400)
 
     # Security check on a representative sample to avoid high latency on large files
     lines = text.splitlines()
@@ -398,7 +398,7 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     if not validation["valid"]:
         logger.warning(f"Upload blocked [{validation['type']}] — '{safe_name}'")
         await track("upload_blocked", detail=f"{safe_name} | {validation['type']}")
-        return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
+        return JSONResponse({"error": "Suspicious content. Upload rejected."}, status_code=400)
 
     destination = os.path.join(DATA_DIR, safe_name)
     existed_before = os.path.exists(destination)
@@ -413,30 +413,30 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
         changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
     except Exception as e:
         reindex_warning = str(e)
-        logger.warning(f"Upload réindexation automatique échouée: {e}")
+        logger.warning(f"Upload automatic reindexing failed: {e}")
 
     qdrant_points = _count_points_for_filename(safe_name)
 
     if existed_before:
-        await track("replace", detail=f"{safe_name} | {len(content)//1024} Ko (upsert)")
-        logger.info(f"Fichier remplacé (upsert upload) : {safe_name}")
-        payload = {"message": f"'{safe_name}' remplacé et indexé.", "filename": safe_name}
+        await track("replace", detail=f"{safe_name} | {len(content)//1024} KB (upsert)")
+        logger.info(f"File replaced (upsert upload): {safe_name}")
+        payload = {"message": f"'{safe_name}' replaced and indexed.", "filename": safe_name}
     else:
-        await track("upload", detail=f"{safe_name} | {len(content)//1024} Ko")
-        logger.info(f"Fichier uploadé : {safe_name}")
-        payload = {"message": f"'{safe_name}' uploadé et indexé.", "filename": safe_name}
+        await track("upload", detail=f"{safe_name} | {len(content)//1024} KB")
+        logger.info(f"File uploaded: {safe_name}")
+        payload = {"message": f"'{safe_name}' uploaded and indexed.", "filename": safe_name}
 
     payload["ingestion"] = {
         "changed": changed,
         "qdrant_points": qdrant_points,
         "verified": (qdrant_points is not None and qdrant_points > 0),
         "summary": (
-            f"Ingestion {'mise à jour' if changed else 'sans changement détecté'}; "
-            + (f"Qdrant={qdrant_points} chunk(s)." if qdrant_points is not None else "Qdrant non vérifiable.")
+            f"Ingestion {'updated' if changed else 'no changes detected'}; "
+            + (f"Qdrant={qdrant_points} chunk(s)." if qdrant_points is not None else "Qdrant unverified.")
         ),
     }
     if reindex_warning:
-        payload["warning"] = "Fichier uploadé, mais la réindexation automatique a échoué."
+        payload["warning"] = "File uploaded, but automatic reindexing failed."
     return payload
 
 
@@ -445,7 +445,7 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
     """Serve a file from tenant storage for in-browser preview."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
 
@@ -465,7 +465,7 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
                 headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
             return FileResponse(path, media_type=mime, headers=headers)
 
-    return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+    return JSONResponse({"error": "File not found."}, status_code=404)
 
 
 @admin_router.get("/api/file-text/{filename:path}")
@@ -473,7 +473,7 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
     """Return the extracted plain text of a file (PDF → pypdf, others → raw read)."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
     candidates = [
@@ -482,7 +482,7 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
     ]
     path = next((p for p in candidates if os.path.isfile(p)), None)
     if not path:
-        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+        return JSONResponse({"error": "File not found."}, status_code=404)
 
     try:
         ext = os.path.splitext(safe_name)[1].lower()
@@ -502,7 +502,7 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
         return PlainTextResponse(text)
     except Exception as e:
         logger.error(f"file-text error for {safe_name}: {e}")
-        return JSONResponse({"error": "Impossible d'extraire le texte."}, status_code=500)
+        return JSONResponse({"error": "Failed to extract text."}, status_code=500)
 
 
 @admin_router.get("/api/file-xlsx/{filename:path}")
@@ -510,12 +510,12 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
     """Return Excel file as structured JSON: [{sheet, headers, rows}]."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name or not safe_name.lower().endswith(".xlsx"):
-        return JSONResponse({"error": "Fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid file."}, status_code=400)
     tenant_id = await get_tenant_id(user_id)
     candidates = [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]
     path = next((p for p in candidates if os.path.isfile(p)), None)
     if not path:
-        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+        return JSONResponse({"error": "File not found."}, status_code=404)
     try:
         import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
@@ -530,7 +530,7 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
         return JSONResponse(sheets)
     except Exception as e:
         logger.error(f"file-xlsx error for {safe_name}: {e}")
-        return JSONResponse({"error": "Impossible de lire le fichier Excel."}, status_code=500)
+        return JSONResponse({"error": "Failed to read Excel file."}, status_code=500)
 
 
 @admin_router.delete("/api/admin/delete")
@@ -541,22 +541,22 @@ async def admin_delete(request: Request):
 
     # Path traversal protection
     if not filename or any(s in filename for s in ("/", "\\", "..")):
-        return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
+        return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
     path = os.path.join(DATA_DIR, filename)
     if not os.path.exists(path):
-        return JSONResponse({"error": "Fichier introuvable"}, status_code=404)
+        return JSONResponse({"error": "File not found"}, status_code=404)
 
     os.remove(path)
 
-    # Suppression immédiate des chunks Qdrant liés au fichier pour garantir la cohérence.
+    # Immediate deletion of Qdrant chunks linked to the file to guarantee consistency.
     try:
         from src.ingestion.vector_store import get_store, remove_files
         # get_store et remove_files sont synchrones
         store = get_store(force_reindex=False)
         await asyncio.to_thread(remove_files, store, {filename})
     except Exception as e:
-        logger.warning(f"Delete Qdrant immédiat échoué: {e}")
+        logger.warning(f"Immediate Qdrant delete failed: {e}")
 
     reindex_warning = None
     changed = None
@@ -564,22 +564,22 @@ async def admin_delete(request: Request):
         changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
     except Exception as e:
         reindex_warning = str(e)
-        logger.warning(f"Delete réindexation automatique échouée: {e}")
+        logger.warning(f"Delete automatic reindexing failed: {e}")
 
     qdrant_points = _count_points_for_filename(filename)
 
-    await track("reindex", detail=f"suppression : {filename}")
-    logger.info(f"Fichier supprimé : {filename}")
-    payload = {"message": f"'{filename}' supprimé et index mis à jour."}
+    await track("reindex", detail=f"deletion: {filename}")
+    logger.info(f"File deleted: {filename}")
+    payload = {"message": f"'{filename}' deleted and index updated."}
     payload["ingestion"] = {
         "changed": changed,
         "qdrant_points": qdrant_points,
         "verified": (qdrant_points == 0) if qdrant_points is not None else False,
         "summary": (
-            f"Ingestion {'mise à jour' if changed else 'sans changement détecté'}; "
-            + (f"Qdrant={qdrant_points} chunk(s) restant(s)." if qdrant_points is not None else "Qdrant non vérifiable.")
+            f"Ingestion {'updated' if changed else 'no changes detected'}; "
+            + (f"Qdrant={qdrant_points} remaining chunk(s)." if qdrant_points is not None else "Qdrant unverified.")
         ),
     }
     if reindex_warning:
-        payload["warning"] = "Fichier supprimé, mais la réindexation automatique a échoué."
+        payload["warning"] = "File deleted, but automatic reindexing failed."
     return payload

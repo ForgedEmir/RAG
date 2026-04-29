@@ -1,5 +1,5 @@
-"""Mémoire vectorielle sélective par utilisateur (Qdrant `user_memories`).
-Activée via VECTOR_MEMORY_ENABLED=true. Désactivée par défaut.
+"""Selective vector memory per user (Qdrant `user_memories`).
+Enabled via VECTOR_MEMORY_ENABLED=true. Disabled by default.
 """
 import logging
 import os
@@ -31,23 +31,23 @@ def _ensure_collection() -> None:
     existing = [c.name for c in client.get_collections().collections]
 
     if _COLLECTION in existing:
-        # Vérifier la dimension existante — recréer si mismatch
+        # Check existing dimension — recreate if mismatch
         info = client.get_collection(_COLLECTION)
         existing_dim = info.config.params.vectors.size
         if existing_dim != vector_size:
             logger.warning(
                 f"Collection '{_COLLECTION}' : dimension mismatch "
-                f"(existant={existing_dim}, modèle={vector_size}). Recréation."
+                f"(existing={existing_dim}, model={vector_size}). Recreating."
             )
             client.delete_collection(_COLLECTION)
-            existing = []  # Force recréation ci-dessous
+            existing = []  # Force recreation below
 
     if _COLLECTION not in existing:
         client.create_collection(
             collection_name=_COLLECTION,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        logger.info(f"Collection '{_COLLECTION}' créée ({vector_size} dims).")
+        logger.info(f"Collection '{_COLLECTION}' created ({vector_size} dims).")
 
     try:
         client.create_payload_index(
@@ -72,7 +72,7 @@ def _trim(user_id: str) -> None:
         return
 
     to_delete = total - _MAX_MEMORIES
-    logger.info(f"Trim mémoire user '{user_id[:8]}…' : -{to_delete}")
+    logger.info(f"Trim user memory '{user_id[:8]}…' : -{to_delete}")
     try:
         from qdrant_client.models import OrderBy
         points, _ = client.scroll(
@@ -106,7 +106,7 @@ def add_user_memory(user_id: str, question: str, answer: str) -> None:
         )
         _trim(user_id)
     except Exception as e:
-        logger.warning(f"add_user_memory échoué : {e}")
+        logger.warning(f"add_user_memory failed: {e}")
 
 
 def search_user_memories(user_id: str, query: str, k: int = 3) -> List[str]:
@@ -121,5 +121,5 @@ def search_user_memories(user_id: str, query: str, k: int = 3) -> List[str]:
         )
         return [f"- {h.payload.get('question','')} → {h.payload.get('answer','')[:200]}" for h in response.points]
     except Exception as e:
-        logger.warning(f"search_user_memories échoué : {e}")
+        logger.warning(f"search_user_memories failed: {e}")
         return []

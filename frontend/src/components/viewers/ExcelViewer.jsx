@@ -23,8 +23,8 @@ export default function ExcelViewer({ filename }) {
     );
   }, [filename]);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-  if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de lire le fichier Excel.</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Loading...</div>;
+  if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de lire le file Excel.</div>;
 
   const current = sheets[activeSheet];
   return (

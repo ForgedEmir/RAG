@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { getAuthHeader } from '../../auth.js';
-import { normalize } from '../../utils/highlight.js';
+import { normalize, injectPassageMark } from '../../utils/highlight.js';
 
-// Vite: inline worker URL so pdfjs doesn't try to fetch from CDN
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -17,21 +16,34 @@ export default function PDFViewer({ filename, passage }) {
   const [pdfData, setPdfData] = useState(null);
   const [numPages, setNumPages] = useState(0);
   const [targetPage, setTargetPage] = useState(null);
-  const [matchItems, setMatchItems] = useState(null); // Set of item indices on targetPage
   const [error, setError] = useState(false);
-  const pdfRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(460);
+  const containerRef = useRef(null);
   const pageRefs = useRef({});
+
+  // Track container width so PDF pages fit inside the panel
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setContainerWidth(Math.max(200, w - 24));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     setPdfData(null);
+    setNumPages(0);
     setError(false);
     setTargetPage(null);
-    setMatchItems(null);
+    pageRefs.current = {};
     (async () => {
       try {
         const headers = await getAuthHeader();
         const res = await fetch(`/api/file/${encodeFilePath(filename)}`, { headers });
-        if (!res.ok) throw new Error('fetch failed');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();
         setPdfData(new Uint8Array(buf));
       } catch (_) {
@@ -41,76 +53,83 @@ export default function PDFViewer({ filename, passage }) {
   }, [filename]);
 
   const onLoadSuccess = useCallback(async (pdf) => {
-    pdfRef.current = pdf;
     setNumPages(pdf.numPages);
     if (!passage) return;
-
     const normPassage = normalize(passage);
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);
       const tc = await page.getTextContent();
-      const items = tc.items;
-      const pageText = items.map(it => it.str).join(' ');
-      const normPage = normalize(pageText);
-      if (normPage.indexOf(normPassage) !== -1) {
-        // Find which item indices are part of the match
-        const matchSet = new Set();
-        let accumulated = '';
-        const itemStarts = [];
-        for (let i = 0; i < items.length; i++) {
-          itemStarts.push(accumulated.length);
-          accumulated += (i > 0 ? ' ' : '') + items[i].str;
-        }
-        const normAccum = normalize(accumulated);
-        const matchStart = normAccum.indexOf(normPassage);
-        const matchEnd = matchStart + normPassage.length;
-        if (matchStart !== -1) {
-          for (let i = 0; i < items.length; i++) {
-            const ns = itemStarts[i];
-            const ne = ns + items[i].str.length;
-            if (ne > matchStart && ns < matchEnd) matchSet.add(i);
-          }
-        }
+      const pageText = tc.items.map(it => it.str ?? '').join(' ');
+      if (normalize(pageText).includes(normPassage)) {
         setTargetPage(p);
-        setMatchItems(matchSet);
         break;
       }
     }
   }, [passage]);
 
+  // Scroll to target page once it's in the DOM
   useEffect(() => {
-    if (targetPage && pageRefs.current[targetPage]) {
-      pageRefs.current[targetPage].scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (!targetPage) return;
+    const el = pageRefs.current[targetPage];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [targetPage]);
 
-  const customTextRenderer = useCallback(({ str, itemIndex }) => {
-    if (!matchItems || !matchItems.has(itemIndex)) return str;
-    const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<mark style="background:rgba(250,204,21,0.55);border-radius:2px;color:inherit;padding:0">${escaped}</mark>`;
-  }, [matchItems]);
+  // After a page renders, inject the passage mark into its text layer
+  const onPageRenderSuccess = useCallback((pageNum) => {
+    if (!passage || pageNum !== targetPage) return;
+    const pageEl = pageRefs.current[pageNum];
+    if (!pageEl) return;
+    // react-pdf puts the text layer in a child with this class
+    const textLayer = pageEl.querySelector('.react-pdf__Page__textContent');
+    if (!textLayer) return;
+    // Small delay to let react-pdf finish positioning the spans
+    setTimeout(() => {
+      const mark = injectPassageMark(textLayer, passage);
+      if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  }, [passage, targetPage]);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le PDF.</div>;
-  if (!pdfData) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
+  // Stable object reference — prevents react-pdf from reloading on every render
+  const pdfFile = useMemo(() => (pdfData ? { data: pdfData } : null), [pdfData]);
+
+  if (error) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Impossible de charger le PDF.
+    </div>
+  );
+  if (!pdfData) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Loading...
+    </div>
+  );
 
   return (
-    <div className="rb-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--bg-subtle, #f5f5f5)' }}>
+    <div
+      ref={containerRef}
+      className="rb-scroll"
+      style={{ flex: 1, overflow: 'auto', background: 'var(--bg-subtle, #f5f5f5)' }}
+    >
       <Document
-        file={{ data: pdfData }}
+        file={pdfFile}
         onLoadSuccess={onLoadSuccess}
         onLoadError={() => setError(true)}
         loading={null}
+        error={null}
       >
         {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
           <div
             key={pageNum}
             ref={el => { pageRefs.current[pageNum] = el; }}
-            style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, paddingTop: pageNum === 1 ? 12 : 0 }}
+            style={{
+              display: 'flex', justifyContent: 'center',
+              marginBottom: 12,
+              paddingTop: pageNum === 1 ? 12 : 0,
+            }}
           >
             <Page
               pageNumber={pageNum}
-              width={Math.min(700, window.innerWidth - 60)}
-              customTextRenderer={matchItems ? customTextRenderer : undefined}
+              width={containerWidth}
+              onRenderSuccess={() => onPageRenderSuccess(pageNum)}
               renderAnnotationLayer={false}
             />
           </div>

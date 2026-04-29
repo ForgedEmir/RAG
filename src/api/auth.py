@@ -1,8 +1,8 @@
-"""Authentification : clé monitoring + JWT Supabase Auth.
+"""Authentication: monitoring key + Supabase Auth JWT.
 
-Deux niveaux :
-  - check_monitoring_key  : clé secrète pour le dashboard admin
-  - get_current_user      : JWT Supabase obligatoire (endpoints utilisateur)
+Two levels:
+  - check_monitoring_key  : secret key for the admin dashboard
+  - get_current_user      : Supabase JWT mandatory (user endpoints)
 """
 import os
 import logging
@@ -21,16 +21,16 @@ _JWT_CACHE_TTL_SECONDS = int(os.getenv("JWT_CACHE_TTL_SECONDS", "60"))
 _JWT_CACHE_MAX_SIZE = int(os.getenv("JWT_CACHE_MAX_SIZE", "512"))
 _APP_ENV = os.getenv("APP_ENV", "development").lower()
 _ALLOW_LOCAL_GUEST_HEADER = os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true"
-# Le mode invité est désactivé par défaut et ne doit être activé que volontairement.
+# Guest mode is disabled by default and should only be enabled voluntarily.
 _ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true"
-# Garde-fou explicite pour éviter l'activation accidentelle du mode invité en production.
+# Explicit safeguard to avoid accidental activation of guest mode in production.
 _ALLOW_GUEST_MODE_IN_PROD = os.getenv("ALLOW_GUEST_MODE_IN_PROD", "false").lower() == "true"
 _security = HTTPBearer(auto_error=False)
 _jwt_cache: OrderedDict[str, tuple[float, Optional[str]]] = OrderedDict()
 _jwt_cache_lock = asyncio.Lock()
 
 
-# ── Clé monitoring (dashboard) ────────────────────────────────────────────────
+# ── Monitoring key (dashboard) ────────────────────────────────────────────────
 
 def check_monitoring_key(request: Request) -> bool:
     if not _MONITORING_KEY:
@@ -48,13 +48,13 @@ def check_monitoring_key(request: Request) -> bool:
 
 def require_monitoring(request: Request):
     if not check_monitoring_key(request):
-        raise HTTPException(status_code=403, detail="Accès refusé")
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
-# ── JWT Supabase Auth ─────────────────────────────────────────────────────────
+# ── Supabase Auth JWT ─────────────────────────────────────────────────────────
 
 async def _verify_supabase_jwt(token: str) -> Optional[str]:
-    """Vérifie le JWT via l'API Supabase et retourne le user_id (UUID)."""
+    """Verifies the JWT via the Supabase API and returns the user_id (UUID)."""
     now = time.time()
     async with _jwt_cache_lock:
         cached = _jwt_cache.get(token)
@@ -70,7 +70,7 @@ async def _verify_supabase_jwt(token: str) -> Optional[str]:
         supa = await _get_client()
         if not supa:
             return None
-        # supabase-py v2 supporte await sur les appels auth
+        # supabase-py v2 supports await on auth calls
         user_resp = await supa.auth.get_user(token)
         user_id = str(user_resp.user.id) if user_resp.user else None
         async with _jwt_cache_lock:
@@ -80,7 +80,7 @@ async def _verify_supabase_jwt(token: str) -> Optional[str]:
                 _jwt_cache.popitem(last=False)
         return user_id
     except Exception as e:
-        logger.debug(f"JWT invalide : {e}")
+        logger.debug(f"Invalid JWT: {e}")
         async with _jwt_cache_lock:
             _jwt_cache[token] = (now, None)
             _jwt_cache.move_to_end(token)
@@ -97,10 +97,10 @@ async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),
 ) -> str:
-    """Dépendance FastAPI : retourne le user_id depuis le JWT Supabase.
-    Lève 401 si le token est absent ou invalide.
+    """FastAPI dependency: returns the user_id from the Supabase JWT.
+    Raises 401 if the token is missing or invalid.
     """
-    # Toujours lire dynamiquement les variables d'environnement pour supporter les tests patchés
+    # Always read environment variables dynamically to support patched tests
     app_env = getattr(request, "_test_app_env", os.getenv("APP_ENV", "development")).lower()
     allow_guest_mode = getattr(request, "_test_allow_guest_mode", os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true")
     allow_local_guest_header = getattr(request, "_test_allow_local_guest_header", os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower() == "true")
@@ -114,8 +114,8 @@ async def get_current_user(
             guest_id = (request.headers.get("x-local-guest-id") or "").strip()
             if guest_id.startswith("guest_"):
                 return guest_id
-        raise HTTPException(status_code=401, detail="Token d'authentification manquant. Connectez-vous d'abord.")
+        raise HTTPException(status_code=401, detail="Authentication token missing. Please log in first.")
     user_id = await _verify_supabase_jwt(credentials.credentials)
     if not user_id:
-        raise HTTPException(status_code=401, detail="Token invalide ou expiré.")
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
     return user_id

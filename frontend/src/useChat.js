@@ -95,7 +95,7 @@ export function useChat() {
 
   const newSession = useCallback(() => {
     const id = newSessionId();
-    setSessions(prev => [{ id, title: 'Nouvelle conversation', messages: [] }, ...prev]);
+    setSessions(prev => [{ id, title: 'New conversation', messages: [] }, ...prev]);
     setActiveId(id);
     loadedSessions.current.add(id);
     return id;
@@ -176,8 +176,8 @@ export function useChat() {
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        _patchLast(sid, { content: err.error || 'Erreur serveur', streaming: false });
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        _patchLast(sid, { content: err.detail || err.error || 'Erreur serveur', streaming: false });
         return;
       }
 
@@ -222,7 +222,7 @@ export function useChat() {
       }
     } catch (e) {
       if (e.name !== 'AbortError')
-        _patchLast(sid, { content: 'Connexion perdue. Réessayez.', streaming: false });
+        _patchLast(sid, { content: 'Connection lost. Retry.', streaming: false });
     } finally {
       setStreaming(false);
       abortRef.current = null;

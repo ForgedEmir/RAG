@@ -2,13 +2,13 @@
 Tests unitaires pour le module chunker (version LangChain).
 
 Ce fichier valide le comportement de la fonction split_into_chunks,
-chargée de découper les documents en fragments optimisés pour l'indexation vectorielle.
+responsible for chunking documents into fragments optimized for vector indexing.
 """
 from src.ingestion.chunker import split_into_chunks
 
 
 def test_texte_vide():
-    """Vérifie qu'un texte vide produit une liste de fragments vide."""
+    """Checks that empty text produces an empty list of fragments."""
     texte = ""
     resultat = split_into_chunks(texte)
 
@@ -17,7 +17,7 @@ def test_texte_vide():
 
 
 def test_texte_court():
-    """Vérifie qu'un texte plus petit que la taille du fragment n'est pas découpé."""
+    """Checks that text smaller than chunk size is not chunked."""
     texte = "Ceci est un texte court."
     resultat = split_into_chunks(texte, chunk_size=100)
 
@@ -26,30 +26,30 @@ def test_texte_court():
 
 
 def test_texte_long():
-    """Vérifie qu'un texte long est correctement fragmenté selon la taille maximale spécifiée."""
+    """Checks that long text is correctly chunked according to specified max size."""
     texte_long = "A" * 1500
     resultat = split_into_chunks(texte_long, chunk_size=500)
 
     # On devrait avoir au moins 3 morceaux (1500 / 500)
     assert len(resultat) >= 3
-    # Chaque morceau doit faire maximum 500 caractères
+    # Each chunk must be max 500 characters
     for morceau in resultat:
         assert len(morceau) <= 500
 
 
 def test_taille_personnalisee():
-    """Vérifie la prise en compte de paramètres de taille de fragment personnalisés."""
+    """Checks custom chunk size parameters."""
     texte = "X" * 100
     resultat = split_into_chunks(texte, chunk_size=50)
 
-    # Avec 100 caractères et des morceaux de 50, on a au moins 2 morceaux
+    # With 100 chars and chunks of 50, we have at least 2 chunks
     assert len(resultat) >= 2
     for morceau in resultat:
         assert len(morceau) <= 50
 
 
 def test_overlap():
-    """Vérifie que le chevauchement (overlap) entre les fragments est bien appliqué."""
+    """Checks that overlap between chunks is applied."""
     texte = "A" * 300
     resultat = split_into_chunks(texte, chunk_size=150, overlap=50)
 
@@ -57,7 +57,7 @@ def test_overlap():
 
 
 def test_type_retour():
-    """Vérifie que la fonction retourne toujours une liste de chaînes de caractères."""
+    """Checks that the function always returns a list of strings."""
     texte = "Test"
     resultat = split_into_chunks(texte)
 
@@ -67,9 +67,9 @@ def test_type_retour():
 
 
 def test_overlap_trop_grand():
-    """Vérifie que l'overlap est automatiquement plafonné s'il est plus grand que la taille du fragment."""
+    """Checks that overlap is capped if larger than chunk size."""
     texte = "X" * 100
-    # overlap (200) > chunk_size (50), devrait être réduit automatiquement par la fonction
+    # overlap (200) > chunk_size (50), should be reduced by the function
     resultat = split_into_chunks(texte, chunk_size=50, overlap=200)
 
     assert len(resultat) >= 2

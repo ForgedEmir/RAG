@@ -95,7 +95,7 @@ export default function ChatPage({ user, onLogout }) {
             onClick={newSession}
           >
             <Icon name="plus" size={14} />
-            <span>Nouvelle conversation</span>
+            <span>New conversation</span>
           </button>
         </div>
 
@@ -127,7 +127,7 @@ export default function ChatPage({ user, onLogout }) {
           </div>
           {sessions.length === 0 && !loadingHistory && (
             <div style={{ padding: '8px 8px', fontSize: 12, color: 'var(--fg-muted)' }}>
-              Aucune conversation
+              No conversation
             </div>
           )}
           {sessions.map((s) => (
@@ -145,7 +145,7 @@ export default function ChatPage({ user, onLogout }) {
                   className="rb-btn rb-btn--ghost"
                   style={{ width: 20, height: 20, padding: 0, marginLeft: 'auto', flex: 'none', opacity: 0.5 }}
                   onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                  title="Supprimer"
+                  title="Delete"
                 >
                   <Icon name="x" size={11} />
                 </button>
@@ -164,7 +164,7 @@ export default function ChatPage({ user, onLogout }) {
                   onClick={() => navigate('/docs')}
                 >
                   <Icon name="plus" size={10} />
-                  Gérer
+                  Manage
                 </button>
               </div>
               {indexedDocs.map((doc) => {
@@ -199,17 +199,17 @@ export default function ChatPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || 'Guest'}
             </div>
             <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-              {user ? 'Connecté' : 'Mode invité'}
+              {user ? 'Connected' : 'Guest mode'}
             </div>
           </div>
           <button
             className="rb-btn rb-btn--ghost"
             style={{ width: 28, height: 28, padding: 0 }}
             onClick={onLogout}
-            title="Déconnexion"
+            title="Logout"
           >
             <Icon name="logout" size={14} />
           </button>
@@ -229,7 +229,7 @@ export default function ChatPage({ user, onLogout }) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>
-                Assistant documentaire
+                Document assistant
               </h1>
               {sessionDocs.length > 0 && (
                 <span className="rb-pill rb-pill--ok">
@@ -241,7 +241,7 @@ export default function ChatPage({ user, onLogout }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button className="rb-btn rb-btn--ghost" style={{ gap: 6 }} onClick={() => navigate('/docs')}>
                 <Icon name="upload" size={14} />
-                <span>Importer</span>
+                <span>Import</span>
               </button>
               <button className="rb-btn rb-btn--ghost" style={{ gap: 6 }} onClick={() => navigate('/monitoring')}>
                 <Icon name="activity" size={14} />
@@ -290,7 +290,7 @@ export default function ChatPage({ user, onLogout }) {
                     border: 'none', outline: 'none', resize: 'none',
                     fontFamily: 'var(--font-sans)', lineHeight: 1.5, overflowY: 'hidden',
                   }}
-                  placeholder="Posez votre question sur les documents indexés…"
+                  placeholder="Ask your question about indexed documents..."
                   value={input}
                   onChange={handleTextareaChange}
                   onKeyDown={handleKey}
@@ -301,7 +301,7 @@ export default function ChatPage({ user, onLogout }) {
                     className="rb-btn rb-btn--ghost"
                     style={{ width: 32, height: 32, padding: 0, color: 'var(--danger)' }}
                     onClick={abort}
-                    title="Arrêter"
+                    title="Stop"
                   >
                     <Icon name="stop" size={14} />
                   </button>
@@ -311,7 +311,7 @@ export default function ChatPage({ user, onLogout }) {
                     style={{ width: 32, height: 32, padding: 0 }}
                     onClick={handleSend}
                     disabled={!input.trim()}
-                    title="Envoyer"
+                    title="Send"
                   >
                     <Icon name="send" size={14} />
                   </button>
@@ -321,8 +321,8 @@ export default function ChatPage({ user, onLogout }) {
                 marginTop: 8, fontSize: 11, color: 'var(--fg-muted)',
                 display: 'flex', justifyContent: 'space-between',
               }}>
-                <span>Les réponses citent les passages des documents indexés.</span>
-                <span style={{ fontFamily: 'var(--font-mono)' }}>↵ envoyer · ⇧↵ saut de ligne</span>
+                <span>Answers cite passages from indexed documents.</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>↵ send · ⇧↵ line break</span>
               </div>
             </div>
           </div>
@@ -408,10 +408,10 @@ function MarkdownText({ text }) {
 
 function EmptyState({ onSuggestion }) {
   const suggestions = [
-    'Quelles sont les clauses de non-concurrence dans ce contrat ?',
-    'Résume les points clés de ce document en 5 points.',
-    'Quels documents traitent de la cession de parts sociales ?',
-    'Quels sont les délais de préavis mentionnés ?',
+    'What are the non-compete clauses in this contract?',
+    'Summarize the key points of this document in 5 points.',
+    'Which documents deal with the transfer of shares?',
+    'What are the notice periods mentioned?',
   ];
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '60px 24px', textAlign: 'left' }}>
@@ -424,10 +424,10 @@ function EmptyState({ onSuggestion }) {
         <Icon name="sparkle" size={20} />
       </div>
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 8px', letterSpacing: '-0.015em' }}>
-        Comment puis-je vous aider ?
+        How can I help you?
       </h2>
       <p style={{ fontSize: 14, color: 'var(--fg-secondary)', margin: '0 0 28px', maxWidth: 540, lineHeight: 1.55 }}>
-        Posez une question en langage naturel — chaque réponse renvoie aux passages sources cités.
+        Ask a question in natural language — each answer refers to the cited source passages.
       </p>
       <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Suggestions</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -513,12 +513,12 @@ function AIMsg({ msg, activeSource, onCiteClick }) {
                     color: isActive ? 'var(--accent)' : undefined,
                   }}
                   onClick={() => onCiteClick(src, firstPassage)}
-                  title={firstPassage ? `Voir le passage cité dans ${src}` : `Voir ${src}`}
+                  title={firstPassage ? `View cited passage in ${src}` : `View ${src}`}
                 >
                   <Icon name="doc" size={11} style={{ color: 'inherit' }} />
                   <span className="rb-cite__doc" style={{ color: 'inherit' }}>{src}</span>
                   {passages.length > 1 && (
-                    <span className="rb-cite__loc">{passages.length} extraits</span>
+                    <span className="rb-cite__loc">{passages.length} excerpts</span>
                   )}
                 </button>
               );

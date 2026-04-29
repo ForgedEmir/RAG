@@ -37,7 +37,7 @@ async def _get_client():
     async with _client_lock:
         if _client is None and SUPABASE_URL and SUPABASE_KEY:
             from supabase import create_async_client
-            # supabase-py v2 : create_async_client doit être awaité
+            # supabase-py v2 : create_async_client must be awaited
             _client = await create_async_client(SUPABASE_URL, SUPABASE_KEY)
     return _client
 
@@ -55,7 +55,7 @@ async def track(event_type: str, detail: str = "", latency_ms: Optional[int] = N
         if event_type in INJECTION_TYPES:
             await _check_injection_spike(client)
     except Exception as e:
-        logger.warning(f"[MONITORING] Supabase : {e}")
+        logger.warning(f"[MONITORING] Supabase: {e}")
 
 
 async def _prune_trace_context(now_ts: float) -> None:
@@ -167,10 +167,10 @@ async def _check_injection_spike(client) -> None:
              .in_("type", INJECTION_TYPES)
              .gte("created_at", since).execute())
         if (r.count or 0) >= SPIKE_THRESHOLD:
-            logger.warning(f"[MONITORING] Spike d'injections : >{SPIKE_THRESHOLD} en {SPIKE_WINDOW_MIN} minutes.")
+            logger.warning(f"[MONITORING] Injection spike: >{SPIKE_THRESHOLD} in {SPIKE_WINDOW_MIN} minutes.")
             try:
                 import sentry_sdk
-                sentry_sdk.capture_message(f"Spike d'injections : >{SPIKE_THRESHOLD} en {SPIKE_WINDOW_MIN} minutes", level="warning")
+                sentry_sdk.capture_message(f"Injection spike: >{SPIKE_THRESHOLD} in {SPIKE_WINDOW_MIN} minutes", level="warning")
             except ImportError:
                 pass
     except Exception:
@@ -192,8 +192,8 @@ def _is_valid_uuid(value: str) -> bool:
         return False
 
 def _normalize_user_id(user_id: str) -> str:
-    """Extrait l'UUID pur d'un guest_id (ex: 'guest_abc-...' → 'abc-...').
-    Supabase exige un UUID valide dans la colonne user_id."""
+    """Extracts the pure UUID from a guest_id (e.g., 'guest_abc-...' → 'abc-...').
+    Supabase requires a valid UUID in the user_id column."""
     if not user_id:
         return user_id
     if user_id.startswith("guest_"):
@@ -213,11 +213,11 @@ async def _get_or_create_conversation(client, session_id: str, user_id: str) -> 
         inserted = await client.table("conversations").insert({"session_id": session_id, "user_id": normalized_uid}).execute()
         return inserted.data[0]["id"] if inserted.data else None
     except Exception as e:
-        logger.warning(f"[MEMORY] _get_or_create_conversation : {e}")
+        logger.warning(f"[MEMORY] _get_or_create_conversation: {e}")
         return None
 
 def _messages_to_history(messages: list) -> list:
-    # Stabilisation de l'ordre pour pallier le non-déterminisme de Supabase sur les timestamps identiques.
+    # Order stabilization to mitigate Supabase non-determinism on identical timestamps.
     normalized = sorted(
         messages,
         key=lambda m: (str(m.get("created_at", "")), int(m.get("id", 0) or 0), 0 if m.get("role") == "user" else 1)
@@ -247,7 +247,7 @@ async def get_history(session_id: str) -> list:
              .limit(HISTORY_LIMIT).execute())
         return _messages_to_history(list(reversed(r.data or [])))
     except Exception as e:
-        logger.warning(f"[MEMORY] get_history : {e}")
+        logger.warning(f"[MEMORY] get_history: {e}")
         return []
 
 async def get_conversation(session_id: str) -> list:
@@ -263,7 +263,7 @@ async def get_conversation(session_id: str) -> list:
              .order("created_at").execute())
         return _messages_to_history(r.data or [])
     except Exception as e:
-        logger.warning(f"[MEMORY] get_conversation : {e}")
+        logger.warning(f"[MEMORY] get_conversation: {e}")
         return []
 
 async def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
@@ -277,7 +277,7 @@ async def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
              .limit(1).execute())
         return bool(r.data)
     except Exception as e:
-        logger.warning(f"[MEMORY] conversation_belongs_to_user : {e}")
+        logger.warning(f"[MEMORY] conversation_belongs_to_user: {e}")
         return False
 
 async def get_conversation_owner(session_id: str) -> str:
@@ -287,10 +287,10 @@ async def get_conversation_owner(session_id: str) -> str:
     try:
         r = await (client.table("conversations").select("user_id")
              .eq("session_id", session_id).limit(1).execute())
-        # Retourne le UUID pur stocké en base
+        # Returns the pure UUID stored in DB
         return r.data[0].get("user_id", "") if r.data else ""
     except Exception as e:
-        logger.warning(f"[MEMORY] get_conversation_owner : {e}")
+        logger.warning(f"[MEMORY] get_conversation_owner: {e}")
         return ""
 
 async def delete_conversation(session_id: str) -> None:
@@ -304,7 +304,7 @@ async def delete_conversation(session_id: str) -> None:
         await client.table("messages").delete().eq("conversation_id", cid).execute()
         await client.table("conversations").delete().eq("id", cid).execute()
     except Exception as e:
-        logger.warning(f"[MEMORY] delete_conversation : {e}")
+        logger.warning(f"[MEMORY] delete_conversation: {e}")
 
 async def save_exchange(session_id: str, question: str, answer: str, user_id: str = "") -> None:
     client = await _get_client()
@@ -319,7 +319,7 @@ async def save_exchange(session_id: str, question: str, answer: str, user_id: st
                 {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": normalized_uid},
             ]).execute()
     except Exception as e:
-        logger.warning(f"[MEMORY] save_exchange : {e}")
+        logger.warning(f"[MEMORY] save_exchange: {e}")
 
 async def get_user_summary(user_id: str) -> str:
     client = await _get_client()
@@ -330,7 +330,7 @@ async def get_user_summary(user_id: str) -> str:
         r = await client.table("user_memory").select("summary").eq("user_id", normalized_uid).limit(1).execute()
         return r.data[0]["summary"] if r.data else ""
     except Exception as e:
-        logger.warning(f"[MEMORY] get_user_summary : {e}")
+        logger.warning(f"[MEMORY] get_user_summary: {e}")
         return ""
 
 async def save_user_summary(user_id: str, summary: str) -> None:
@@ -340,9 +340,9 @@ async def save_user_summary(user_id: str, summary: str) -> None:
     try:
         normalized_uid = _normalize_user_id(user_id)
         await client.table("user_memory").upsert({"user_id": normalized_uid, "summary": summary}).execute()
-        logger.info(f"[MEMORY] Résumé mis à jour pour user '{normalized_uid[:8]}…'")
+        logger.info(f"[MEMORY] Summary updated for user '{normalized_uid[:8]}…'")
     except Exception as e:
-        logger.warning(f"[MEMORY] save_user_summary : {e}")
+        logger.warning(f"[MEMORY] save_user_summary: {e}")
 
 async def get_user_conversations(user_id: str) -> list:
     """Returns [{id, title, created_at}] for a user, newest first.
@@ -373,7 +373,7 @@ async def get_user_conversations(user_id: str) -> list:
             result.append({"id": row["session_id"], "title": title, "created_at": row["created_at"]})
         return result
     except Exception as e:
-        logger.warning(f"[MEMORY] get_user_conversations : {e}")
+        logger.warning(f"[MEMORY] get_user_conversations: {e}")
         return []
 
 async def count_user_exchanges(user_id: str) -> int:
@@ -386,13 +386,13 @@ async def count_user_exchanges(user_id: str) -> int:
              .eq("user_id", normalized_uid).eq("role", "user").execute())
         return r.count or 0
     except Exception as e:
-        logger.warning(f"[MEMORY] count_user_exchanges : {e}")
+        logger.warning(f"[MEMORY] count_user_exchanges: {e}")
         return 0
 
 async def get_stats() -> dict:
     client = await _get_client()
     if not client:
-        return {"error": "Supabase non configuré", "counts": {}, "events": []}
+        return {"error": "Supabase not configured", "counts": {}, "events": []}
     try:
         event_types = [
             "question", "injection_regex", "injection_lakera", "rate_limit", "error",
@@ -420,23 +420,23 @@ async def get_stats() -> dict:
         total_events       = total_questions + errors or 1
         error_rate_pct     = round(errors / total_events * 100, 1)
 
-        # Médiane des latences
+        # Median latencies
         sorted_lat = sorted(latencies)
         mid = len(sorted_lat) // 2
         latency_p50 = sorted_lat[mid] if sorted_lat else 0
 
         return {
-            # Clés attendues par le frontend
+            # Expected keys by frontend
             "total_questions":    total_questions,
             "latency_p50":        latency_p50,
             "injections_blocked": injections_blocked,
             "error_rate_pct":     error_rate_pct,
             "last_events":        recent.data,
             "injection_spike":    spike_count >= SPIKE_THRESHOLD,
-            # Données brutes conservées
+            # Retained raw data
             "counts":             counts,
             "avg_latency_ms":     avg_latency,
         }
     except Exception as e:
-        logger.error(f"[MONITORING] get_stats : {e}")
+        logger.error(f"[MONITORING] get_stats: {e}")
         return {"error": str(e), "counts": {}, "events": []}

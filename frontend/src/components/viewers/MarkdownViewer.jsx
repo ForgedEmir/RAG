@@ -43,14 +43,14 @@ export default function MarkdownViewer({ filename, passage }) {
     return () => clearTimeout(id);
   }, [content, passage]);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le fichier.</div>;
-  if (content === null) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
+  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le file.</div>;
+  if (content === null) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Loading...</div>;
 
   return (
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
       {passage && !markRef.current && content && (
         <div style={{ margin: '12px 20px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
+          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Cited passage:</span>{passage}
         </div>
       )}
       <div

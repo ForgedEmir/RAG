@@ -61,7 +61,7 @@ export default function DocsPage({ user, onLogout }) {
   };
 
   const handleDelete = async (filename) => {
-    if (!confirm(`Supprimer "${filename}" de l'index ?`)) return;
+    if (!confirm(`Delete "${filename}" de l'index ?`)) return;
     try {
       const authHeader = await getAuthHeader();
       await fetch('/api/admin/delete', {
@@ -110,10 +110,10 @@ export default function DocsPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || 'Guest'}
             </div>
           </div>
-          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Déconnexion">
+          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Logout">
             <Icon name="logout" size={14} />
           </button>
         </div>
@@ -129,9 +129,9 @@ export default function DocsPage({ user, onLogout }) {
             background: 'var(--bg-surface)',
             flexShrink: 0,
           }}>
-            <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Importer des documents</h1>
+            <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Import des documents</h1>
             <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-              Formats acceptés : PDF, DOCX, TXT · 50 Mo max
+              Accepted formats: PDF, DOCX, TXT · 50 MB max
             </span>
           </header>
 
@@ -174,9 +174,9 @@ export default function DocsPage({ user, onLogout }) {
               <div style={{ marginTop: 32 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
                   <div>
-                    <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Documents indexés</h2>
+                    <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Indexed documents</h2>
                     <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-                      {files.length} document{files.length !== 1 ? 's' : ''} dans la base
+                      {files.length} document{files.length !== 1 ? 's' : ''} in the database
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -184,7 +184,7 @@ export default function DocsPage({ user, onLogout }) {
                       <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
                       <input
                         className="rb-input"
-                        placeholder="Rechercher…"
+                        placeholder="Search..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         style={{ paddingLeft: 32, width: 200 }}
@@ -196,7 +196,7 @@ export default function DocsPage({ user, onLogout }) {
                       onClick={() => fileInputRef.current?.click()}
                     >
                       <Icon name="plus" size={13} />
-                      <span>Importer</span>
+                      <span>Import</span>
                     </button>
                   </div>
                 </div>
@@ -210,18 +210,18 @@ export default function DocsPage({ user, onLogout }) {
                     fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
                     textTransform: 'uppercase', color: 'var(--fg-muted)',
                   }}>
-                    <span>Nom</span>
-                    <span>Statut</span>
+                    <span>Name</span>
+                    <span>Status</span>
                     <span />
                     <span />
                   </div>
                   {loading ? (
                     <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                      Chargement…
+                      Loading...
                     </div>
                   ) : filtered.length === 0 ? (
                     <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                      {search ? 'Aucun résultat' : 'Aucun document indexé'}
+                      {search ? 'No results' : 'No indexed documents'}
                     </div>
                   ) : filtered.map((f, i) => (
                     <div key={i} style={{
@@ -237,13 +237,13 @@ export default function DocsPage({ user, onLogout }) {
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                       </div>
                       <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-                        <span className="rb-dot" />indexé
+                        <span className="rb-dot" />indexed
                       </span>
                       <button
                         className="rb-btn rb-btn--ghost"
                         style={{ width: 28, height: 28, padding: 0, color: viewerFile === f.name ? 'var(--accent)' : 'var(--fg-muted)' }}
                         onClick={() => setViewerFile(viewerFile === f.name ? null : f.name)}
-                        title="Aperçu"
+                        title="Preview"
                       >
                         <Icon name="eye" size={13} />
                       </button>
@@ -251,7 +251,7 @@ export default function DocsPage({ user, onLogout }) {
                         className="rb-btn rb-btn--ghost"
                         style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
                         onClick={() => handleDelete(f.name)}
-                        title="Supprimer"
+                        title="Delete"
                       >
                         <Icon name="trash" size={13} />
                       </button>
@@ -300,16 +300,16 @@ function DropZone({ dragging, onDragOver, onDragLeave, onDrop, onBrowse }) {
         <Icon name="cloud_up" size={26} />
       </div>
       <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 6px' }}>
-        Déposez vos documents ici
+        Drop your documents here
       </h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 18px' }}>
-        ou parcourez votre poste pour les sélectionner
+        or browse your computer to select them
       </p>
       <button className="rb-btn rb-btn--primary" onClick={onBrowse}>
-        Parcourir les fichiers
+        Browse files
       </button>
       <div style={{ marginTop: 24, fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-        PDF · DOCX · TXT · MD · CSV · JSON · XML — 50 Mo par fichier
+        PDF · DOCX · TXT · MD · CSV · JSON · XML — 50 MB per file
       </div>
     </div>
   );
@@ -319,13 +319,13 @@ function ProgressView({ files }) {
   return (
     <div className="rb-card" style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Indexation en cours</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Indexing in progress</h2>
         <span style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-          {files.filter(f => f.state === 'done').length} / {files.length} fichiers
+          {files.filter(f => f.state === 'done').length} / {files.length} files
         </span>
       </div>
       <p style={{ margin: '0 0 18px', fontSize: 12.5, color: 'var(--fg-secondary)' }}>
-        Vous pouvez fermer cette page — l'indexation continue en arrière-plan.
+        You can close this page — indexing continues in the background.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {files.map((f, i) => (
@@ -339,7 +339,7 @@ function ProgressView({ files }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', flex: 'none', marginLeft: 8 }}>
-                  {f.state === 'queued' ? 'en attente' : f.state === 'done' ? 'indexé' : f.state === 'error' ? 'erreur' : `${f.pct}%`}
+                  {f.state === 'queued' ? 'queued' : f.state === 'done' ? 'indexed' : f.state === 'error' ? 'error' : `${f.pct}%`}
                 </span>
               </div>
               <div style={{ height: 4, background: 'var(--bg-muted)', borderRadius: 2, overflow: 'hidden' }}>
@@ -367,16 +367,16 @@ function DoneView({ files, onNewUpload, onGoToChat }) {
       }}>
         <Icon name="check" size={22} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 6px' }}>Documents prêts</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 6px' }}>Documents ready</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px' }}>
-        {files.length} document{files.length > 1 ? 's' : ''} indexé{files.length > 1 ? 's' : ''} et interrogeable{files.length > 1 ? 's' : ''} depuis l'assistant.
+        {files.length} document{files.length > 1 ? 's' : ''} indexed and searchable{files.length > 1 ? 's' : ''} from the assistant.
       </p>
       <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-        <button className="rb-btn rb-btn--primary" onClick={onGoToChat}>Ouvrir l'assistant</button>
-        <button className="rb-btn rb-btn--secondary" onClick={onNewUpload}>Importer d'autres fichiers</button>
+        <button className="rb-btn rb-btn--primary" onClick={onGoToChat}>Open assistant</button>
+        <button className="rb-btn rb-btn--secondary" onClick={onNewUpload}>Import d'others files</button>
       </div>
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-subtle)', textAlign: 'left' }}>
-        <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Récapitulatif</div>
+        <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Summary</div>
         {files.map((f, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center', gap: 10,
@@ -384,7 +384,7 @@ function DoneView({ files, onNewUpload, onGoToChat }) {
           }}>
             <Icon name="file_check" size={16} style={{ color: 'var(--ok)' }} />
             <span style={{ flex: 1 }}>{f.name}</span>
-            <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexé</span>
+            <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexed</span>
           </div>
         ))}
       </div>
@@ -417,11 +417,11 @@ function ErrorView({ files, onRetry, onContinue }) {
         </div>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 4px', color: 'var(--danger)' }}>
-            {errors.length} fichier{errors.length > 1 ? 's' : ''} n'a pas pu être importé
+            {errors.length} file{errors.length > 1 ? 's' : ''} could not be imported
           </h2>
           <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.5 }}>
-            {ok.length > 0 ? `${ok.length} autre${ok.length > 1 ? 's' : ''} fichier${ok.length > 1 ? 's ont' : ' a'} été indexé normalement.` : ''}
-            {' '}Vérifiez le format ou la taille du fichier rejeté.
+            {ok.length > 0 ? `${ok.length} other file${ok.length > 1 ? 's were' : ' was'} indexed successfully.` : ''}
+            {' '}Check the format or file size of the rejected file.
           </p>
         </div>
       </div>
@@ -435,7 +435,7 @@ function ErrorView({ files, onRetry, onContinue }) {
               style={{ color: f.state === 'error' ? 'var(--danger)' : 'var(--ok)' }} />
             <div style={{ flex: 1, fontSize: 13 }}>{f.name}</div>
             {f.state === 'done'
-              ? <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexé</span>
+              ? <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexed</span>
               : <span className="rb-pill rb-pill--danger">erreur</span>
             }
           </div>
@@ -445,8 +445,8 @@ function ErrorView({ files, onRetry, onContinue }) {
         padding: '14px 24px', borderTop: '1px solid var(--border-subtle)',
         background: 'var(--bg-sunken)', display: 'flex', justifyContent: 'flex-end', gap: 8,
       }}>
-        <button className="rb-btn rb-btn--secondary" onClick={onRetry}>Réessayer</button>
-        {ok.length > 0 && <button className="rb-btn rb-btn--primary" onClick={onContinue}>Continuer</button>}
+        <button className="rb-btn rb-btn--secondary" onClick={onRetry}>Retry</button>
+        {ok.length > 0 && <button className="rb-btn rb-btn--primary" onClick={onContinue}>Continue</button>}
       </div>
     </div>
   );

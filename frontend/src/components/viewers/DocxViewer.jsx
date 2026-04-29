@@ -50,8 +50,8 @@ export default function DocxViewer({ filename, passage }) {
     return () => clearTimeout(id);
   }, [html, passage]);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le fichier.</div>;
-  if (html === null) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
+  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le file.</div>;
+  if (html === null) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Loading...</div>;
 
   return (
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>

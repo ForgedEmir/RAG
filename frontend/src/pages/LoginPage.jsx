@@ -20,7 +20,7 @@ export default function LoginPage({ onLogin }) {
       await loginWithEmail(email, password);
       navigate('/chat');
     } catch (err) {
-      setError(err.message || 'Échec de la connexion');
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export default function LoginPage({ onLogin }) {
         letterSpacing: '0.08em', textTransform: 'uppercase',
         fontFamily: 'var(--font-mono)',
       }}>
-        Portail client · v2.4
+        Client Portal · v2.4
       </div>
       <div style={{
         position: 'absolute', bottom: 24, left: 28, right: 28,
@@ -71,10 +71,10 @@ export default function LoginPage({ onLogin }) {
         </div>
 
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 8px', letterSpacing: '-0.015em' }}>
-          Connexion à votre espace
+          Login to your workspace
         </h1>
         <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 28px', lineHeight: 1.55 }}>
-          Accédez à votre assistant documentaire.
+          Access your document assistant.
         </p>
 
         {error && (
@@ -90,7 +90,7 @@ export default function LoginPage({ onLogin }) {
 
         <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
           <div style={{ marginBottom: 12 }}>
-            <label className="rb-label" htmlFor="email">Adresse email</label>
+            <label className="rb-label" htmlFor="email">Email address</label>
             <input
               id="email"
               className="rb-input rb-input--lg"
@@ -103,7 +103,7 @@ export default function LoginPage({ onLogin }) {
             />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label className="rb-label" htmlFor="password">Mot de passe</label>
+            <label className="rb-label" htmlFor="password">Password</label>
             <div style={{ position: 'relative' }}>
               <input
                 id="password"
@@ -134,7 +134,7 @@ export default function LoginPage({ onLogin }) {
             className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
             disabled={loading}
           >
-            {loading ? 'Connexion…' : 'Se connecter'}
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
@@ -175,11 +175,11 @@ export default function LoginPage({ onLogin }) {
           onClick={handleGuest}
           style={{ marginTop: 4, fontSize: 12, color: 'var(--fg-muted)' }}
         >
-          Continuer sans compte (mode invité)
+          Continue without account (guest mode)
         </button>
 
         <p style={{ fontSize: 11.5, color: 'var(--fg-muted)', margin: '20px 0 0', lineHeight: 1.5 }}>
-          Accès réservé aux collaborateurs autorisés.
+          Access reserved for authorized collaborators.
         </p>
       </div>
     </div>

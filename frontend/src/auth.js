@@ -14,22 +14,22 @@ export async function getSupabase() {
 
 export async function loginWithEmail(email, password) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw error;
 }
 
 export async function signupWithEmail(email, password) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { error } = await sb.auth.signUp({ email, password });
   if (error) throw error;
-  return 'Compte créé. Vérifiez votre boîte mail si la confirmation est activée.';
+  return 'Account created. Check your email if confirmation is enabled.';
 }
 
 export async function loginWithGithub() {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const redirectTo = window.location.origin + window.location.pathname;
   const { error } = await sb.auth.signInWithOAuth({ provider: 'github', options: { redirectTo } });
   if (error) throw error;
@@ -37,7 +37,7 @@ export async function loginWithGithub() {
 
 export async function loginWithGoogle() {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const redirectTo = window.location.origin + window.location.pathname;
   const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
   if (error) throw error;
