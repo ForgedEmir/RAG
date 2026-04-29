@@ -305,6 +305,20 @@ async def admin_sources(request: Request):
     return {"files": sorted(files.keys()), "total": len(files)}
 
 
+@admin_router.get("/api/sources")
+async def user_sources(user_id: str = Depends(get_current_user)):
+    tenant_id = await get_tenant_id(user_id)
+    tenant_dir = os.path.join(DATA_DIR, tenant_id)
+    if not os.path.isdir(tenant_dir):
+        return {"files": [], "total": 0}
+    files = sorted(
+        f for f in os.listdir(tenant_dir)
+        if os.path.isfile(os.path.join(tenant_dir, f))
+        and os.path.splitext(f)[1].lower() in ALLOWED_EXTENSIONS
+    )
+    return {"files": files, "total": len(files)}
+
+
 @admin_router.post("/api/admin/upload")
 @limiter.limit("20/hour")
 async def admin_upload(request: Request, file: UploadFile = File(...)):
