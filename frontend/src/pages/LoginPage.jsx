@@ -36,7 +36,8 @@ export default function LoginPage({ onLogin }) {
   };
 
   const handleGuest = () => {
-    getOrCreateGuestId();
+    const guestId = getOrCreateGuestId();
+    onLogin({ id: guestId, isGuest: true });
     navigate('/chat');
   };
 

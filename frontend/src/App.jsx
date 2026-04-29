@@ -8,13 +8,25 @@ import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    const id = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
+    return id ? { id, isGuest: true } : null;
+  });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Guest already known from localStorage — no need to wait for Supabase
+    const guestId = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
+    if (guestId) setLoading(false);
+
     const unsub = onAuthStateChange((u) => {
-      setUser(u);
+      if (u !== null) {
+        setUser(u);
+      } else {
+        // SIGNED_OUT from Supabase must not clear an active guest session
+        setUser(prev => (prev?.isGuest ? prev : null));
+      }
       setLoading(false);
     });
     // timeout fallback si Supabase non configuré
