@@ -1,9 +1,9 @@
 FROM node:20 AS frontend
 WORKDIR /build
 ARG FRONTEND_CACHE_BUST=2026-04-06-1
-COPY src/frontend-react/package.json src/frontend-react/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
-COPY src/frontend-react/ ./
+COPY frontend/ ./
 RUN echo "FRONTEND_CACHE_BUST=${FRONTEND_CACHE_BUST}" \
     && rm -rf /output \
     && npx vite build --outDir /output \

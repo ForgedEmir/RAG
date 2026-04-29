@@ -105,7 +105,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Build the frontend (requires Node.js 18+)
-cd src/frontend-react && npm install && npm run build && cd ../..
+cd frontend && npm install && npm run build && cd ..
 ```
 
 ### 2. Download sample data

@@ -396,7 +396,7 @@ register_routes(app, _log_buffer)
 # Fichiers statiques (frontend) — no-cache en dev pour éviter les versions périmées
 _root_dir = os.path.dirname(__file__)
 _frontend_react_candidates = [
-    os.path.join(_root_dir, "src", "frontend", "frontend-react"),
+    os.path.join(_root_dir, "frontend"),
     os.path.join(_root_dir, "src", "frontend-react"),
 ]
 _frontend_react_dir = next((p for p in _frontend_react_candidates if os.path.isdir(p)), _frontend_react_candidates[0])
