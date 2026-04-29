@@ -85,41 +85,15 @@ Client → POST /api/ask
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+ and npm (required to build the frontend)
-- Docker (recommended for production-like local run)
+- Docker
 - API keys: Cerebras (LLM), Qdrant (vector DB), Supabase (auth/data)
 
-### 1. Clone & install
+### 1. Clone & configure
 
 ```bash
 git clone <repo-url>
 cd Oracle-LoreKeeper
 
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-source venv/bin/activate
-
-pip install -r requirements.txt
-
-# Build the frontend (requires Node.js 18+)
-cd frontend && npm install && npm run build && cd ..
-```
-
-### 2. Download sample data
-
-```bash
-# Download the archive and extract at the project root
-curl -L <https://drive.google.com/file/d/1piTkmyQawtADcz1AvW-Wzfj5qXDct0zF/view?usp=share_link> -o oracle-samples.zip
-unzip oracle-samples.zip && rm oracle-samples.zip
-# → populates data/sample/ with demo documents
-```
-
-### 4. Configure
-
-```bash
 cp .env.example .env
 # Edit .env — minimum required keys:
 # LLM_API_KEY, QDRANT_URL, QDRANT_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -127,28 +101,20 @@ cp .env.example .env
 
 See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for full environment variable reference.
 
-### 5. Run
+### 2. Start
 
-**Development:**
-```bash
-python main.py
-# → API + frontend at http://localhost:8000
-```
-
-**Production (Docker):**
 ```bash
 docker compose up --build
-# → API at http://localhost:8000
+# → API + frontend at http://localhost:8000
 # → MCP server at http://localhost:8001
 ```
 
 **Makefile shortcuts:**
 ```bash
-make setup      # First-time setup (venv + .env + index)
-make run        # Dev server
-make docker-up  # Docker start
-make test       # Run unit tests
-make index      # Force reindex
+make docker-up   # Build and start (detached)
+make docker-down # Stop
+make index       # Force reindex (runs inside the container)
+make test        # Unit tests (runs inside the container)
 ```
 
 ---
@@ -215,22 +181,17 @@ data: {"type": "done", "trace_id": "...", "model": "llama3.1-8b"}
 
 **Unit suite:**
 ```bash
-python -m pytest src/test-unitaires -q
+docker compose exec app pytest src/test-unitaires -q
 ```
 
 **Targeted run after retrieval changes:**
 ```bash
-python -m pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q
+docker compose exec app pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q
 ```
 
 **Load tests (opt-in):**
 ```bash
-# Windows:
-set RUN_LOAD_TESTS=true
-# Linux/macOS:
-export RUN_LOAD_TESTS=true
-
-python -m pytest src/test-unitaires/test_load.py -q
+docker compose exec -e RUN_LOAD_TESTS=true app pytest src/test-unitaires/test_load.py -q
 ```
 
 **Locust load testing:**
