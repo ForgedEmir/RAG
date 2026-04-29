@@ -9,4 +9,17 @@ export default defineConfig({
       '/health': 'http://localhost:8000',
     },
   },
+  optimizeDeps: {
+    include: ['react-pdf'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'pdf-viewer': ['react-pdf', 'pdfjs-dist'],
+          'mammoth': ['mammoth'],
+        },
+      },
+    },
+  },
 });

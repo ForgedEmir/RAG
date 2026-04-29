@@ -2,26 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useChat } from '../useChat.js';
 import { useScopedLenis } from '../useLenis.js';
-import { getSupabase } from '../auth.js';
+import { getAuthHeader } from '../auth.js';
 import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
-
-async function getAuthHeader() {
-  try {
-    const sb = await getSupabase();
-    if (sb) {
-      const { data } = await sb.auth.getSession();
-      const token = data?.session?.access_token;
-      if (token) return { Authorization: `Bearer ${token}` };
-    }
-  } catch (_) {}
-  return {};
-}
+import DocViewer from '../components/DocViewer.jsx';
 
 export default function ChatPage({ user, onLogout }) {
   const { sessions, activeSession, activeId, streaming, loadingHistory, newSession, selectSession, deleteSession, send, abort } = useChat();
   const [input, setInput] = useState('');
-  const [activeSource, setActiveSource] = useState(null); // Changed from sourcePanel
+  const [activeSource, setActiveSource] = useState(null);
   const [indexedDocs, setIndexedDocs] = useState([]);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -40,7 +29,6 @@ export default function ChatPage({ user, onLogout }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSession?.messages]);
 
-  // Close panel when session changes
   useEffect(() => { setActiveSource(null); }, [activeId]);
 
   const handleSend = () => {
@@ -76,7 +64,6 @@ export default function ChatPage({ user, onLogout }) {
 
   const userInitials = user?.email ? user.email.slice(0, 2).toUpperCase() : 'G';
 
-  // Unique docs across all messages in the active session
   const sessionDocs = [];
   if (activeSession?.messages) {
     for (const m of activeSession.messages) {
@@ -113,7 +100,6 @@ export default function ChatPage({ user, onLogout }) {
         </div>
 
         <div className="rb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 8px 12px' }}>
-          {/* Nav links */}
           <div style={{ marginBottom: 8 }}>
             {[
               { label: 'Documents', icon: 'folder', path: '/docs' },
@@ -133,7 +119,6 @@ export default function ChatPage({ user, onLogout }) {
 
           <div style={{ height: 1, background: 'var(--border-subtle)', margin: '8px 0' }} />
 
-          {/* Conversations list */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 8px 6px' }}>
             <span className="rb-section-label" style={{ padding: 0 }}>Conversations</span>
             {loadingHistory && (
@@ -168,7 +153,6 @@ export default function ChatPage({ user, onLogout }) {
             </div>
           ))}
 
-          {/* All indexed documents */}
           {indexedDocs.length > 0 && (
             <>
               <div style={{ height: 1, background: 'var(--border-subtle)', margin: '10px 0 8px' }} />
@@ -344,294 +328,17 @@ export default function ChatPage({ user, onLogout }) {
           </div>
         </main>
 
-        {activeSource && <SourcePanel filename={activeSource} highlightPassage={activePassage} onClose={() => { setActiveSource(null); setActivePassage(null); }} />}
+        {activeSource && (
+          <DocViewer
+            filename={activeSource}
+            passage={activePassage}
+            onClose={() => { setActiveSource(null); setActivePassage(null); }}
+            resizable={true}
+            defaultWidth={480}
+          />
+        )}
       </div>
     </div>
-  );
-}
-
-// ── Excel viewer ─────────────────────────────────────────────────────────────
-
-function ExcelViewer({ filename }) {
-  const [sheets, setSheets] = useState(null);
-  const [activeSheet, setActiveSheet] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    setSheets(null);
-    setActiveSheet(0);
-    getAuthHeader().then(headers =>
-      fetch(`/api/file-xlsx/${encodeURIComponent(filename)}`, { headers })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => setSheets(d))
-        .catch(() => setSheets(null))
-        .finally(() => setLoading(false))
-    );
-  }, [filename]);
-
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-  if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de lire le fichier Excel.</div>;
-
-  const current = sheets[activeSheet];
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {sheets.length > 1 && (
-        <div style={{ display: 'flex', gap: 2, padding: '8px 16px 0', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          {sheets.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveSheet(i)}
-              style={{
-                padding: '5px 12px', fontSize: 12, borderRadius: '4px 4px 0 0', border: '1px solid var(--border-default)',
-                borderBottom: i === activeSheet ? '1px solid var(--bg-surface)' : undefined,
-                background: i === activeSheet ? 'var(--bg-surface)' : 'var(--bg-muted)',
-                color: i === activeSheet ? 'var(--fg-primary)' : 'var(--fg-secondary)',
-                cursor: 'pointer', fontFamily: 'var(--font-sans)',
-              }}
-            >{s.sheet}</button>
-          ))}
-        </div>
-      )}
-      <div className="rb-scroll" style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%', whiteSpace: 'nowrap' }}>
-          {current.headers.length > 0 && (
-            <thead>
-              <tr>
-                {current.headers.map((h, i) => (
-                  <th key={i} style={{
-                    padding: '6px 12px', textAlign: 'left', fontWeight: 600,
-                    borderBottom: '2px solid var(--border-strong)',
-                    background: 'var(--bg-muted)', color: 'var(--fg-primary)',
-                    position: 'sticky', top: 0,
-                  }}>{h || '—'}</th>
-                ))}
-              </tr>
-            </thead>
-          )}
-          <tbody>
-            {current.rows.map((row, ri) => (
-              <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'var(--bg-subtle, rgba(0,0,0,0.02))' }}>
-                {row.map((cell, ci) => (
-                  <td key={ci} style={{
-                    padding: '5px 12px', borderBottom: '1px solid var(--border-subtle)',
-                    color: cell ? 'var(--fg-primary)' : 'var(--fg-muted)',
-                  }}>{cell || ''}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── Source viewer panel ────────────────────────────────────────────────────────
-
-function HighlightedText({ content, passage }) {
-  const highlightRef = useRef(null);
-
-  useEffect(() => {
-    if (highlightRef.current) {
-      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [passage, content]);
-
-  if (!passage || !content) {
-    return <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, margin: 0, fontFamily: 'var(--font-sans)', lineHeight: 1.6 }}>{content}</pre>;
-  }
-
-  // Normalize whitespace for matching
-  const normalize = s => s.replace(/\s+/g, ' ').trim();
-  const normContent = normalize(content);
-  const normPassage = normalize(passage);
-  const idx = normContent.indexOf(normPassage);
-
-  if (idx === -1) {
-    return (
-      <>
-        <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5, color: 'var(--fg-primary)' }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
-        </div>
-        <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, margin: 0, fontFamily: 'var(--font-sans)', lineHeight: 1.6 }}>{content}</pre>
-      </>
-    );
-  }
-
-  // Map back to original content positions via character alignment
-  let origIdx = 0, normIdx = 0;
-  const origToNorm = [];
-  for (let i = 0; i < content.length; i++) {
-    origToNorm.push(normIdx);
-    if (content[i].trim() !== '') normIdx++;
-    else if (normIdx > 0 && normContent[normIdx - 1] !== ' ' && normContent[normIdx] === ' ') normIdx++;
-  }
-  const startOrig = origToNorm.indexOf(idx);
-  const endOrig = origToNorm.indexOf(idx + normPassage.length);
-
-  const before = content.slice(0, startOrig !== -1 ? startOrig : 0);
-  const marked = content.slice(startOrig !== -1 ? startOrig : 0, endOrig !== -1 ? endOrig : content.length);
-  const after = content.slice(endOrig !== -1 ? endOrig : content.length);
-
-  return (
-    <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, margin: 0, fontFamily: 'var(--font-sans)', lineHeight: 1.6 }}>
-      {before}
-      <mark ref={highlightRef} style={{ background: 'rgba(250,204,21,0.45)', borderRadius: 3, padding: '1px 0', color: 'inherit' }}>{marked}</mark>
-      {after}
-    </pre>
-  );
-}
-
-function SourcePanel({ filename, highlightPassage, onClose }) {
-  const ext = filename ? filename.slice(filename.lastIndexOf('.')).toLowerCase() : '';
-  const isPdf = ext === '.pdf';
-  const isDocx = ext === '.docx' || ext === '.doc';
-  const canExtractText = new Set(['.txt', '.md', '.csv', '.json', '.xml', '.pdf', '.docx', '.doc', '.xlsx']).has(ext);
-
-  const [content, setContent] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loadingText, setLoadingText] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // PDFs default to visual reader; toggle to text view for highlight
-  const [pdfTextView, setPdfTextView] = useState(false);
-  const [width, setWidth] = useState(480);
-  const dragRef = useRef(null);
-
-  useEffect(() => {
-    getAuthHeader().then(h => {
-      const t = h.Authorization?.split(' ')[1];
-      setToken(t);
-    });
-  }, []);
-
-  // Load extracted text for non-PDF text files, PDF text mode, or DOCX (always text)
-  const needsTextLoad = canExtractText && (!isPdf || pdfTextView) && !(!canExtractText);
-  useEffect(() => {
-    if (!needsTextLoad) return;
-    setLoadingText(true);
-    setContent(null);
-    getAuthHeader().then(headers =>
-      fetch(`/api/file-text/${encodeURIComponent(filename)}`, { headers })
-        .then(r => r.ok ? r.text() : null)
-        .then(t => setContent(t))
-        .catch(() => setContent(null))
-        .finally(() => setLoadingText(false))
-    );
-  }, [filename, needsTextLoad]);
-
-  // When a passage is cited on a PDF, switch to text view so highlight is visible
-  useEffect(() => {
-    if (highlightPassage && isPdf) setPdfTextView(true);
-  }, [highlightPassage, isPdf]);
-
-  // Reset text view when file changes
-  useEffect(() => { setPdfTextView(false); }, [filename]);
-
-  // Drag-to-resize: drag the left edge
-  useEffect(() => {
-    if (expanded) return;
-    const handle = dragRef.current;
-    if (!handle) return;
-    let startX, startW;
-    const onMouseDown = (e) => {
-      startX = e.clientX;
-      startW = width;
-      document.body.style.cursor = 'ew-resize';
-      document.body.style.userSelect = 'none';
-      const onMouseMove = (e) => {
-        const delta = startX - e.clientX;
-        setWidth(Math.max(320, Math.min(900, startW + delta)));
-      };
-      const onMouseUp = () => {
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-      };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    };
-    handle.addEventListener('mousedown', onMouseDown);
-    return () => handle.removeEventListener('mousedown', onMouseDown);
-  }, [expanded, width]);
-
-  const fileUrl = token
-    ? `/api/file/${encodeURIComponent(filename)}?token=${token}`
-    : `/api/file/${encodeURIComponent(filename)}`;
-
-  const panelStyle = expanded
-    ? { position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }
-    : { width, minWidth: 320, borderLeft: '1px solid var(--border-default)', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', height: '100%', position: 'relative', flexShrink: 0 };
-
-  const body = (() => {
-    // PDF visual reader (default)
-    if (isPdf && !pdfTextView) {
-      if (!token) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-      return <iframe src={fileUrl} style={{ width: '100%', height: '100%', border: 'none' }} title={filename} />;
-    }
-    // Excel — table viewer
-    if (ext === '.xlsx') return <ExcelViewer filename={filename} />;
-    // Text view (txt/md/csv/json/xml + PDF text mode + DOCX)
-    if (loadingText) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-    if (canExtractText && content != null) {
-      return (
-        <div className="rb-scroll" style={{ padding: 20, overflowY: 'auto', height: '100%' }}>
-          <HighlightedText content={content} passage={highlightPassage} />
-        </div>
-      );
-    }
-    if (!canExtractText) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Aperçu non disponible — <a href={fileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>télécharger</a></div>;
-    return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le fichier</div>;
-  })();
-
-  return (
-    <aside style={panelStyle}>
-      {/* Drag handle on the left edge */}
-      {!expanded && (
-        <div ref={dragRef} style={{
-          position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
-          cursor: 'ew-resize', zIndex: 10,
-        }} />
-      )}
-      <header style={{ height: 56, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-default)', flexShrink: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{filename}</span>
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          {isPdf && (
-            <button
-              className="rb-btn rb-btn--ghost"
-              style={{ width: 32, padding: 0 }}
-              onClick={() => setPdfTextView(v => !v)}
-              title={pdfTextView ? 'Voir le PDF (lecteur)' : 'Voir le texte extrait avec surbrillance'}
-            >
-              <Icon name={pdfTextView ? 'eye' : 'doc'} size={14} />
-            </button>
-          )}
-          <button
-            className="rb-btn rb-btn--ghost"
-            style={{ width: 32, padding: 0 }}
-            onClick={() => setExpanded(v => !v)}
-            title={expanded ? 'Réduire' : 'Agrandir'}
-          >
-            <Icon name={expanded ? 'minimize' : 'maximize'} size={14} />
-          </button>
-          <a href={fileUrl} target="_blank" className="rb-btn rb-btn--ghost" style={{ width: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} rel="noreferrer" title="Ouvrir dans un nouvel onglet">
-            <Icon name="external" size={14} />
-          </a>
-          <button className="rb-btn rb-btn--ghost" onClick={onClose} style={{ width: 32, padding: 0 }} title="Fermer">
-            <Icon name="x" size={14} />
-          </button>
-        </div>
-      </header>
-      {highlightPassage && (!isPdf || pdfTextView) && (
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-subtle)', background: 'rgba(250,204,21,0.08)', flexShrink: 0 }}>
-          <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500 }}>Passage cité surligné</span>
-        </div>
-      )}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {body}
-      </div>
-    </aside>
   );
 }
 
@@ -762,7 +469,6 @@ function UserMsg({ text }) {
 }
 
 function AIMsg({ msg, activeSource, onCiteClick }) {
-  // Build a map: source → passages cited in this specific message
   const sourcePassages = {};
   if (msg.context_chunks) {
     for (const chunk of msg.context_chunks) {

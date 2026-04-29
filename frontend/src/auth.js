@@ -69,6 +69,20 @@ export function onAuthStateChange(callback) {
   return () => unsub();
 }
 
+export async function getAuthHeader() {
+  try {
+    const sb = await getSupabase();
+    if (sb) {
+      const { data } = await sb.auth.getSession();
+      const token = data?.session?.access_token;
+      if (token) return { Authorization: `Bearer ${token}` };
+    }
+  } catch (_) {}
+  const guestId = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId') || '';
+  if (guestId.startsWith('guest_')) return { 'x-local-guest-id': guestId };
+  return {};
+}
+
 export function getOrCreateGuestId() {
   let id = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
   if (!id) {

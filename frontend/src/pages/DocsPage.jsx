@@ -3,19 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useScopedLenis } from '../useLenis.js';
 import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
-import { getSupabase } from '../auth.js';
-
-async function getAuthHeader() {
-  try {
-    const sb = await getSupabase();
-    if (sb) {
-      const { data } = await sb.auth.getSession();
-      const token = data?.session?.access_token;
-      if (token) return { Authorization: `Bearer ${token}` };
-    }
-  } catch (_) {}
-  return {};
-}
+import { getAuthHeader } from '../auth.js';
+import DocViewer from '../components/DocViewer.jsx';
 
 export default function DocsPage({ user, onLogout }) {
   const [files, setFiles] = useState([]);
@@ -24,7 +13,7 @@ export default function DocsPage({ user, onLogout }) {
   const [uploadFiles, setUploadFiles] = useState([]);
   const [search, setSearch] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [viewerFile, setViewerFile] = useState(null); // filename string or null
+  const [viewerFile, setViewerFile] = useState(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -132,153 +121,157 @@ export default function DocsPage({ user, onLogout }) {
 
       {/* Main + optional viewer panel */}
       <div style={{ display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }}>
-        <header style={{
-          height: 56, padding: '0 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          borderBottom: '1px solid var(--border-default)',
-          background: 'var(--bg-surface)',
-          flexShrink: 0,
-        }}>
-          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Importer des documents</h1>
-          <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-            Formats acceptés : PDF, DOCX, TXT · 50 Mo max
-          </span>
-        </header>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }}>
+          <header style={{
+            height: 56, padding: '0 24px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            borderBottom: '1px solid var(--border-default)',
+            background: 'var(--bg-surface)',
+            flexShrink: 0,
+          }}>
+            <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Importer des documents</h1>
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+              Formats acceptés : PDF, DOCX, TXT · 50 Mo max
+            </span>
+          </header>
 
-        <div className="rb-scroll" style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
-          <div style={{ maxWidth: 800, margin: '0 auto' }}>
-            {/* Upload area */}
-            {uploadState === null && (
-              <DropZone
-                dragging={dragging}
-                onDragOver={e => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={e => { e.preventDefault(); setDragging(false); handleFileSelect(e.dataTransfer.files); }}
-                onBrowse={() => fileInputRef.current?.click()}
+          <div className="rb-scroll" style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
+            <div style={{ maxWidth: 800, margin: '0 auto' }}>
+              {uploadState === null && (
+                <DropZone
+                  dragging={dragging}
+                  onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={e => { e.preventDefault(); setDragging(false); handleFileSelect(e.dataTransfer.files); }}
+                  onBrowse={() => fileInputRef.current?.click()}
+                />
+              )}
+              {uploadState === 'progress' && <ProgressView files={uploadFiles} />}
+              {uploadState === 'done' && (
+                <DoneView
+                  files={uploadFiles}
+                  onNewUpload={resetUpload}
+                  onGoToChat={() => navigate('/chat')}
+                />
+              )}
+              {uploadState === 'error' && (
+                <ErrorView
+                  files={uploadFiles}
+                  onRetry={resetUpload}
+                  onContinue={() => { setUploadState('done'); }}
+                />
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.xml"
+                style={{ display: 'none' }}
+                onChange={e => handleFileSelect(e.target.files)}
               />
-            )}
-            {uploadState === 'progress' && <ProgressView files={uploadFiles} />}
-            {uploadState === 'done' && (
-              <DoneView
-                files={uploadFiles}
-                onNewUpload={resetUpload}
-                onGoToChat={() => navigate('/chat')}
-              />
-            )}
-            {uploadState === 'error' && (
-              <ErrorView
-                files={uploadFiles}
-                onRetry={resetUpload}
-                onContinue={() => { setUploadState('done'); }}
-              />
-            )}
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.xml"
-              style={{ display: 'none' }}
-              onChange={e => handleFileSelect(e.target.files)}
-            />
-
-            {/* Documents table */}
-            <div style={{ marginTop: 32 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
-                <div>
-                  <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Documents indexés</h2>
-                  <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-                    {files.length} document{files.length !== 1 ? 's' : ''} dans la base
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <div style={{ position: 'relative' }}>
-                    <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
-                    <input
-                      className="rb-input"
-                      placeholder="Rechercher…"
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      style={{ paddingLeft: 32, width: 200 }}
-                    />
+              <div style={{ marginTop: 32 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
+                  <div>
+                    <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Documents indexés</h2>
+                    <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
+                      {files.length} document{files.length !== 1 ? 's' : ''} dans la base
+                    </p>
                   </div>
-                  <button
-                    className="rb-btn rb-btn--primary"
-                    style={{ gap: 6 }}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Icon name="plus" size={13} />
-                    <span>Importer</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="rb-card" style={{ overflow: 'hidden' }}>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px 36px',
-                  padding: '10px 16px',
-                  background: 'var(--bg-sunken)',
-                  borderBottom: '1px solid var(--border-default)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
-                  textTransform: 'uppercase', color: 'var(--fg-muted)',
-                }}>
-                  <span>Nom</span>
-                  <span>Statut</span>
-                  <span />
-                  <span />
-                </div>
-                {loading ? (
-                  <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                    Chargement…
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                    {search ? 'Aucun résultat' : 'Aucun document indexé'}
-                  </div>
-                ) : filtered.map((f, i) => (
-                  <div key={i} style={{
-                    display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px 36px',
-                    padding: '10px 16px', alignItems: 'center',
-                    borderBottom: i < filtered.length - 1 ? '1px solid var(--border-subtle)' : 'none',
-                    fontSize: 13,
-                    background: viewerFile === f.name ? 'var(--accent-soft)' : 'transparent',
-                    transition: 'background 120ms ease',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <FileIcon name={f.name} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ position: 'relative' }}>
+                      <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
+                      <input
+                        className="rb-input"
+                        placeholder="Rechercher…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        style={{ paddingLeft: 32, width: 200 }}
+                      />
                     </div>
-                    <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-                      <span className="rb-dot" />indexé
-                    </span>
                     <button
-                      className="rb-btn rb-btn--ghost"
-                      style={{ width: 28, height: 28, padding: 0, color: viewerFile === f.name ? 'var(--accent)' : 'var(--fg-muted)' }}
-                      onClick={() => setViewerFile(viewerFile === f.name ? null : f.name)}
-                      title="Aperçu"
+                      className="rb-btn rb-btn--primary"
+                      style={{ gap: 6 }}
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      <Icon name="eye" size={13} />
-                    </button>
-                    <button
-                      className="rb-btn rb-btn--ghost"
-                      style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
-                      onClick={() => handleDelete(f.name)}
-                      title="Supprimer"
-                    >
-                      <Icon name="trash" size={13} />
+                      <Icon name="plus" size={13} />
+                      <span>Importer</span>
                     </button>
                   </div>
-                ))}
+                </div>
+
+                <div className="rb-card" style={{ overflow: 'hidden' }}>
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px 36px',
+                    padding: '10px 16px',
+                    background: 'var(--bg-sunken)',
+                    borderBottom: '1px solid var(--border-default)',
+                    fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
+                    textTransform: 'uppercase', color: 'var(--fg-muted)',
+                  }}>
+                    <span>Nom</span>
+                    <span>Statut</span>
+                    <span />
+                    <span />
+                  </div>
+                  {loading ? (
+                    <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
+                      Chargement…
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
+                      {search ? 'Aucun résultat' : 'Aucun document indexé'}
+                    </div>
+                  ) : filtered.map((f, i) => (
+                    <div key={i} style={{
+                      display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px 36px',
+                      padding: '10px 16px', alignItems: 'center',
+                      borderBottom: i < filtered.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                      fontSize: 13,
+                      background: viewerFile === f.name ? 'var(--accent-soft)' : 'transparent',
+                      transition: 'background 120ms ease',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <FileIcon name={f.name} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      </div>
+                      <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
+                        <span className="rb-dot" />indexé
+                      </span>
+                      <button
+                        className="rb-btn rb-btn--ghost"
+                        style={{ width: 28, height: 28, padding: 0, color: viewerFile === f.name ? 'var(--accent)' : 'var(--fg-muted)' }}
+                        onClick={() => setViewerFile(viewerFile === f.name ? null : f.name)}
+                        title="Aperçu"
+                      >
+                        <Icon name="eye" size={13} />
+                      </button>
+                      <button
+                        className="rb-btn rb-btn--ghost"
+                        style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
+                        onClick={() => handleDelete(f.name)}
+                        title="Supprimer"
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {viewerFile && (
+          <DocViewer
+            filename={viewerFile}
+            passage={null}
+            onClose={() => setViewerFile(null)}
+            defaultWidth={520}
+          />
+        )}
       </div>
-      </div>
-      {viewerFile && (
-        <FileViewer filename={viewerFile} onClose={() => setViewerFile(null)} />
-      )}
     </div>
   );
 }
@@ -399,172 +392,10 @@ function DoneView({ files, onNewUpload, onGoToChat }) {
   );
 }
 
-const TEXT_EXTS = new Set(['.txt', '.md', '.csv', '.json', '.xml']);
-const PDF_EXT = '.pdf';
-
 function FileIcon({ name }) {
   const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
   const color = ext === '.pdf' ? '#e03' : ext === '.xlsx' ? '#1a8754' : ext === '.md' ? 'var(--accent)' : 'var(--fg-secondary)';
   return <Icon name="doc" size={15} style={{ color, flex: 'none' }} />;
-}
-
-function FileViewer({ filename, onClose }) {
-  const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase();
-  const isPdf = ext === PDF_EXT;
-  const isText = TEXT_EXTS.has(ext);
-  const isOffice = ext === '.xlsx' || ext === '.docx' || ext === '.doc';
-
-  const [textContent, setTextContent] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loadError, setLoadError] = useState(false);
-  const [loadingText, setLoadingText] = useState(false);
-
-  useEffect(() => {
-    getAuthHeader().then(h => {
-      const t = h.Authorization?.split(' ')[1];
-      setToken(t);
-    });
-  }, []);
-
-  useEffect(() => {
-    setTextContent(null);
-    setLoadError(false);
-    if (!isText) return;
-    setLoadingText(true);
-    getAuthHeader().then(headers =>
-      fetch(`/api/file/${encodeURIComponent(filename)}`, { headers })
-        .then(r => {
-          if (!r.ok) throw new Error(r.status);
-          return r.text();
-        })
-        .then(t => setTextContent(t))
-        .catch(() => setLoadError(true))
-        .finally(() => setLoadingText(false))
-    );
-  }, [filename, isText]);
-
-  const fileUrl = token ? `/api/file/${encodeURIComponent(filename)}?token=${token}` : `/api/file/${encodeURIComponent(filename)}`;
-
-  return (
-    <div style={{
-      width: 520,
-      minWidth: 320,
-      borderLeft: '1px solid var(--border-default)',
-      background: 'var(--bg-surface)',
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: 0,
-      height: '100%',
-    }}>
-      {/* Panel header */}
-      <div style={{
-        height: 56, padding: '0 16px',
-        display: 'flex', alignItems: 'center', gap: 10,
-        borderBottom: '1px solid var(--border-default)',
-        flexShrink: 0,
-      }}>
-        <FileIcon name={filename} />
-        <span style={{ flex: 1, fontWeight: 500, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {filename}
-        </span>
-        <a
-          href={fileUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="rb-btn rb-btn--ghost"
-          style={{ height: 28, padding: '0 8px', gap: 5, fontSize: 12 }}
-          title="Ouvrir dans un nouvel onglet"
-        >
-          <Icon name="external" size={12} />
-          <span>Ouvrir</span>
-        </a>
-        <button
-          className="rb-btn rb-btn--ghost"
-          style={{ width: 28, height: 28, padding: 0 }}
-          onClick={onClose}
-          title="Fermer"
-        >
-          <Icon name="x" size={14} />
-        </button>
-      </div>
-
-      {/* Panel body */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {isPdf && (token &&
-          <iframe
-            src={fileUrl}
-            style={{ flex: 1, border: 'none', width: '100%', height: '100%' }}
-            title={filename}
-          />
-        )}
-        {isText && (
-          loadingText ? (
-            <div style={{ padding: 32, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-              Chargement…
-            </div>
-          ) : loadError ? (
-            <div style={{ padding: 32, textAlign: 'center', color: 'var(--danger)', fontSize: 13 }}>
-              Impossible de charger ce fichier.
-            </div>
-          ) : (
-            <div className="rb-scroll" style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-              <pre style={{
-                fontSize: 12.5, lineHeight: 1.65,
-                color: 'var(--fg-primary)',
-                fontFamily: ext === '.json' || ext === '.xml' || ext === '.csv'
-                  ? 'var(--font-mono)'
-                  : 'var(--font-sans)',
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                margin: 0,
-              }}>{textContent}</pre>
-            </div>
-          )
-        )}
-        {isOffice && (
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            padding: 32, gap: 16, textAlign: 'center',
-          }}>
-            <Icon name="doc" size={40} style={{ color: 'var(--fg-muted)', opacity: 0.4 }} />
-            <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.5 }}>
-              L'aperçu intégré n'est pas disponible pour ce format.<br />
-              Téléchargez le fichier pour l'ouvrir dans votre application.
-            </p>
-            <a
-              href={fileUrl}
-              download={filename}
-              className="rb-btn rb-btn--primary"
-              style={{ gap: 6 }}
-            >
-              <Icon name="download" size={14} />
-              <span>Télécharger</span>
-            </a>
-          </div>
-        )}
-        {!isPdf && !isText && !isOffice && (
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            padding: 32, gap: 12, textAlign: 'center',
-          }}>
-            <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: 0 }}>
-              Aperçu non disponible pour ce type de fichier.
-            </p>
-            <a
-              href={fileUrl}
-              download={filename}
-              className="rb-btn rb-btn--secondary"
-              style={{ gap: 6 }}
-            >
-              <Icon name="download" size={14} />
-              <span>Télécharger</span>
-            </a>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function ErrorView({ files, onRetry, onContinue }) {
