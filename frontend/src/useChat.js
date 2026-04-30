@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getSupabase } from './auth.js';
+import i18next from 'i18next';
 
 async function buildHeaders() {
   try {
@@ -52,7 +53,7 @@ export function useChat() {
         if (!cancelled && conversations?.length) {
           setSessions(conversations.map(c => ({
             id: c.id,
-            title: c.title || 'Conversation',
+            title: c.title || i18next.t('chat.conversations'),
             messages: [],
             created_at: c.created_at,
           })));
@@ -95,7 +96,7 @@ export function useChat() {
 
   const newSession = useCallback(() => {
     const id = newSessionId();
-    setSessions(prev => [{ id, title: 'New conversation', messages: [] }, ...prev]);
+    setSessions(prev => [{ id, title: i18next.t('chat.new_conversation'), messages: [] }, ...prev]);
     setActiveId(id);
     loadedSessions.current.add(id);
     return id;
@@ -177,7 +178,7 @@ export function useChat() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
-        _patchLast(sid, { content: err.detail || err.error || 'Erreur serveur', streaming: false });
+        _patchLast(sid, { content: err.detail || err.error || i18next.t('chat.error_server'), streaming: false });
         return;
       }
 
@@ -215,14 +216,14 @@ export function useChat() {
                 answer_for_feedback: accumulated,
               });
             } else if (evt.type === 'error') {
-              _patchLast(sid, { content: evt.message || 'Erreur', streaming: false });
+              _patchLast(sid, { content: evt.message || i18next.t('chat.error'), streaming: false });
             }
           } catch (_) {}
         }
       }
     } catch (e) {
       if (e.name !== 'AbortError')
-        _patchLast(sid, { content: 'Connection lost. Retry.', streaming: false });
+        _patchLast(sid, { content: i18next.t('chat.connection_lost'), streaming: false });
     } finally {
       setStreaming(false);
       abortRef.current = null;

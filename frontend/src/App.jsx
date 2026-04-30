@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { onAuthStateChange, logout } from './auth.js';
 import { useGlobalLenis } from './useLenis.js';
@@ -8,6 +9,7 @@ import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
 
 export default function App() {
+  const { t } = useTranslation();
   const [user, setUser] = useState(() => {
     const id = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
     return id ? { id, isGuest: true } : null;
@@ -43,7 +45,7 @@ export default function App() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
-        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Loading...</div>
+        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>{t('app.loading')}</div>
       </div>
     );
   }

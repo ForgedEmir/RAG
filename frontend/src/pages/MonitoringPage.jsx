@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScopedLenis } from '../useLenis.js';
+import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 
-const TABS = [
-  { id: 'overview', label: 'Vue d\'ensemble', icon: 'activity' },
-  { id: 'features', label: 'Features', icon: 'cpu' },
-  { id: 'logs', label: 'Logs', icon: 'terminal' },
-  { id: 'sources', label: 'Sources', icon: 'database' },
+const TAB_IDS = [
+  { id: 'overview', key: 'monitoring.tab_overview', icon: 'activity' },
+  { id: 'features', key: 'monitoring.tab_features', icon: 'cpu' },
+  { id: 'logs', key: 'monitoring.tab_logs', icon: 'terminal' },
+  { id: 'sources', key: 'monitoring.tab_sources', icon: 'database' },
 ];
 
 async function apiFetch(path, monitoringKey, options = {}) {
@@ -17,11 +19,11 @@ async function apiFetch(path, monitoringKey, options = {}) {
     headers: { 'X-Monitoring-Key': monitoringKey, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
   if (res.status === 403) throw new Error('Invalid key');
-  if (!res.ok) throw new Error(`Erreur HTTP: ${res.status}`);
+  if (!res.ok) throw new Error(i18next.t('monitoring.http_error', { status: res.status }));
   return res.json();
 }
 
-// Fetch qui ne throw pas — retourne null en cas d'erreur non-403
+// Non-throwing fetch — returns null on non-403 errors
 async function apiFetchSafe(path, monitoringKey, options = {}) {
   try {
     return await apiFetch(path, monitoringKey, options);
@@ -49,14 +51,16 @@ function fmtMs(ms) {
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return 'Just now';
-  if (m < 60) return `${m} min ago`;
+  if (m < 1) return i18next.t('monitoring.just_now');
+  if (m < 60) return i18next.t('monitoring.min_ago', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return i18next.t('monitoring.h_ago', { n: h });
+  return i18next.t('monitoring.d_ago', { n: Math.floor(h / 24) });
 }
 
 export default function MonitoringPage({ user, onLogout }) {
+  const { t } = useTranslation();
+  const TABS = TAB_IDS.map(tab => ({ ...tab, label: t(tab.key) }));
   const [tab, setTab] = useState('overview');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('monitoringKey') || '');
   const [keyInput, setKeyInput] = useState('');
@@ -85,9 +89,9 @@ export default function MonitoringPage({ user, onLogout }) {
         </div>
         <nav style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {[
-            { label: 'Conversations', icon: 'chat', path: '/chat' },
-            { label: 'Documents', icon: 'folder', path: '/docs' },
-            { label: 'Monitoring', icon: 'activity', path: '/monitoring', active: true },
+            { label: t('monitoring.nav_conversations'), icon: 'chat', path: '/chat' },
+            { label: t('monitoring.nav_documents'), icon: 'folder', path: '/docs' },
+            { label: t('monitoring.nav_monitoring'), icon: 'activity', path: '/monitoring', active: true },
           ].map(item => (
             <div
               key={item.path}
@@ -103,16 +107,16 @@ export default function MonitoringPage({ user, onLogout }) {
         {apiKey && (
           <div style={{ padding: '8px 12px' }}>
             <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 8 }} />
-            <div className="rb-section-label" style={{ padding: 0, marginBottom: 6 }}>Sections</div>
-            {TABS.map(t => (
+            <div className="rb-section-label" style={{ padding: 0, marginBottom: 6 }}>{t('monitoring.sections_label')}</div>
+            {TABS.map(tb => (
               <div
-                key={t.id}
-                className={'rb-listitem' + (tab === t.id ? ' rb-listitem--active' : '')}
-                onClick={() => setTab(t.id)}
+                key={tb.id}
+                className={'rb-listitem' + (tab === tb.id ? ' rb-listitem--active' : '')}
+                onClick={() => setTab(tb.id)}
                 style={{ height: 30, padding: '0 8px', gap: 8 }}
               >
-                <Icon name={t.icon} size={14} style={{ color: tab === t.id ? 'var(--accent)' : 'var(--fg-secondary)' }} />
-                <span className="rb-listitem__name" style={{ fontSize: 12.5 }}>{t.label}</span>
+                <Icon name={tb.icon} size={14} style={{ color: tab === tb.id ? 'var(--accent)' : 'var(--fg-secondary)' }} />
+                <span className="rb-listitem__name" style={{ fontSize: 12.5 }}>{tb.label}</span>
               </div>
             ))}
           </div>
@@ -122,7 +126,7 @@ export default function MonitoringPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Guest'}
+              {user?.email || t('chat.user_guest')}
             </div>
           </div>
           <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Logout">
@@ -139,16 +143,16 @@ export default function MonitoringPage({ user, onLogout }) {
           borderBottom: '1px solid var(--border-default)',
           background: 'var(--bg-surface)',
         }}>
-          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>System Monitoring</h1>
+          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{t('monitoring.page_heading')}</h1>
           {apiKey && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />Connected</span>
+              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />{t('monitoring.status_connected')}</span>
               <button
                 className="rb-btn rb-btn--ghost"
                 style={{ fontSize: 12 }}
                 onClick={() => { sessionStorage.removeItem('monitoringKey'); setApiKey(''); setKeyInput(''); }}
               >
-                Change key
+                {t('monitoring.change_key')}
               </button>
             </div>
           )}
@@ -177,6 +181,7 @@ export default function MonitoringPage({ user, onLogout }) {
 }
 
 function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
+  const { t } = useTranslation();
   return (
     <div style={{ maxWidth: 420, margin: '60px auto', textAlign: 'center' }}>
       <div style={{
@@ -186,9 +191,9 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
       }}>
         <Icon name="lock" size={22} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Monitoring Access</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{t('monitoring.keygate_heading')}</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px', lineHeight: 1.55 }}>
-        Enter your monitoring key to access system metrics.
+        {t('monitoring.keygate_desc')}
       </p>
       {keyError && (
         <div style={{ marginBottom: 12, padding: '8px 12px', background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 6, fontSize: 12, color: 'var(--danger)', textAlign: 'left' }}>
@@ -196,18 +201,18 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
         </div>
       )}
       <form onSubmit={onSubmit} style={{ textAlign: 'left' }}>
-        <label className="rb-label">Monitoring key</label>
+        <label className="rb-label">{t('monitoring.keygate_label')}</label>
         <input
           className="rb-input rb-input--lg"
           type="password"
           value={keyInput}
           onChange={e => setKeyInput(e.target.value)}
-          placeholder="mk_••••••••"
+          placeholder={t('monitoring.keygate_placeholder')}
           autoComplete="off"
           style={{ marginBottom: 12 }}
         />
         <button className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block" type="submit">
-          Access dashboard
+          {t('monitoring.keygate_btn')}
         </button>
       </form>
     </div>
@@ -230,6 +235,7 @@ function StatCard({ title, value, icon, sub }) {
 }
 
 function OverviewTab({ apiKey }) {
+  const { t } = useTranslation();
   const [data, setData] = useState({ health: null, stats: null, cache: null, feedbacks: [] });
   const [error, setError] = useState(null);
 
@@ -274,15 +280,15 @@ function OverviewTab({ apiKey }) {
             background: data.health?.status === 'ok' ? 'var(--ok)' : 'var(--warn)',
           }} />
           <span style={{ fontSize: 15, fontWeight: 600 }}>
-            {data.health?.status === 'ok' ? 'System operational' : 'Degraded performances'}
+            {data.health?.status === 'ok' ? t('monitoring.health_operational') : t('monitoring.health_degraded')}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {[
-            { label: 'LLM API', ok: h.llm_key },
-            { label: 'Corpus BM25', ok: h.bm25_corpus },
-            { label: 'Qdrant DB', ok: h.qdrant },
-            { label: 'Supabase', ok: h.supabase },
+            { label: t('monitoring.health_llm'), ok: h.llm_key },
+            { label: t('monitoring.health_bm25'), ok: h.bm25_corpus },
+            { label: t('monitoring.health_qdrant'), ok: h.qdrant },
+            { label: t('monitoring.health_supabase'), ok: h.supabase },
           ].map((check, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-secondary)' }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: check.ok ? 'var(--ok)' : 'var(--danger)' }} />
@@ -294,27 +300,27 @@ function OverviewTab({ apiKey }) {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <StatCard title="Total requests" value={s?.total_questions?.toLocaleString()} icon="message" />
-        <StatCard title="Median latency" value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? `P95: ${s.latency_p95}ms` : null} />
-        <StatCard title="Blocked injections" value={s?.injections_blocked} icon="shield" />
-        <StatCard title="Error rate" value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? `${s.questions_last_24h} req / 24h` : null} />
+        <StatCard title={t('monitoring.stat_requests')} value={s?.total_questions?.toLocaleString()} icon="message" />
+        <StatCard title={t('monitoring.stat_latency')} value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? t('monitoring.stat_p95', { ms: s.latency_p95 }) : null} />
+        <StatCard title={t('monitoring.stat_blocked')} value={s?.injections_blocked} icon="shield" />
+        <StatCard title={t('monitoring.stat_errors')} value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? `${s.questions_last_24h} ${t('monitoring.stat_req_24h')}` : null} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
         {/* Events */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>
-            Recent events
+            {t('monitoring.recent_events')}
           </h3>
           <div className="rb-scroll" style={{ maxHeight: 320, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ color: 'var(--fg-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Time</th>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Type</th>
-                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>Detail</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>Latency</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_date')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_time')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_type')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>{t('monitoring.col_detail')}</th>
+                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>{t('monitoring.col_latency')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -345,7 +351,7 @@ function OverviewTab({ apiKey }) {
                     </tr>
                   );
                 })}
-                {!s && <tr><td colSpan={4} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>Loading...</td></tr>}
+                {!s && <tr><td colSpan={4} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>{t('monitoring.loading')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -354,13 +360,13 @@ function OverviewTab({ apiKey }) {
         {/* Cache */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 16px' }}>
-            Semantic Cache
+            {t('monitoring.cache_section')}
           </h3>
           {c ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--fg-secondary)' }}>Usage</span>
+                  <span style={{ color: 'var(--fg-secondary)' }}>{t('monitoring.cache_usage')}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ok)', fontSize: 11 }}>{c.entries} / {c.max}</span>
                 </div>
                 <div style={{ height: 6, background: 'var(--bg-muted)', borderRadius: 3, overflow: 'hidden' }}>
@@ -369,16 +375,16 @@ function OverviewTab({ apiKey }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Threshold</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{t('monitoring.cache_threshold')}</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{c.threshold * 100}%</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>TTL</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{t('monitoring.cache_ttl')}</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{c.ttl / 3600}h</div>
                 </div>
               </div>
             </div>
-          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>}
+          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.loading')}</div>}
         </div>
       </div>
 
@@ -386,15 +392,15 @@ function OverviewTab({ apiKey }) {
       <div className="rb-card" style={{ padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-            Recent feedbacks
+            {t('monitoring.feedbacks_section')}
           </h3>
           <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-            {data.feedbacks.length} event(s)
+            {t('monitoring.events', { count: data.feedbacks.length })}
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {data.feedbacks.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>No recent feedback.</div>
+            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>{t('monitoring.no_feedback')}</div>
           )}
           {data.feedbacks.slice(0, 8).map((fb, i) => {
             const good = Number(fb.value) > 0;
@@ -406,14 +412,14 @@ function OverviewTab({ apiKey }) {
               }}>
                 <div style={{ minWidth: 0, paddingRight: 12 }}>
                   <div style={{ fontSize: 12, color: 'var(--fg-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {fb.question || 'Without question context'}
+                    {fb.question || t('monitoring.no_question_ctx')}
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--fg-muted)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
                     {timeAgo(fb.created_at)} · {fb.trace_id || '—'}
                   </div>
                 </div>
                 <span className={'rb-pill ' + (good ? 'rb-pill--ok' : 'rb-pill--danger')}>
-                  {good ? '👍 Helpful' : '👎 Not helpful'}
+                  {good ? t('monitoring.feedback_positive') : t('monitoring.feedback_negative')}
                 </span>
               </div>
             );
@@ -437,6 +443,7 @@ const FEATURE_ICONS = {
 };
 
 function FeaturesTab({ apiKey }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [ctx, setCtx] = useState(null);
 
@@ -461,11 +468,11 @@ function FeaturesTab({ apiKey }) {
         <div className="rb-card" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 32 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              Contextual Retrieval
+              {t('monitoring.contextual_heading')}
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>Context Improvement</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>{t('monitoring.context_improvement')}</h2>
             <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.55 }}>
-              Technique adding a global summary to each chunk to preserve meaning during vector search.
+              {t('monitoring.contextual_desc')}
             </p>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
@@ -482,7 +489,7 @@ function FeaturesTab({ apiKey }) {
                 {ctx.coverage_pct}%
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Coverage</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{t('monitoring.coverage')}</div>
             <div style={{ fontSize: 11, color: 'var(--fg-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
               {ctx.with_contextual_summary} / {ctx.sample_size}
             </div>
@@ -523,6 +530,7 @@ function FeaturesTab({ apiKey }) {
 const LOG_COLORS = { INFO: 'var(--fg-secondary)', WARNING: 'var(--warn)', ERROR: 'var(--danger)', DEBUG: 'var(--fg-muted)' };
 
 function LogsTab({ apiKey }) {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState([]);
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
@@ -542,6 +550,14 @@ function LogsTab({ apiKey }) {
     (!filter || l.msg?.toLowerCase().includes(filter.toLowerCase()) || l.name?.toLowerCase().includes(filter.toLowerCase()))
   );
 
+  const levelButtons = [
+    { value: 'ALL', labelKey: 'monitoring.log_all' },
+    { value: 'INFO', labelKey: 'monitoring.log_info' },
+    { value: 'WARNING', labelKey: 'monitoring.log_warning' },
+    { value: 'ERROR', labelKey: 'monitoring.log_error' },
+    { value: 'DEBUG', labelKey: 'monitoring.log_debug' },
+  ];
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
@@ -549,20 +565,20 @@ function LogsTab({ apiKey }) {
           <Icon name="search" size={13} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
           <input
             className="rb-input"
-            placeholder="Filter logs..."
+            placeholder={t('monitoring.filter_logs')}
             value={filter}
             onChange={e => setFilter(e.target.value)}
             style={{ paddingLeft: 30 }}
           />
         </div>
-        {['ALL', 'INFO', 'WARNING', 'ERROR', 'DEBUG'].map(l => (
+        {levelButtons.map(({ value, labelKey }) => (
           <button
-            key={l}
-            className={'rb-btn ' + (levelFilter === l ? 'rb-btn--primary' : 'rb-btn--secondary')}
+            key={value}
+            className={'rb-btn ' + (levelFilter === value ? 'rb-btn--primary' : 'rb-btn--secondary')}
             style={{ minWidth: 0, padding: '0 10px', fontSize: 11 }}
-            onClick={() => setLevelFilter(l)}
+            onClick={() => setLevelFilter(value)}
           >
-            {l}
+            {t(labelKey)}
           </button>
         ))}
         <button className="rb-btn rb-btn--ghost" style={{ padding: '0 10px' }} onClick={fetchLogs} title="Refresh">
@@ -578,7 +594,7 @@ function LogsTab({ apiKey }) {
         }} className="rb-scroll">
           {filtered.length === 0 && (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>
-              No matching log
+              {t('monitoring.no_log')}
             </div>
           )}
           {filtered.map((log, i) => (
@@ -606,6 +622,7 @@ function LogsTab({ apiKey }) {
 }
 
 function SourcesTab({ apiKey }) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
@@ -671,9 +688,9 @@ function SourcesTab({ apiKey }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Indexed sources</h2>
+          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{t('monitoring.sources_heading')}</h2>
           <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-            {files.length} file{files.length !== 1 ? 's' : ''} in the database
+            {t('monitoring.sources_count', { count: files.length })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -684,7 +701,7 @@ function SourcesTab({ apiKey }) {
             disabled={reindexing}
           >
             <Icon name="refresh" size={13} />
-            {reindexing ? 'Indexing...' : 'Reindex all'}
+            {reindexing ? t('monitoring.reindexing_btn') : t('monitoring.reindex_btn')}
           </button>
           <button
             className="rb-btn rb-btn--primary"
@@ -692,7 +709,7 @@ function SourcesTab({ apiKey }) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Icon name="upload" size={13} />
-            Import
+            {t('monitoring.import')}
           </button>
           <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
         </div>
@@ -723,9 +740,9 @@ function SourcesTab({ apiKey }) {
           <span />
         </div>
         {loading ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.loading')}</div>
         ) : files.length === 0 ? (
-          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>No indexed file</div>
+          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.no_sources')}</div>
         ) : files.map((f, i) => (
           <div key={i} style={{
             display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px',
@@ -738,7 +755,7 @@ function SourcesTab({ apiKey }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
             </div>
             <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-              <span className="rb-dot" />indexed
+              <span className="rb-dot" />{t('monitoring.status_indexed')}
             </span>
             <button
               className="rb-btn rb-btn--ghost"
