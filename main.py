@@ -110,11 +110,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import mimetypes
 mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
@@ -376,19 +378,12 @@ _allowed_origins = [o.strip() for o in os.getenv(
     "http://localhost:8080,http://127.0.0.1:8080"
 ).split(",") if o.strip()]
 
-
-
-# CORS permissif comme avant (dev et test)
-_allowed_origins = [o.strip() for o in os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:8080,http://127.0.0.1:8080"
-).split(",") if o.strip()]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Monitoring-Key", "X-Local-Guest-Id"],
+    allow_credentials=True,
 )
 
 register_routes(app, _log_buffer)
@@ -470,8 +465,22 @@ for candidate in _frontend_candidates:
 _assets_dir = os.path.join(_frontend, "assets")
 _index_file = os.path.join(_frontend, "index.html")
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if not _is_dev:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

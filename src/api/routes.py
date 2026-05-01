@@ -3,10 +3,21 @@ import concurrent.futures
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
+
+_LOG_REDACT = re.compile(
+    r'(Bearer\s+)[A-Za-z0-9\-._~+/]+=*'
+    r'|((?:api.?key|token|password|secret)\s*[:=]\s*)\S+',
+    re.IGNORECASE,
+)
+
+def _sanitize_log(entry: dict) -> dict:
+    msg = _LOG_REDACT.sub(lambda m: (m.group(1) or m.group(2)) + '[REDACTED]', entry.get("msg", ""))
+    return {**entry, "msg": msg[:1000]}
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -183,7 +194,8 @@ async def health_check():
 
 
 @router.get("/api/auth/config")
-async def get_auth_config():
+@limiter.limit("20/minute")
+async def get_auth_config(request: Request):
     return {
         "supabase_url":      os.getenv("SUPABASE_URL", ""),
         "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
@@ -553,7 +565,7 @@ async def delete_history_by_session(session_id: str = "", user_id: str = Depends
 async def get_system_logs(request: Request):
     require_monitoring(request)
     logs = getattr(request.app.state, "log_buffer", None)
-    return {"logs": list(logs or [])}
+    return {"logs": [_sanitize_log(e) for e in (logs or [])]}
 
 
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { onAuthStateChange, logout, getAuthHeader } from './auth.js';
 import { useGlobalLenis } from './useLenis.js';
@@ -7,6 +7,25 @@ import ChatPage from './pages/ChatPage.jsx';
 import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+
+class ErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'var(--bg-app)' }}>
+        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Une erreur inattendue s'est produite.</div>
+        <button
+          onClick={() => window.location.reload()}
+          style={{ padding: '8px 18px', borderRadius: 6, background: 'var(--accent)', color: '#000', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+        >
+          Recharger
+        </button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 function AuthCallback() {
   const navigate = useNavigate();
@@ -71,6 +90,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <Routes>
       <Route path="/login" element={
         user ? <Navigate to="/chat" replace /> : <LoginPage onLogin={setUser} />
@@ -90,5 +110,6 @@ export default function App() {
       } />
       <Route path="*" element={<Navigate to={user ? '/chat' : '/login'} replace />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

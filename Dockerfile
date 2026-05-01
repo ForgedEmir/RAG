@@ -28,6 +28,12 @@ COPY --from=frontend /output/ /app/src/frontend/
 
 RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
 
+# Run as non-root for security
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /app/data/sample /app/logs \
+    && chown -R appuser:appuser /app
+USER appuser
+
 # Port 8000 : API + frontend web
 # Port 8001 : MCP SSE (Claude Desktop, Cursor, etc.)
 EXPOSE 8000 8001
