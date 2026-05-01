@@ -113,7 +113,7 @@ def _build_context_chunks(passages: list[str], sources: list[str]) -> list[dict]
         return chunks
     for i, passage in enumerate(passages):
         src = sources[i] if i < len(sources) else "source inconnue"
-        chunks.append({"source": src, "passage": passage})
+        chunks.append({"source": src.split("/")[-1], "passage": passage})
     return chunks
 
 
@@ -167,8 +167,15 @@ async def health_check():
             checks["supabase"] = False
     except Exception:
         checks["supabase"] = False
+    try:
+        import redis as redis_lib
+        r = redis_lib.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), socket_connect_timeout=1)
+        r.ping()
+        checks["redis"] = True
+    except Exception:
+        checks["redis"] = False
 
-    is_healthy = all(v for k, v in checks.items() if k != "vector_memory")
+    is_healthy = all(v for k, v in checks.items() if k not in ("vector_memory", "redis"))
     return JSONResponse(
         {"status": "ok" if is_healthy else "degraded", "checks": checks},
         status_code=200 if is_healthy else 207,
@@ -238,8 +245,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         )
 
     # ── Semantic cache check ──────────────────────────────────────────────
-    cached_data = await cache_check(question)
-    if cached_data is not None:
+    cached_result = await cache_check(question)
+    if cached_result is not None:
+        cached_data, _ = cached_result if isinstance(cached_result, tuple) else (cached_result, None)
         cached_text = cached_data.get("answer", "")
         cached_sources = cached_data.get("sources", [])
         cached_chunks = cached_data.get("context_chunks", [])
@@ -301,7 +309,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     # Score de confiance moyen (0–100 %)
     confidence_pct = round(sum(conf_scores) / len(conf_scores) * 100) if conf_scores else 0
-    unique_sources = list(dict.fromkeys(raw_sources))
+    unique_sources = list(dict.fromkeys(s.split("/")[-1] for s in raw_sources))
 
     async def event_stream():
         accumulated, model_used = [], []
@@ -553,7 +561,7 @@ async def get_system_logs(request: Request):
 async def get_cache_stats(request: Request):
     """Return semantic cache metadata — accessible via monitoring key."""
     require_monitoring(request)
-    return cache_stats()
+    return await cache_stats()
 
 
 

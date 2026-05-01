@@ -11,14 +11,15 @@ function encodeFilePath(filename) {
 }
 
 export default function MarkdownViewer({ filename, passage }) {
-  const [content, setContent] = useState(null);
-  const [error, setError] = useState(false);
+  const [content, setContent]     = useState(null);
+  const [error, setError]         = useState(false);
+  const [markFound, setMarkFound] = useState(false);
   const containerRef = useRef(null);
-  const markRef = useRef(null);
 
   useEffect(() => {
     setContent(null);
     setError(false);
+    setMarkFound(false);
     getAuthHeader().then(headers =>
       fetch(`/api/file-text/${encodeFilePath(filename)}`, { headers })
         .then(r => r.ok ? r.text() : Promise.reject())
@@ -31,24 +32,42 @@ export default function MarkdownViewer({ filename, passage }) {
     if (!containerRef.current || !content) return;
     if (!passage) {
       containerRef.current.querySelectorAll('mark[data-passage]').forEach(m => m.replaceWith(...m.childNodes));
-      markRef.current = null;
+      setMarkFound(false);
       return;
     }
-    // Small delay to let ReactMarkdown finish rendering
-    const id = setTimeout(() => {
+    setMarkFound(false);
+    // ReactMarkdown may still be painting — retry up to 3 times with increasing delay
+    let attempt = 0;
+    let tid;
+    const tryMark = () => {
       const mark = injectPassageMark(containerRef.current, passage);
-      markRef.current = mark;
-      if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 50);
-    return () => clearTimeout(id);
+      if (mark) {
+        setMarkFound(true);
+        mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (attempt < 3) {
+        attempt++;
+        tid = setTimeout(tryMark, 80 * attempt);
+      }
+    };
+    tid = setTimeout(tryMark, 60);
+    return () => clearTimeout(tid);
   }, [content, passage]);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le fichier.</div>;
-  if (content === null) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
+  if (error) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Impossible de charger le fichier.
+    </div>
+  );
+  if (content === null) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Chargement…
+    </div>
+  );
 
   return (
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
-      {passage && !markRef.current && content && (
+      {/* Fallback banner — only shown if highlight injection failed after all retries */}
+      {passage && !markFound && (
         <div style={{ margin: '12px 20px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
           <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
         </div>

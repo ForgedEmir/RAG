@@ -1,117 +1,182 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { getAuthHeader } from '../../auth.js';
-import { normalize } from '../../utils/highlight.js';
+import { normalize, highlightPdfLayer } from '../../utils/highlight.js';
 
-// Vite: inline worker URL so pdfjs doesn't try to fetch from CDN
-import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
 export default function PDFViewer({ filename, passage }) {
-  const [pdfData, setPdfData] = useState(null);
-  const [numPages, setNumPages] = useState(0);
+  const [blobUrl, setBlobUrl]       = useState(null);
+  const [error, setError]           = useState(false);
+  const [numPages, setNumPages]     = useState(null);
+  const [pdfDoc, setPdfDoc]         = useState(null);
   const [targetPage, setTargetPage] = useState(null);
-  const [matchItems, setMatchItems] = useState(null); // Set of item indices on targetPage
-  const [error, setError] = useState(false);
-  const pdfRef = useRef(null);
-  const pageRefs = useRef({});
+  const [pageWidth, setPageWidth]   = useState(480);
 
+  const prevUrl        = useRef(null);
+  const scrollRef      = useRef(null);
+  const pageRefs       = useRef({});
+  const highlightDone  = useRef(false);
+  const pendingPages   = useRef(new Set());
+
+  // ── Load PDF (authenticated) ────────────────────────────────────────────────
   useEffect(() => {
-    setPdfData(null);
+    setBlobUrl(null);
     setError(false);
+    setNumPages(null);
+    setPdfDoc(null);
     setTargetPage(null);
-    setMatchItems(null);
+    highlightDone.current = false;
+    pendingPages.current  = new Set();
+    pageRefs.current      = {};
+
+    let cancelled = false;
     (async () => {
       try {
         const headers = await getAuthHeader();
         const res = await fetch(`/api/file/${encodeFilePath(filename)}`, { headers });
-        if (!res.ok) throw new Error('fetch failed');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();
-        setPdfData(new Uint8Array(buf));
+        if (cancelled) return;
+        const url = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }));
+        if (prevUrl.current) URL.revokeObjectURL(prevUrl.current);
+        prevUrl.current = url;
+        setBlobUrl(url);
       } catch (_) {
-        setError(true);
+        if (!cancelled) setError(true);
       }
     })();
+    return () => { cancelled = true; };
   }, [filename]);
 
-  const onLoadSuccess = useCallback(async (pdf) => {
-    pdfRef.current = pdf;
-    setNumPages(pdf.numPages);
-    if (!passage) return;
+  useEffect(() => () => {
+    if (prevUrl.current) URL.revokeObjectURL(prevUrl.current);
+  }, []);
 
-    const normPassage = normalize(passage);
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
-      const tc = await page.getTextContent();
-      const items = tc.items;
-      const pageText = items.map(it => it.str).join(' ');
-      const normPage = normalize(pageText);
-      if (normPage.indexOf(normPassage) !== -1) {
-        // Find which item indices are part of the match
-        const matchSet = new Set();
-        let accumulated = '';
-        const itemStarts = [];
-        for (let i = 0; i < items.length; i++) {
-          itemStarts.push(accumulated.length);
-          accumulated += (i > 0 ? ' ' : '') + items[i].str;
-        }
-        const normAccum = normalize(accumulated);
-        const matchStart = normAccum.indexOf(normPassage);
-        const matchEnd = matchStart + normPassage.length;
-        if (matchStart !== -1) {
-          for (let i = 0; i < items.length; i++) {
-            const ns = itemStarts[i];
-            const ne = ns + items[i].str.length;
-            if (ne > matchStart && ns < matchEnd) matchSet.add(i);
-          }
-        }
-        setTargetPage(p);
-        setMatchItems(matchSet);
-        break;
-      }
-    }
-  }, [passage]);
-
+  // Track container width so pages fill the panel without overflowing
   useEffect(() => {
-    if (targetPage && pageRefs.current[targetPage]) {
-      pageRefs.current[targetPage].scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [targetPage]);
+    if (!scrollRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0].contentRect.width;
+      setPageWidth(Math.max(280, w - 32));
+    });
+    ro.observe(scrollRef.current);
+    return () => ro.disconnect();
+  }, []);
 
-  const customTextRenderer = useCallback(({ str, itemIndex }) => {
-    if (!matchItems || !matchItems.has(itemIndex)) return str;
-    const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<mark style="background:rgba(250,204,21,0.55);border-radius:2px;color:inherit;padding:0">${escaped}</mark>`;
-  }, [matchItems]);
+  // ── Document loaded — save proxy + page count ───────────────────────────────
+  const onDocLoad = useCallback((pdf) => {
+    setNumPages(pdf.numPages);
+    setPdfDoc(pdf);
+  }, []);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le PDF.</div>;
-  if (!pdfData) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
+  // ── Find which page contains the passage ────────────────────────────────────
+  useEffect(() => {
+    if (!pdfDoc || !numPages) return;
+    if (!passage) { setTargetPage(null); return; }
+
+    const needle = normalize(passage).toLowerCase().slice(0, 80);
+    let cancelled = false;
+
+    (async () => {
+      for (let p = 1; p <= numPages; p++) {
+        try {
+          const page    = await pdfDoc.getPage(p);
+          const content = await page.getTextContent();
+          const text    = normalize(
+            content.items.map(i => i.str || '').join(' ')
+          ).toLowerCase();
+          if (text.includes(needle.slice(0, 50))) {
+            if (!cancelled) setTargetPage(p);
+            return;
+          }
+        } catch (_) {}
+      }
+      // Passage not found in any page — stay on page 1
+    })();
+    return () => { cancelled = true; };
+  }, [pdfDoc, passage, numPages]);
+
+  // ── Apply highlight + scroll once targetPage is known ───────────────────────
+  const tryHighlight = useCallback((pageNum) => {
+    if (!passage || highlightDone.current) return;
+    if (targetPage !== null && pageNum !== targetPage) return;
+
+    const wrapper   = pageRefs.current[pageNum];
+    if (!wrapper) return;
+    const textLayer = wrapper.querySelector('.react-pdf__Page__textContent');
+    if (!textLayer) return;
+
+    // Text layer spans may not be fully laid out yet — small delay
+    setTimeout(() => {
+      const first = highlightPdfLayer(textLayer, passage);
+      if (first) {
+        highlightDone.current = true;
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 60);
+  }, [passage, targetPage]);
+
+  // When targetPage changes, retry on any already-rendered pending pages
+  useEffect(() => {
+    if (targetPage === null) return;
+    pendingPages.current.forEach(p => tryHighlight(p));
+  }, [targetPage, tryHighlight]);
+
+  // ── Per-page render callback ─────────────────────────────────────────────────
+  const onPageRender = useCallback((pageNum) => {
+    pendingPages.current.add(pageNum);
+    tryHighlight(pageNum);
+  }, [tryHighlight]);
+
+  // ── UI ──────────────────────────────────────────────────────────────────────
+  if (error) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Impossible de charger le PDF.
+    </div>
+  );
+  if (!blobUrl) return (
+    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
+      Chargement…
+    </div>
+  );
 
   return (
-    <div className="rb-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--bg-subtle, #f5f5f5)' }}>
+    <div
+      ref={scrollRef}
+      className="rb-scroll"
+      style={{ flex: 1, overflow: 'auto', background: '#525659', padding: '16px 0' }}
+    >
       <Document
-        file={{ data: pdfData }}
-        onLoadSuccess={onLoadSuccess}
-        onLoadError={() => setError(true)}
+        file={blobUrl}
+        onLoadSuccess={onDocLoad}
         loading={null}
+        error={
+          <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: '#f87171' }}>
+            Erreur de lecture PDF.
+          </div>
+        }
       >
-        {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
+        {numPages && Array.from({ length: numPages }, (_, i) => i + 1).map(p => (
           <div
-            key={pageNum}
-            ref={el => { pageRefs.current[pageNum] = el; }}
-            style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, paddingTop: pageNum === 1 ? 12 : 0 }}
+            key={p}
+            ref={el => { pageRefs.current[p] = el; }}
+            style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}
           >
             <Page
-              pageNumber={pageNum}
-              width={Math.min(700, window.innerWidth - 60)}
-              customTextRenderer={matchItems ? customTextRenderer : undefined}
+              pageNumber={p}
+              renderTextLayer={true}
               renderAnnotationLayer={false}
+              width={pageWidth}
+              onRenderSuccess={() => onPageRender(p)}
             />
           </div>
         ))}

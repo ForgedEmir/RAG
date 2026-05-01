@@ -116,11 +116,51 @@ def _normalize_memory_entry(nom: str, raw) -> dict:
     return {"mtime": mtime, "indexed_at": mtime}
 
 
+def _bootstrap_memory_from_qdrant() -> Dict[str, dict]:
+    """Reconstruit la mémoire fichiers depuis Qdrant.
+
+    WHY: files_metadata.json vit dans le container (non persisté entre redémarrages).
+    Quand il est absent, on scrolle Qdrant pour retrouver les fichiers déjà indexés
+    et reconstruire l'état, évitant ainsi une ré-indexation inutile des 17 fichiers.
+    """
+    try:
+        from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
+        client = _get_client()
+        seen: Dict[str, dict] = {}
+        offset = None
+        while True:
+            results, offset = client.scroll(
+                collection_name=_COLLECTION_NAME,
+                offset=offset,
+                limit=256,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in results:
+                payload   = point.payload or {}
+                meta      = payload.get("metadata", {})
+                fichier   = meta.get("fichier")
+                if not fichier or fichier in seen:
+                    continue
+                indexed_at = float(meta.get("indexed_at", 0.0) or 0.0)
+                fpath      = os.path.join(DATA_FOLDER, fichier)
+                mtime      = os.path.getmtime(fpath) if os.path.exists(fpath) else indexed_at
+                seen[fichier] = {"mtime": mtime, "indexed_at": indexed_at}
+            if offset is None:
+                break
+        return seen
+    except Exception as e:
+        logger.warning("Bootstrap mémoire depuis Qdrant impossible : %s", e)
+        return {}
+
+
 def load_memory() -> Dict[str, dict]:
     """Lit le fichier de suivi des fichiers indexés.
 
     Retourne {nom: {mtime, indexed_at}}. Migre silencieusement l'ancien format
     {nom: mtime_float} vers le nouveau.
+    Si le fichier est absent (redémarrage container), tente de reconstruire
+    l'état depuis Qdrant pour éviter une ré-indexation inutile.
     """
     if os.path.exists(MEMORY_FILE):
         try:
@@ -140,7 +180,14 @@ def load_memory() -> Dict[str, dict]:
             logger.warning(f"Mémoire fichiers JSON corrompue, reset : {e}")
         except Exception as e:
             logger.warning(f"Impossible de lire la mémoire fichiers, reset : {e}")
-    return {}
+
+    # Fichier absent — reconstruction depuis Qdrant (typiquement après redémarrage)
+    logger.info("Mémoire fichiers absente — reconstruction depuis Qdrant en cours…")
+    memory = _bootstrap_memory_from_qdrant()
+    if memory:
+        save_memory(memory)
+        logger.info("Mémoire fichiers reconstruite depuis Qdrant (%d fichier(s)).", len(memory))
+    return memory
 
 
 def save_memory(fichiers: dict) -> None:
@@ -153,12 +200,14 @@ def list_current_files() -> dict:
     if not os.path.exists(DATA_FOLDER):
         return {}
     files = {}
-    for root, _, filenames in os.walk(DATA_FOLDER):
-        for nom in filenames:
-            if nom.lower().endswith(SUPPORTED_EXTENSIONS):
-                # On stocke le chemin relatif par rapport à DATA_FOLDER comme clé
-                rel_path = os.path.relpath(os.path.join(root, nom), DATA_FOLDER)
-                files[rel_path] = os.path.getmtime(os.path.join(root, nom))
+    for entry in os.scandir(DATA_FOLDER):
+        if not entry.is_dir():
+            continue
+        for root, _, filenames in os.walk(entry.path):
+            for nom in filenames:
+                if nom.lower().endswith(SUPPORTED_EXTENSIONS):
+                    rel_path = os.path.relpath(os.path.join(root, nom), DATA_FOLDER)
+                    files[rel_path] = os.path.getmtime(os.path.join(root, nom))
     return files
 
 

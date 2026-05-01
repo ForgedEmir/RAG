@@ -90,6 +90,16 @@ async def _verify_supabase_jwt(token: str) -> Optional[str]:
 
 
 async def get_tenant_id(user_id: str) -> str:
+    """Retourne le tenant_id du user : celui d'un autre si invité, sinon le sien."""
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if supa:
+            res = await supa.table("user_roles").select("tenant_id").eq("user_id", user_id).limit(1).execute()
+            if res.data and res.data[0]["tenant_id"] != user_id:
+                return res.data[0]["tenant_id"]
+    except Exception as e:
+        logger.debug(f"get_tenant_id fallback: {e}")
     return user_id
 
 

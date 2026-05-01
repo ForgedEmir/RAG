@@ -2,22 +2,39 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import Icon from '../components/Icon.jsx';
-import { loginWithEmail, loginWithGithub, loginWithGoogle, getOrCreateGuestId } from '../auth.js';
+import { loginWithEmail, sendMagicLink, getMfaLevel, listMfaFactors, challengeMfa, verifyMfa } from '../auth.js';
 
 export default function LoginPage({ onLogin }) {
+  const [mode, setMode] = useState('magic'); // 'magic' | 'password'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  // 2FA state
+  const [mfaStep, setMfaStep] = useState(null); // null | { factorId, challengeId }
+  const [totpCode, setTotpCode] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handlePassword = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
       await loginWithEmail(email, password);
+      // Check if MFA is required
+      const assurance = await getMfaLevel();
+      if (assurance.nextLevel === 'aal2' && assurance.currentLevel !== 'aal2') {
+        const factors = await listMfaFactors();
+        if (factors.length > 0) {
+          const factor = factors[0];
+          const challenge = await challengeMfa(factor.id);
+          setMfaStep({ factorId: factor.id, challengeId: challenge.id });
+          setLoading(false);
+          return;
+        }
+      }
       navigate('/chat');
     } catch (err) {
       setError(err.message || 'Échec de la connexion');
@@ -26,19 +43,33 @@ export default function LoginPage({ onLogin }) {
     }
   };
 
-  const handleSocial = async (provider) => {
+  const handleMfaVerify = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
     try {
-      if (provider === 'github') await loginWithGithub();
-      if (provider === 'google') await loginWithGoogle();
+      await verifyMfa(mfaStep.factorId, mfaStep.challengeId, totpCode.replace(/\s/g, ''));
+      navigate('/chat');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Code invalide');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGuest = () => {
-    const guestId = getOrCreateGuestId();
-    onLogin({ id: guestId, isGuest: true });
-    navigate('/chat');
+  const handleMagicLink = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      await sendMagicLink(email);
+      setSuccess(`Lien envoyé à ${email}. Vérifiez votre boîte mail (lien valable 1h).`);
+    } catch (err) {
+      setError(err.message || 'Échec de l\'envoi');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -73,9 +104,43 @@ export default function LoginPage({ onLogin }) {
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 8px', letterSpacing: '-0.015em' }}>
           Connexion à votre espace
         </h1>
-        <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 28px', lineHeight: 1.55 }}>
+        <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px', lineHeight: 1.55 }}>
           Accédez à votre assistant documentaire.
         </p>
+
+        <div style={{
+          display: 'flex', gap: 4, marginBottom: 24,
+          background: 'var(--bg-sunken)', borderRadius: 8, padding: 4,
+        }}>
+          <button
+            type="button"
+            onClick={() => { setMode('magic'); setError(''); setSuccess(''); }}
+            style={{
+              flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: mode === 'magic' ? 'var(--bg-surface)' : 'transparent',
+              color: mode === 'magic' ? 'var(--fg-primary)' : 'var(--fg-muted)',
+              boxShadow: mode === 'magic' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+              transition: 'all 0.15s',
+            }}
+          >
+            Lien magique
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('password'); setError(''); setSuccess(''); }}
+            style={{
+              flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: mode === 'password' ? 'var(--bg-surface)' : 'transparent',
+              color: mode === 'password' ? 'var(--fg-primary)' : 'var(--fg-muted)',
+              boxShadow: mode === 'password' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+              transition: 'all 0.15s',
+            }}
+          >
+            Mot de passe
+          </button>
+        </div>
 
         {error && (
           <div style={{
@@ -88,97 +153,132 @@ export default function LoginPage({ onLogin }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
-          <div style={{ marginBottom: 12 }}>
-            <label className="rb-label" htmlFor="email">Adresse email</label>
-            <input
-              id="email"
-              className="rb-input rb-input--lg"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="vous@entreprise.com"
-              autoComplete="email"
-              required
-            />
+        {success && (
+          <div style={{
+            marginBottom: 16, padding: '10px 14px',
+            background: 'var(--ok-soft)', border: '1px solid var(--ok)',
+            borderRadius: 'var(--r-md)', fontSize: 13, color: 'var(--ok)',
+            textAlign: 'left', display: 'flex', gap: 8, alignItems: 'flex-start',
+          }}>
+            <Icon name="check" size={15} style={{ flex: 'none', marginTop: 1 }} />
+            {success}
           </div>
-          <div style={{ marginBottom: 16 }}>
-            <label className="rb-label" htmlFor="password">Mot de passe</label>
-            <div style={{ position: 'relative' }}>
+        )}
+
+        {mfaStep ? (
+          <form onSubmit={handleMfaVerify} style={{ textAlign: 'left' }}>
+            <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 16px', lineHeight: 1.55 }}>
+              Entrez le code à 6 chiffres de votre application d'authentification (Google Authenticator, Authy…)
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <label className="rb-label">Code de vérification</label>
               <input
-                id="password"
                 className="rb-input rb-input--lg"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={totpCode}
+                onChange={e => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                autoComplete="one-time-code"
                 required
-                style={{ paddingRight: 44 }}
+                style={{ letterSpacing: '0.3em', textAlign: 'center', fontSize: 20 }}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(v => !v)}
-                style={{
-                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--fg-muted)', padding: 4,
-                }}
-              >
-                <Icon name={showPassword ? 'eye_off' : 'eye'} size={16} />
-              </button>
             </div>
-          </div>
-          <button
-            type="submit"
-            className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
-            disabled={loading}
-          >
-            {loading ? 'Connexion…' : 'Se connecter'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
+              disabled={loading || totpCode.length < 6}
+            >
+              {loading ? 'Vérification…' : 'Confirmer'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMfaStep(null); setTotpCode(''); setError(''); }}
+              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 0' }}
+            >
+              Retour
+            </button>
+          </form>
+        ) : mode === 'magic' ? (
+          <form onSubmit={handleMagicLink} style={{ textAlign: 'left' }}>
+            <div style={{ marginBottom: 16 }}>
+              <label className="rb-label" htmlFor="email-magic">Adresse email</label>
+              <input
+                id="email-magic"
+                className="rb-input rb-input--lg"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="vous@entreprise.com"
+                autoComplete="email"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
+              disabled={loading || !!success}
+            >
+              {loading ? 'Envoi…' : success ? 'Lien envoyé' : 'Recevoir un lien de connexion'}
+            </button>
+            <p style={{ fontSize: 12, color: 'var(--fg-muted)', margin: '10px 0 0', textAlign: 'center' }}>
+              Vous recevrez un lien valable 1 heure.
+            </p>
+          </form>
+        ) : (
+          <form onSubmit={handlePassword} style={{ textAlign: 'left' }}>
+            <div style={{ marginBottom: 12 }}>
+              <label className="rb-label" htmlFor="email-pwd">Adresse email</label>
+              <input
+                id="email-pwd"
+                className="rb-input rb-input--lg"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="vous@entreprise.com"
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label className="rb-label" htmlFor="password">Mot de passe</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="password"
+                  className="rb-input rb-input--lg"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--fg-muted)', padding: 4,
+                  }}
+                >
+                  <Icon name={showPassword ? 'eye_off' : 'eye'} size={16} />
+                </button>
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
+              disabled={loading}
+            >
+              {loading ? 'Connexion…' : 'Se connecter'}
+            </button>
+          </form>
+        )}
 
-        <div style={{ margin: '20px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
-          <span style={{ fontSize: 11, color: 'var(--fg-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>ou</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-          <button
-            className="rb-btn rb-btn--secondary"
-            onClick={() => handleSocial('github')}
-            style={{ gap: 8 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-            </svg>
-            GitHub
-          </button>
-          <button
-            className="rb-btn rb-btn--secondary"
-            onClick={() => handleSocial('google')}
-            style={{ gap: 8 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Google
-          </button>
-        </div>
-
-        <button
-          className="rb-btn rb-btn--ghost rb-btn--block"
-          onClick={handleGuest}
-          style={{ marginTop: 4, fontSize: 12, color: 'var(--fg-muted)' }}
-        >
-          Continuer sans compte (mode invité)
-        </button>
-
-        <p style={{ fontSize: 11.5, color: 'var(--fg-muted)', margin: '20px 0 0', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 11.5, color: 'var(--fg-muted)', margin: '24px 0 0', lineHeight: 1.5 }}>
           Accès réservé aux collaborateurs autorisés.
         </p>
       </div>

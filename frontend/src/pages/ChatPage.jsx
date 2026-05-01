@@ -103,6 +103,7 @@ export default function ChatPage({ user, onLogout }) {
           <div style={{ marginBottom: 8 }}>
             {[
               { label: 'Documents', icon: 'folder', path: '/docs' },
+              { label: 'Paramètres', icon: 'settings', path: '/settings' },
               { label: 'Monitoring', icon: 'activity', path: '/monitoring' },
             ].map((item) => (
               <div

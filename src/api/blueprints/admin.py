@@ -24,7 +24,19 @@ ARCHIVE_EXTENSIONS = {".zip", ".tar.gz", ".tar.bz2", ".tar.xz"}
 MAX_ARCHIVE_FILES = 50
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024  # 100 MB
 DATA_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "sample"))
-_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,120}$")
+_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,50}$")
+
+_EXT_TO_MIME: dict[str, str] = {
+    ".pdf":  "application/pdf",
+    ".txt":  "text/plain",
+    ".md":   "text/markdown",
+    ".csv":  "text/csv",
+    ".json": "application/json",
+    ".xml":  "application/xml",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc":  "application/msword",
+}
 
 
 def _sanitize_filename(raw_name: str) -> str:
@@ -141,7 +153,7 @@ def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
     if len(lines) > 40:
         mid = len(lines) // 2
         return "\n".join(lines[:20] + lines[max(0, mid - 5):mid + 5] + lines[-20:])
-    if not text and ext in {".pdf", ".xlsx"}:
+    if not text and ext in {".pdf", ".xlsx", ".docx", ".doc"}:
         return f"BINARY_FILE:{ext}:{safe_name}:{len(content)}"
     return text
 
@@ -149,7 +161,7 @@ def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
 # ── Endpoint /api/upload — accessible à tous les users authentifiés ───────────
 
 @admin_router.post("/api/upload")
-@limiter.limit("10/hour")
+@limiter.limit("100/hour")
 async def tenant_upload(
     request: Request,
     file: UploadFile = File(...),
@@ -210,10 +222,11 @@ async def tenant_upload(
                     with open(fpath, "rb") as fh:
                         fdata = fh.read()
                     try:
+                        fext = os.path.splitext(fname)[1].lower()
                         await supa.storage.from_("tenant-docs").upload(
                             path=f"{tenant_id}/{fname}",
                             file=fdata,
-                            file_options={"content-type": "application/octet-stream", "upsert": "true"},
+                            file_options={"content-type": _EXT_TO_MIME.get(fext, "application/octet-stream"), "upsert": "true"},
                         )
                         storage_ok_count += 1
                     except Exception as e:
@@ -258,7 +271,7 @@ async def tenant_upload(
                 path=storage_path,
                 file=content,
                 file_options={
-                    "content-type": file.content_type or "application/octet-stream",
+                    "content-type": _EXT_TO_MIME.get(ext, file.content_type or "application/octet-stream"),
                     "upsert": "true",
                 },
             )
@@ -440,6 +453,314 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     return payload
 
 
+@admin_router.post("/api/admin/invite")
+@limiter.limit("20/hour")
+async def invite_client(request: Request):
+    """Invite un client par email via Supabase Admin API (magic link automatique)."""
+    require_monitoring(request)
+    body = await request.json()
+    email = (body or {}).get("email", "").strip().lower()
+
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"error": "Adresse email invalide."}, status_code=400)
+
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        app_url = os.getenv("APP_URL", "http://localhost:8000")
+        redirect_url = f"{app_url}/auth/callback"
+        try:
+            res = await supa.auth.admin.invite_user_by_email(
+                email,
+                options={"redirect_to": redirect_url},
+            )
+        except TypeError:
+            # Certaines versions gotrue-py n'acceptent pas options= comme kwarg
+            res = await supa.auth.admin.invite_user_by_email(email)
+        user = getattr(res, "user", None)
+        user_id = str(user.id) if user and hasattr(user, "id") else None
+        logger.info(f"[INVITE] Client invité : {email} (user_id={user_id})")
+        await track("invite", detail=f"email={email}")
+        return {"message": f"Invitation envoyée à {email}.", "user_id": user_id}
+    except Exception as e:
+        err = str(e)
+        if "already registered" in err.lower() or "already been registered" in err.lower():
+            return JSONResponse({"error": "Cet email est déjà enregistré."}, status_code=409)
+        logger.error(f"[INVITE] Échec invitation {email}: {e}")
+        return JSONResponse({"error": f"Échec de l'invitation : {err}"}, status_code=500)
+
+
+@admin_router.get("/api/admin/clients")
+async def list_clients(request: Request):
+    """Liste les utilisateurs Supabase (clients)."""
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        res = await supa.auth.admin.list_users()
+        # list_users() peut retourner une liste ou un objet paginé selon la version gotrue-py
+        if isinstance(res, list):
+            raw = res
+        elif hasattr(res, "users"):
+            raw = res.users or []
+        else:
+            raw = list(res) if res else []
+
+        def _str(val):
+            if val is None:
+                return None
+            if isinstance(val, str):
+                return val
+            if hasattr(val, "isoformat"):
+                return val.isoformat()
+            return str(val)
+
+        users = [
+            {
+                "id": _str(u.id),
+                "email": u.email or "",
+                "created_at": _str(u.created_at),
+                "last_sign_in_at": _str(u.last_sign_in_at),
+                "confirmed": bool(u.email_confirmed_at),
+            }
+            for u in raw
+        ]
+        return {"clients": users, "total": len(users)}
+    except Exception as e:
+        logger.error(f"[CLIENTS] Erreur liste clients: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.delete("/api/admin/clients/{user_id}")
+async def delete_client(user_id: str, request: Request):
+    """Supprime un client Supabase par son user_id."""
+    require_monitoring(request)
+    if not user_id or len(user_id) != 36:
+        return JSONResponse({"error": "user_id invalide."}, status_code=400)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        await supa.auth.admin.delete_user(user_id)
+        logger.info(f"[CLIENTS] Utilisateur supprimé : {user_id}")
+        await track("client_delete", detail=f"user_id={user_id}")
+        return {"message": "Utilisateur supprimé.", "user_id": user_id}
+    except Exception as e:
+        logger.error(f"[CLIENTS] Erreur suppression {user_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.post("/api/team/invite")
+@limiter.limit("10/hour")
+async def team_invite(request: Request, user_id: str = Depends(get_current_user)):
+    """Invite a collaborator to the caller's tenant."""
+    body = await request.json()
+    email = (body or {}).get("email", "").strip().lower()
+    role  = (body or {}).get("role", "member").strip().lower()
+
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"error": "Adresse email invalide."}, status_code=400)
+    if role not in ("admin", "member", "viewer"):
+        return JSONResponse({"error": "Rôle invalide (admin, member, viewer)."}, status_code=400)
+
+    tenant_id = await get_tenant_id(user_id)
+
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+
+        # Check if already a member
+        existing = await supa.table("user_roles").select("id").eq("tenant_id", tenant_id).execute()
+        member_emails = set()
+        if existing.data:
+            # Fetch emails for existing member user_ids
+            ids = [r["user_id"] for r in existing.data]
+            for uid in ids:
+                try:
+                    u = await supa.auth.admin.get_user_by_id(uid)
+                    if u and u.user and u.user.email:
+                        member_emails.add(u.user.email.lower())
+                except Exception:
+                    pass
+        if email in member_emails:
+            return JSONResponse({"error": "Cet utilisateur est déjà membre."}, status_code=409)
+
+        # Check pending invitation
+        pending = await supa.table("invitations").select("id").eq("tenant_id", tenant_id).eq("email", email).is_("accepted_at", "null").execute()
+        if pending.data:
+            return JSONResponse({"error": "Une invitation est déjà en attente pour cet email."}, status_code=409)
+
+        app_url = os.getenv("APP_URL", "http://localhost:8000")
+        redirect_url = f"{app_url}/auth/callback"
+        try:
+            res = await supa.auth.admin.invite_user_by_email(email, options={"redirect_to": redirect_url})
+        except TypeError:
+            res = await supa.auth.admin.invite_user_by_email(email)
+
+        invited_user_id = str(res.user.id) if res and res.user else None
+
+        await supa.table("invitations").insert({
+            "email": email,
+            "role": role,
+            "tenant_id": tenant_id,
+            "invited_by": user_id,
+        }).execute()
+
+        await track("team_invite", detail=f"tenant={tenant_id} email={email} role={role}")
+        return {"message": f"Invitation envoyée à {email}.", "email": email, "role": role}
+    except Exception as e:
+        err = str(e)
+        if "already registered" in err.lower() or "already been registered" in err.lower():
+            # User exists — just insert invitation row; they'll get a notification
+            try:
+                from src.monitoring.tracker import _get_client as _gc2
+                supa2 = await _gc2()
+                if supa2:
+                    await supa2.table("invitations").insert({
+                        "email": email, "role": role,
+                        "tenant_id": tenant_id, "invited_by": user_id,
+                    }).execute()
+                return {"message": f"Invitation enregistrée pour {email}.", "email": email, "role": role}
+            except Exception:
+                pass
+        logger.error(f"[TEAM_INVITE] Erreur: {e}")
+        return JSONResponse({"error": f"Échec : {err}"}, status_code=500)
+
+
+@admin_router.post("/api/team/join")
+async def team_join(user_id: str = Depends(get_current_user)):
+    """Auto-accepte les invitations en attente pour l'email du user connecté."""
+    try:
+        from src.monitoring.tracker import _get_client
+        from datetime import datetime, timezone
+        supa = await _get_client()
+        if not supa:
+            return {"joined": False}
+
+        # Récupère l'email du user depuis Supabase Auth
+        u = await supa.auth.admin.get_user_by_id(user_id)
+        email = (u.user.email or "").lower() if u and u.user else ""
+        if not email:
+            return {"joined": False}
+
+        # Cherche les invitations en attente
+        inv_res = await supa.table("invitations").select("*").eq("email", email).is_("accepted_at", "null").execute()
+        if not inv_res.data:
+            return {"joined": False}
+
+        joined = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for inv in inv_res.data:
+            tenant = inv["tenant_id"]
+            # Vérifie si déjà membre
+            existing = await supa.table("user_roles").select("id").eq("user_id", user_id).eq("tenant_id", tenant).execute()
+            if not existing.data:
+                await supa.table("user_roles").insert({
+                    "user_id": user_id,
+                    "tenant_id": tenant,
+                    "role": inv["role"],
+                    "invited_by": inv["invited_by"],
+                }).execute()
+            # Marque l'invitation comme acceptée
+            await supa.table("invitations").update({"accepted_at": now_iso}).eq("id", inv["id"]).execute()
+            joined.append({"tenant_id": tenant, "role": inv["role"]})
+
+        await track("team_join", detail=f"user={user_id} tenants={[j['tenant_id'] for j in joined]}")
+        return {"joined": bool(joined), "tenants": joined}
+    except Exception as e:
+        logger.error(f"[TEAM_JOIN] Erreur: {e}")
+        return {"joined": False}
+
+
+@admin_router.get("/api/team/members")
+async def team_members(user_id: str = Depends(get_current_user)):
+    """List members of the caller's tenant."""
+    tenant_id = await get_tenant_id(user_id)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+
+        # S'assure que le propriétaire du tenant a bien une entrée owner
+        owner_check = await supa.table("user_roles").select("id").eq("tenant_id", tenant_id).eq("user_id", tenant_id).execute()
+        if not owner_check.data:
+            await supa.table("user_roles").insert({
+                "user_id": tenant_id,
+                "tenant_id": tenant_id,
+                "role": "owner",
+            }).execute()
+
+        roles_res = await supa.table("user_roles").select("user_id, role, created_at").eq("tenant_id", tenant_id).execute()
+        members = []
+        for row in (roles_res.data or []):
+            try:
+                u = await supa.auth.admin.get_user_by_id(row["user_id"])
+                email = u.user.email if u and u.user else ""
+            except Exception:
+                email = ""
+            members.append({
+                "user_id": row["user_id"],
+                "email": email,
+                "role": row["role"],
+                "created_at": str(row["created_at"]),
+                "is_me": row["user_id"] == user_id,
+            })
+
+        invites_res = await supa.table("invitations").select("email, role, created_at, accepted_at, expires_at").eq("tenant_id", tenant_id).execute()
+        pending = [
+            {"email": r["email"], "role": r["role"], "status": "pending", "created_at": str(r["created_at"]), "expires_at": str(r["expires_at"])}
+            for r in (invites_res.data or []) if not r.get("accepted_at")
+        ]
+        return {"members": members, "pending_invitations": pending, "tenant_id": tenant_id}
+    except Exception as e:
+        logger.error(f"[TEAM_MEMBERS] Erreur: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.delete("/api/team/members/{member_id}")
+async def team_remove_member(member_id: str, user_id: str = Depends(get_current_user)):
+    """Remove a member from the caller's tenant."""
+    if not member_id or len(member_id) > 64:
+        return JSONResponse({"error": "member_id invalide."}, status_code=400)
+    tenant_id = await get_tenant_id(user_id)
+    if member_id == user_id:
+        return JSONResponse({"error": "Vous ne pouvez pas vous retirer vous-même."}, status_code=400)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        await supa.table("user_roles").delete().eq("tenant_id", tenant_id).eq("user_id", member_id).execute()
+        await track("team_remove", detail=f"tenant={tenant_id} removed={member_id}")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"[TEAM_REMOVE] Erreur: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.delete("/api/team/invitations/{email}")
+async def team_cancel_invitation(email: str, user_id: str = Depends(get_current_user)):
+    """Cancel a pending invitation."""
+    tenant_id = await get_tenant_id(user_id)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        await supa.table("invitations").delete().eq("tenant_id", tenant_id).eq("email", email).is_("accepted_at", "null").execute()
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @admin_router.get("/api/file/{filename:path}")
 async def serve_file(filename: str, request: Request, user_id: str = Depends(get_current_user)):
     """Serve a file from tenant storage for in-browser preview."""
@@ -448,22 +769,33 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
         return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
+    mime, _ = mimetypes.guess_type(safe_name)
+    mime = mime or "application/octet-stream"
+    disp = "inline" if (mime.startswith("text/") or mime == "application/pdf") else "attachment"
+    headers = {"Content-Disposition": f'{disp}; filename="{safe_name}"'}
 
-    # Look in tenant subdirectory first, then root DATA_DIR
-    candidates = [
-        os.path.join(DATA_DIR, tenant_id, safe_name),
-        os.path.join(DATA_DIR, safe_name),
-    ]
-    for path in candidates:
+    # 1. Local file (fast path)
+    for path in [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]:
         if os.path.isfile(path):
-            mime, _ = mimetypes.guess_type(safe_name)
-            mime = mime or "application/octet-stream"
-            # Force inline display for text/PDF; attachment otherwise
-            if mime.startswith("text/") or mime == "application/pdf":
-                headers = {"Content-Disposition": f'inline; filename="{safe_name}"'}
-            else:
-                headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
             return FileResponse(path, media_type=mime, headers=headers)
+
+    # 2. Supabase Storage fallback — re-download and stream
+    try:
+        from src.monitoring.tracker import _get_client
+        from fastapi.responses import Response as FastAPIResponse
+        supa = await _get_client()
+        if supa:
+            storage_path = f"{tenant_id}/{safe_name}"
+            data = await supa.storage.from_("tenant-docs").download(storage_path)
+            if data:
+                # Save locally for next time
+                local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                with open(local_path, "wb") as fh:
+                    fh.write(data)
+                return FastAPIResponse(content=data, media_type=mime, headers=headers)
+    except Exception as e:
+        logger.warning(f"[FILE] Supabase Storage fallback échoué pour '{safe_name}': {e}")
 
     return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
 

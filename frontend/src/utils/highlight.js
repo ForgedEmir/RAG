@@ -103,3 +103,56 @@ export function injectPassageMark(container, passage) {
     return null;
   }
 }
+
+/**
+ * Highlight passage text inside a PDF text layer (pdfjs spans).
+ *
+ * WHY: pdfjs renders each word/glyph in its own <span> so surroundContents()
+ * fails across span boundaries. Instead we colour individual spans whose text
+ * appears inside the passage, then scroll to the first one.
+ *
+ * Returns the first highlighted span, or null if nothing matched.
+ */
+export function highlightPdfLayer(container, passage) {
+  if (!container || !passage) return null;
+
+  // Clear previous highlights
+  container.querySelectorAll('span[data-pdf-hl]').forEach(s => {
+    s.style.background = '';
+    s.style.borderRadius = '';
+    s.removeAttribute('data-pdf-hl');
+  });
+
+  const normPassage = normalize(passage).toLowerCase();
+  if (!normPassage) return null;
+
+  // Build the full concatenated text of the layer to locate the passage
+  const spans = Array.from(container.querySelectorAll('span'));
+  const texts = spans.map(s => normalize(s.textContent).toLowerCase());
+  const full  = texts.join(' ');
+
+  const matchStart = full.indexOf(normPassage);
+  if (matchStart === -1) return null;
+  const matchEnd = matchStart + normPassage.length;
+
+  // Map each span to its [start, end) range in the concatenated string
+  let pos = 0;
+  let firstMark = null;
+  for (let i = 0; i < spans.length; i++) {
+    const len = texts[i].length;
+    const spanStart = pos;
+    const spanEnd   = pos + len;
+    // +1 for the space separator between spans
+    pos += len + 1;
+
+    // Span overlaps the match range
+    if (spanEnd > matchStart && spanStart < matchEnd && len > 0) {
+      spans[i].style.background   = 'rgba(250,204,21,0.55)';
+      spans[i].style.borderRadius = '2px';
+      spans[i].setAttribute('data-pdf-hl', '1');
+      if (!firstMark) firstMark = spans[i];
+    }
+  }
+
+  return firstMark;
+}

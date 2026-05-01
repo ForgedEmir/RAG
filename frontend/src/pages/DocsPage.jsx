@@ -32,31 +32,49 @@ export default function DocsPage({ user, onLogout }) {
   const handleFileSelect = async (fileList) => {
     const selected = Array.from(fileList);
     if (!selected.length) return;
-    setUploadFiles(selected.map(f => ({ name: f.name, pct: 0, state: 'queued', file: f })));
+    setUploadFiles(selected.map(f => ({ name: f.name, size: f.size, pct: 0, state: 'queued', startedAt: null, estimatedMs: null })));
     setUploadState('progress');
 
+    let hasError = false;
     for (let i = 0; i < selected.length; i++) {
       const f = selected[i];
-      setUploadFiles(prev => prev.map((uf, idx) => idx === i ? { ...uf, state: 'indexing', pct: 10 } : uf));
+      const startedAt = Date.now();
+      const estimatedMs = Math.min(25000, Math.max(2500, (f.size / 1024) * 10));
+
+      setUploadFiles(prev => prev.map((uf, idx) =>
+        idx === i ? { ...uf, state: 'indexing', pct: 5, startedAt, estimatedMs } : uf
+      ));
+
+      const interval = setInterval(() => {
+        setUploadFiles(prev => prev.map((uf, idx) => {
+          if (idx !== i || uf.state !== 'indexing') return uf;
+          const elapsed = Date.now() - startedAt;
+          const pct = Math.min(90, Math.round((elapsed / estimatedMs) * 90));
+          return { ...uf, pct };
+        }));
+      }, 150);
+
       const formData = new FormData();
       formData.append('file', f);
       try {
         const authHeader = await getAuthHeader();
         const res = await fetch('/api/upload', { method: 'POST', headers: authHeader, body: formData });
+        clearInterval(interval);
         if (res.ok) {
           setUploadFiles(prev => prev.map((uf, idx) => idx === i ? { ...uf, state: 'done', pct: 100 } : uf));
         } else {
+          hasError = true;
           setUploadFiles(prev => prev.map((uf, idx) => idx === i ? { ...uf, state: 'error', pct: 0 } : uf));
-          setUploadState('error');
         }
       } catch (_) {
+        clearInterval(interval);
+        hasError = true;
         setUploadFiles(prev => prev.map((uf, idx) => idx === i ? { ...uf, state: 'error', pct: 0 } : uf));
-        setUploadState('error');
       }
     }
 
-    const anyError = uploadFiles.some(f => f.state === 'error');
-    if (!anyError) setUploadState('done');
+    if (hasError) setUploadState('error');
+    else setUploadState('done');
     fetchFiles();
   };
 
@@ -92,6 +110,7 @@ export default function DocsPage({ user, onLogout }) {
           {[
             { label: 'Conversations', icon: 'chat', path: '/chat' },
             { label: 'Documents', icon: 'folder', path: '/docs', active: true },
+            { label: 'Paramètres', icon: 'settings', path: '/settings' },
             { label: 'Monitoring', icon: 'activity', path: '/monitoring' },
           ].map(item => (
             <div
@@ -315,43 +334,124 @@ function DropZone({ dragging, onDragOver, onDragLeave, onDrop, onBrowse }) {
   );
 }
 
+const STAGES = [
+  { min: 0,  max: 20, label: 'Lecture du fichier',   icon: 'doc' },
+  { min: 20, max: 45, label: 'Découpage en chunks',  icon: 'scissors' },
+  { min: 45, max: 75, label: 'Vectorisation',         icon: 'cpu' },
+  { min: 75, max: 100, label: 'Indexation Qdrant',   icon: 'database' },
+];
+
+function getStageLabel(pct, state) {
+  if (state === 'queued') return 'En attente';
+  if (state === 'done') return 'Indexé';
+  if (state === 'error') return 'Erreur';
+  const s = STAGES.find(s => pct >= s.min && pct < s.max);
+  return s ? s.label + '…' : 'Indexation Qdrant…';
+}
+
+function getEta(pct, startedAt, estimatedMs) {
+  if (!startedAt || pct <= 5 || pct >= 100) return null;
+  const remaining = Math.max(0, estimatedMs - (Date.now() - startedAt));
+  if (remaining < 1000) return '< 1 sec';
+  if (remaining < 60000) return `~${Math.round(remaining / 1000)} sec`;
+  return `~${Math.round(remaining / 60000)} min`;
+}
+
 function ProgressView({ files }) {
+  const done = files.filter(f => f.state === 'done').length;
+  const totalPct = files.length === 0 ? 0 : Math.round(files.reduce((acc, f) => acc + f.pct, 0) / files.length);
+  const active = files.find(f => f.state === 'indexing');
+  const overallEta = active ? getEta(active.pct, active.startedAt, active.estimatedMs) : null;
+
   return (
-    <div className="rb-card" style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Indexation en cours</h2>
-        <span style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-          {files.filter(f => f.state === 'done').length} / {files.length} fichiers
-        </span>
+    <div className="rb-card" style={{ overflow: 'hidden' }}>
+      {/* Header avec barre globale */}
+      <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Indexation en cours</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {overallEta && (
+              <span style={{ fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
+                {overallEta} restantes
+              </span>
+            )}
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+              {totalPct}%
+            </span>
+          </div>
+        </div>
+        {/* Barre de progression globale */}
+        <div style={{ height: 6, background: 'var(--bg-muted)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{
+            width: `${totalPct}%`, height: '100%',
+            background: 'linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, white))',
+            borderRadius: 3,
+            transition: 'width 200ms ease',
+          }} />
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--fg-muted)' }}>
+          {done} / {files.length} fichier{files.length > 1 ? 's' : ''} · Vous pouvez fermer cette page
+        </div>
       </div>
-      <p style={{ margin: '0 0 18px', fontSize: 12.5, color: 'var(--fg-secondary)' }}>
-        Vous pouvez fermer cette page — l'indexation continue en arrière-plan.
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {files.map((f, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Icon
-              name={f.state === 'done' ? 'file_check' : f.state === 'error' ? 'file_warn' : 'doc'}
-              size={18}
-              style={{ color: f.state === 'done' ? 'var(--ok)' : f.state === 'error' ? 'var(--danger)' : 'var(--fg-secondary)' }}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', flex: 'none', marginLeft: 8 }}>
-                  {f.state === 'queued' ? 'en attente' : f.state === 'done' ? 'indexé' : f.state === 'error' ? 'erreur' : `${f.pct}%`}
+
+      {/* Liste des fichiers */}
+      <div style={{ padding: '12px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {files.map((f, i) => {
+          const stageLabel = getStageLabel(f.pct, f.state);
+          const eta = getEta(f.pct, f.startedAt, f.estimatedMs);
+          const barColor = f.state === 'done' ? 'var(--ok)' : f.state === 'error' ? 'var(--danger)' : 'var(--accent)';
+          return (
+            <div key={i}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <Icon
+                  name={f.state === 'done' ? 'file_check' : f.state === 'error' ? 'file_warn' : 'doc'}
+                  size={15}
+                  style={{ color: barColor, flex: 'none' }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {f.name}
+                </span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)', flex: 'none' }}>
+                  {f.pct}%
                 </span>
               </div>
-              <div style={{ height: 4, background: 'var(--bg-muted)', borderRadius: 2, overflow: 'hidden' }}>
+              {/* Barre de progression du fichier */}
+              <div style={{ height: 3, background: 'var(--bg-muted)', borderRadius: 2, overflow: 'hidden', marginBottom: 5 }}>
                 <div style={{
                   width: `${f.pct}%`, height: '100%',
-                  background: f.state === 'done' ? 'var(--ok)' : f.state === 'error' ? 'var(--danger)' : 'var(--accent)',
-                  borderRadius: 2, transition: 'width 300ms ease',
+                  background: barColor, borderRadius: 2,
+                  transition: 'width 200ms ease',
                 }} />
               </div>
+              {/* Étape courante + ETA */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {STAGES.map((s, si) => {
+                    const active = f.state === 'indexing' && f.pct >= s.min && f.pct < s.max;
+                    const past = f.state === 'done' || (f.state === 'indexing' && f.pct >= s.max);
+                    return (
+                      <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{
+                          width: 6, height: 6, borderRadius: '50%',
+                          background: past ? 'var(--ok)' : active ? 'var(--accent)' : 'var(--bg-muted)',
+                          transition: 'background 200ms ease',
+                          boxShadow: active ? '0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent)' : 'none',
+                        }} />
+                        {si < STAGES.length - 1 && (
+                          <div style={{ width: 16, height: 1, background: past ? 'var(--ok)' : 'var(--border-subtle)' }} />
+                        )}
+                      </div>
+                    );
+                  })}
+                  <span style={{ fontSize: 11, color: 'var(--fg-muted)', marginLeft: 6 }}>{stageLabel}</span>
+                </div>
+                {eta && (
+                  <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>{eta}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

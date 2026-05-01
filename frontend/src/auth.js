@@ -27,6 +27,16 @@ export async function signupWithEmail(email, password) {
   return 'Compte créé. Vérifiez votre boîte mail si la confirmation est activée.';
 }
 
+export async function sendMagicLink(email) {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin + '/auth/callback' },
+  });
+  if (error) throw error;
+}
+
 export async function loginWithGithub() {
   const sb = await getSupabase();
   if (!sb) throw new Error('Supabase non configuré');
@@ -81,6 +91,56 @@ export async function getAuthHeader() {
   const guestId = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId') || '';
   if (guestId.startsWith('guest_')) return { 'x-local-guest-id': guestId };
   return {};
+}
+
+// ── MFA / TOTP ────────────────────────────────────────────────────────────────
+
+export async function getMfaLevel() {
+  const sb = await getSupabase();
+  if (!sb) return { currentLevel: 'aal1', nextLevel: 'aal1' };
+  const { data, error } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (error) return { currentLevel: 'aal1', nextLevel: 'aal1' };
+  return data;
+}
+
+export async function enrollMfa() {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp' });
+  if (error) throw error;
+  return data; // { id, type, totp: { qr_code, secret, uri } }
+}
+
+export async function challengeMfa(factorId) {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  const { data, error } = await sb.auth.mfa.challenge({ factorId });
+  if (error) throw error;
+  return data; // { id (challengeId) }
+}
+
+export async function verifyMfa(factorId, challengeId, code) {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  const { data, error } = await sb.auth.mfa.verify({ factorId, challengeId, code });
+  if (error) throw error;
+  return data;
+}
+
+export async function unenrollMfa(factorId) {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase non configuré');
+  const { data, error } = await sb.auth.mfa.unenroll({ factorId });
+  if (error) throw error;
+  return data;
+}
+
+export async function listMfaFactors() {
+  const sb = await getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb.auth.mfa.listFactors();
+  if (error) return [];
+  return data?.totp || [];
 }
 
 export function getOrCreateGuestId() {

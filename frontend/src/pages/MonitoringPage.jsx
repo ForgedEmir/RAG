@@ -9,6 +9,7 @@ const TABS = [
   { id: 'features', label: 'Fonctionnalités', icon: 'cpu' },
   { id: 'logs', label: 'Journaux', icon: 'terminal' },
   { id: 'sources', label: 'Sources', icon: 'database' },
+  { id: 'clients', label: 'Clients', icon: 'users' },
 ];
 
 async function apiFetch(path, monitoringKey, options = {}) {
@@ -87,6 +88,7 @@ export default function MonitoringPage({ user, onLogout }) {
           {[
             { label: 'Conversations', icon: 'chat', path: '/chat' },
             { label: 'Documents', icon: 'folder', path: '/docs' },
+            { label: 'Paramètres', icon: 'settings', path: '/settings' },
             { label: 'Monitoring', icon: 'activity', path: '/monitoring', active: true },
           ].map(item => (
             <div
@@ -168,6 +170,7 @@ export default function MonitoringPage({ user, onLogout }) {
               {tab === 'features' && <FeaturesTab apiKey={apiKey} />}
               {tab === 'logs' && <LogsTab apiKey={apiKey} />}
               {tab === 'sources' && <SourcesTab apiKey={apiKey} />}
+              {tab === 'clients' && <ClientsTab apiKey={apiKey} />}
             </>
           )}
         </div>
@@ -281,14 +284,44 @@ function OverviewTab({ apiKey }) {
           {[
             { label: 'LLM API', ok: h.llm_key },
             { label: 'Corpus BM25', ok: h.bm25_corpus },
-            { label: 'Qdrant DB', ok: h.qdrant },
+            { label: 'Qdrant', ok: h.qdrant },
             { label: 'Supabase', ok: h.supabase },
+            { label: 'Redis', ok: h.redis },
           ].map((check, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-secondary)' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: check.ok ? 'var(--ok)' : 'var(--danger)' }} />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: check.ok == null ? 'var(--fg-muted)' : check.ok ? 'var(--ok)' : 'var(--danger)' }} />
               {check.label}
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Services connectés */}
+      <div className="rb-card" style={{ padding: '16px 20px' }}>
+        <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 14px' }}>Services connectés</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+          {[
+            { label: 'Qdrant Vector DB', icon: 'database', key: 'qdrant', desc: 'Moteur de recherche vectorielle' },
+            { label: 'Supabase', icon: 'server', key: 'supabase', desc: 'Auth & stockage' },
+            { label: 'Redis Cache', icon: 'zap', key: 'redis', desc: 'Cache sémantique' },
+            { label: 'LLM API', icon: 'cpu', key: 'llm_key', desc: 'Génération de réponses' },
+          ].map(svc => {
+            const ok = h[svc.key];
+            return (
+              <div key={svc.key} style={{
+                padding: '12px 14px', borderRadius: 8,
+                background: 'var(--bg-muted)',
+                border: `1px solid ${ok ? 'rgba(94,210,156,0.2)' : ok === false ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)'}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Icon name={svc.icon} size={14} style={{ color: ok ? 'var(--accent)' : 'var(--fg-muted)' }} />
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: ok == null ? 'var(--fg-muted)' : ok ? 'var(--ok)' : 'var(--danger)' }} />
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-primary)', marginBottom: 2 }}>{svc.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{svc.desc}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -600,6 +633,160 @@ function LogsTab({ apiKey }) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientsTab({ apiKey }) {
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const fetchClients = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/admin/clients', apiKey);
+      setClients(res.clients || []);
+    } catch (_) {}
+    finally { setLoading(false); }
+  }, [apiKey]);
+
+  useEffect(() => { fetchClients(); }, [fetchClients]);
+
+  const handleDelete = async (client) => {
+    if (!confirm(`Supprimer le compte de ${client.email} ? Cette action est irréversible.`)) return;
+    try {
+      await apiFetch(`/api/admin/clients/${client.id}`, apiKey, { method: 'DELETE' });
+      setMsg({ ok: true, text: `${client.email} supprimé.` });
+      fetchClients();
+    } catch (err) {
+      setMsg({ ok: false, text: err.message || 'Échec de la suppression.' });
+    } finally {
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
+
+  const handleInvite = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setInviting(true);
+    setMsg(null);
+    try {
+      await apiFetch('/api/admin/invite', apiKey, {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      setMsg({ ok: true, text: `Invitation envoyée à ${email.trim()}.` });
+      setEmail('');
+      fetchClients();
+    } catch (err) {
+      setMsg({ ok: false, text: err.message || 'Échec de l\'invitation.' });
+    } finally {
+      setInviting(false);
+      setTimeout(() => setMsg(null), 5000);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Clients</h2>
+        <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
+          {clients.length} compte{clients.length !== 1 ? 's' : ''} enregistré{clients.length !== 1 ? 's' : ''}
+        </p>
+      </div>
+
+      <div className="rb-card" style={{ padding: '16px', marginBottom: 20 }}>
+        <h3 style={{ fontSize: 12, fontWeight: 600, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)' }}>
+          Inviter un client
+        </h3>
+        <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="rb-input"
+            type="email"
+            placeholder="client@entreprise.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            style={{ flex: 1 }}
+          />
+          <button
+            type="submit"
+            className="rb-btn rb-btn--primary"
+            disabled={inviting || !email.trim()}
+            style={{ gap: 6, whiteSpace: 'nowrap' }}
+          >
+            <Icon name="mail" size={13} />
+            {inviting ? 'Envoi…' : 'Envoyer l\'invitation'}
+          </button>
+        </form>
+        {msg && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px',
+            background: msg.ok ? 'var(--ok-soft)' : 'var(--danger-soft)',
+            border: `1px solid ${msg.ok ? 'var(--ok)' : 'var(--danger)'}`,
+            borderRadius: 6, fontSize: 12,
+            color: msg.ok ? 'var(--ok)' : 'var(--danger)',
+          }}>
+            {msg.text}
+          </div>
+        )}
+      </div>
+
+      <div className="rb-card" style={{ overflow: 'hidden' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 140px 36px',
+          padding: '10px 16px',
+          background: 'var(--bg-sunken)', borderBottom: '1px solid var(--border-default)',
+          fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
+          textTransform: 'uppercase', color: 'var(--fg-muted)',
+        }}>
+          <span>Email</span>
+          <span>Statut</span>
+          <span>Dernière connexion</span>
+          <span />
+        </div>
+        {loading ? (
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>
+        ) : clients.length === 0 ? (
+          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Aucun client</div>
+        ) : clients.map((c, i) => (
+          <div key={c.id} style={{
+            display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 140px 36px',
+            padding: '10px 16px', alignItems: 'center',
+            borderBottom: i < clients.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+            fontSize: 13,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 600, color: 'var(--fg-secondary)', flex: 'none',
+              }}>
+                {(c.email || '?').slice(0, 2).toUpperCase()}
+              </div>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</span>
+            </div>
+            <span className={`rb-pill ${c.confirmed ? 'rb-pill--ok' : 'rb-pill--warn'}`} style={{ width: 'fit-content' }}>
+              <span className="rb-dot" />{c.confirmed ? 'actif' : 'en attente'}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+              {c.last_sign_in_at ? timeAgo(c.last_sign_in_at) : '—'}
+            </span>
+            <button
+              className="rb-btn rb-btn--ghost"
+              style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
+              onClick={() => handleDelete(c)}
+              title="Supprimer ce client"
+            >
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

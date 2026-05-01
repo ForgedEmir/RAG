@@ -1,11 +1,27 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { onAuthStateChange, logout } from './auth.js';
+import { onAuthStateChange, logout, getAuthHeader } from './auth.js';
 import { useGlobalLenis } from './useLenis.js';
 import LoginPage from './pages/LoginPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
+
+function AuthCallback() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    // Supabase JS détecte automatiquement le code PKCE dans l'URL et crée la session.
+    // onAuthStateChange dans App() va mettre à jour user → navigate vers /chat.
+    const t = setTimeout(() => navigate('/login', { replace: true }), 5000);
+    return () => clearTimeout(t);
+  }, [navigate]);
+  return (
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
+      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Connexion en cours…</div>
+    </div>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -23,6 +39,12 @@ export default function App() {
     const unsub = onAuthStateChange((u) => {
       if (u !== null) {
         setUser(u);
+        // Auto-accept pending team invitations silently
+        if (!u.isGuest) {
+          getAuthHeader().then(headers =>
+            fetch('/api/team/join', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } })
+          ).catch(() => {});
+        }
       } else {
         // SIGNED_OUT from Supabase must not clear an active guest session
         setUser(prev => (prev?.isGuest ? prev : null));
@@ -53,6 +75,7 @@ export default function App() {
       <Route path="/login" element={
         user ? <Navigate to="/chat" replace /> : <LoginPage onLogin={setUser} />
       } />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/chat" element={
         user ? <ChatPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
       } />
@@ -61,6 +84,9 @@ export default function App() {
       } />
       <Route path="/monitoring" element={
         <MonitoringPage user={user} onLogout={handleLogout} />
+      } />
+      <Route path="/settings" element={
+        user ? <SettingsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
       } />
       <Route path="*" element={<Navigate to={user ? '/chat' : '/login'} replace />} />
     </Routes>

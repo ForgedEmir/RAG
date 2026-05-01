@@ -1,19 +1,21 @@
 import { useRef, useState, useCallback } from 'react';
-import PDFViewer from './viewers/PDFViewer.jsx';
+import PDFViewer      from './viewers/PDFViewer.jsx';
 import MarkdownViewer from './viewers/MarkdownViewer.jsx';
-import DocxViewer from './viewers/DocxViewer.jsx';
-import ExcelViewer from './viewers/ExcelViewer.jsx';
-import TextViewer from './viewers/TextViewer.jsx';
+import DocxViewer     from './viewers/DocxViewer.jsx';
+import ExcelViewer    from './viewers/ExcelViewer.jsx';
+import CsvViewer      from './viewers/CsvViewer.jsx';
+import TextViewer     from './viewers/TextViewer.jsx';
 
 export function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
-const PDF_EXTS = new Set(['pdf']);
-const MD_EXTS = new Set(['md', 'markdown']);
-const DOCX_EXTS = new Set(['docx', 'doc']);
+const PDF_EXTS   = new Set(['pdf']);
+const MD_EXTS    = new Set(['md', 'markdown']);
+const DOCX_EXTS  = new Set(['docx', 'doc']);
 const EXCEL_EXTS = new Set(['xlsx', 'xls']);
-const TEXT_EXTS = new Set(['txt', 'csv', 'json', 'xml']);
+const CSV_EXTS   = new Set(['csv']);
+const TEXT_EXTS  = new Set(['txt', 'json', 'xml']);
 
 function getExt(filename) {
   return filename.split('.').pop()?.toLowerCase() ?? '';
@@ -21,12 +23,12 @@ function getExt(filename) {
 
 function ViewerBody({ filename, passage }) {
   const ext = getExt(filename);
-  if (PDF_EXTS.has(ext)) return <PDFViewer filename={filename} passage={passage} />;
-  if (MD_EXTS.has(ext)) return <MarkdownViewer filename={filename} passage={passage} />;
-  if (DOCX_EXTS.has(ext)) return <DocxViewer filename={filename} passage={passage} />;
+  if (PDF_EXTS.has(ext))   return <PDFViewer filename={filename} passage={passage} />;
+  if (MD_EXTS.has(ext))    return <MarkdownViewer filename={filename} passage={passage} />;
+  if (DOCX_EXTS.has(ext))  return <DocxViewer filename={filename} passage={passage} />;
   if (EXCEL_EXTS.has(ext)) return <ExcelViewer filename={filename} />;
-  if (TEXT_EXTS.has(ext)) return <TextViewer filename={filename} passage={passage} />;
-  // Unknown extension: try text viewer
+  if (CSV_EXTS.has(ext))   return <CsvViewer filename={filename} passage={passage} />;
+  if (TEXT_EXTS.has(ext))  return <TextViewer filename={filename} passage={passage} />;
   return <TextViewer filename={filename} passage={passage} />;
 }
 
@@ -34,7 +36,8 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH = 900;
 
 export default function DocViewer({ filename, passage, onClose, resizable = false, defaultWidth = 480 }) {
-  const [width, setWidth] = useState(defaultWidth);
+  const [width, setWidth]       = useState(defaultWidth);
+  const [dragging, setDragging] = useState(false);
   const dragRef = useRef(null);
 
   const onMouseDown = useCallback((e) => {
@@ -42,12 +45,14 @@ export default function DocViewer({ filename, passage, onClose, resizable = fals
     e.preventDefault();
     const startX = e.clientX;
     const startW = width;
+    setDragging(true);
 
     const onMove = (ev) => {
       const delta = startX - ev.clientX;
       setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startW + delta)));
     };
     const onUp = () => {
+      setDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -80,6 +85,13 @@ export default function DocViewer({ filename, passage, onClose, resizable = fals
             cursor: 'col-resize', zIndex: 10,
           }}
         />
+      )}
+
+      {/* Transparent overlay during drag — prevents canvas/iframe from swallowing mouse events */}
+      {dragging && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999, cursor: 'col-resize',
+        }} />
       )}
 
       {/* Header */}
