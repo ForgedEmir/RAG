@@ -323,18 +323,10 @@ async def user_sources(user_id: str = Depends(get_current_user)):
     tenant_id = await get_tenant_id(user_id)
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
         client = _get_client()
         filenames: set[str] = set()
         offset = None
-        # Include both tenant-specific docs AND admin-uploaded global docs (tenant_id="")
-        if tenant_id:
-            filt = Filter(should=[
-                FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id)),
-                FieldCondition(key="metadata.tenant_id", match=MatchValue(value="")),
-            ])
-        else:
-            filt = None
+        filt = None
         while True:
             results, next_offset = client.scroll(
                 collection_name=_COLLECTION_NAME,
