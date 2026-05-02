@@ -263,7 +263,7 @@ async def store(query: str, response: str, source_files: Optional[Iterable[str]]
         
         resp_json = json.dumps({
             "answer":         response,
-            "sources":        sorted(set(source_files)) if source_files else [],
+            "sources":        sorted(set(s.split("/")[-1] for s in source_files)) if source_files else [],
             "context_chunks": context_chunks or [],
         })
 
