@@ -577,7 +577,7 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
             return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
 
         # Check if already a member
-        existing = await supa.table("user_roles").select("id").eq("tenant_id", tenant_id).execute()
+        existing = await supa.table("user_roles").select("id, user_id").eq("tenant_id", tenant_id).execute()
         member_emails = set()
         if existing.data:
             # Fetch emails for existing member user_ids
