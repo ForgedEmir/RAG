@@ -324,6 +324,9 @@ async def user_sources(user_id: str = Depends(get_current_user)):
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
         client = _get_client()
+        info = client.get_collection(_COLLECTION_NAME)
+        total_pts = info.points_count or 0
+        logger.info("[SOURCES] collection=%s total_points=%d tenant=%s", _COLLECTION_NAME, total_pts, tenant_id)
         filenames: set[str] = set()
         offset = None
         filt = None
@@ -333,21 +336,24 @@ async def user_sources(user_id: str = Depends(get_current_user)):
                 scroll_filter=filt,
                 limit=256,
                 offset=offset,
-                with_payload=["metadata.fichier"],
+                with_payload=True,
                 with_vectors=False,
             )
             for point in results:
-                fichier = (point.payload or {}).get("metadata", {}).get("fichier")
+                payload = point.payload or {}
+                meta = payload.get("metadata") or {}
+                fichier = meta.get("fichier") or payload.get("fichier")
                 if fichier:
                     filenames.add(os.path.basename(fichier))
             if next_offset is None:
                 break
             offset = next_offset
+        logger.info("[SOURCES] found %d unique files", len(filenames))
         files = sorted(filenames)
         return {"files": files, "total": len(files)}
     except Exception as e:
-        logger.warning("Lecture sources Qdrant impossible: %s", e)
-        return {"files": [], "total": 0}
+        logger.error("[SOURCES] Qdrant error: %s", e, exc_info=True)
+        return {"files": [], "total": 0, "error": str(e)}
 
 
 @admin_router.post("/api/admin/upload")
