@@ -933,3 +933,292 @@ async def admin_delete(request: Request):
     if reindex_warning:
         payload["warning"] = "Fichier supprimé, mais la réindexation automatique a échoué."
     return payload
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TENANTS — CRUD Admin (B2B)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import hashlib
+import secrets
+from datetime import datetime, timezone
+
+
+async def _ensure_tenants_table():
+    """Crée les tables B2B si elles n'existent pas (idempotent)."""
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return
+        schema_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "supabase_schema.sql")
+        if os.path.exists(schema_path):
+            with open(schema_path) as f:
+                sql = f.read()
+            for stmt in sql.split(";"):
+                stmt = stmt.strip()
+                if stmt and not stmt.startswith("--"):
+                    try:
+                        await supa.rpc("exec_sql", {"sql": stmt})
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+async def _get_tenant_for_user(user_id: str) -> dict | None:
+    """Récupère le tenant associé à un utilisateur."""
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return None
+        res = await supa.table("user_roles").select("tenant_id, role").eq("user_id", user_id).limit(1).execute()
+        if not res.data:
+            return None
+        tenant_res = await supa.table("tenants").select("*").eq("id", res.data[0]["tenant_id"]).limit(1).execute()
+        return tenant_res.data[0] if tenant_res.data else None
+    except Exception:
+        return None
+
+
+@admin_router.get("/api/admin/tenants")
+async def list_tenants(request: Request):
+    """Liste tous les tenants (admin)."""
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        res = await supa.table("tenants").select("*").order("created_at", desc=True).execute()
+        tenants = []
+        for t in (res.data or []):
+            members_res = await supa.table("user_roles").select("id", count="exact").eq("tenant_id", t["id"]).execute()
+            owner_email = ""
+            try:
+                u = await supa.auth.admin.get_user_by_id(t["owner_id"])
+                owner_email = u.user.email if u and u.user else ""
+            except Exception:
+                pass
+            tenants.append({
+                "id": t["id"], "name": t["name"], "slug": t.get("slug", ""),
+                "plan": t.get("plan", "free"), "is_active": t.get("is_active", True),
+                "owner_email": owner_email,
+                "members": members_res.count if hasattr(members_res, 'count') else len(members_res.data or []),
+                "created_at": str(t.get("created_at", "")),
+            })
+        return {"tenants": tenants, "total": len(tenants)}
+    except Exception as e:
+        logger.error(f"[TENANTS] Erreur liste: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.post("/api/admin/tenants")
+async def create_tenant(request: Request):
+    """Crée un nouveau tenant B2B."""
+    require_monitoring(request)
+    body = await request.json()
+    name = (body or {}).get("name", "").strip()
+    slug = (body or {}).get("slug", "").strip().lower().replace(" ", "-")
+    owner_email = (body or {}).get("owner_email", "").strip().lower()
+    plan = (body or {}).get("plan", "free").strip().lower()
+    if not name or not slug or not owner_email:
+        return JSONResponse({"error": "name, slug, et owner_email requis."}, status_code=400)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        existing = await supa.table("tenants").select("id").eq("slug", slug).execute()
+        if existing.data:
+            return JSONResponse({"error": f"Slug '{slug}' déjà utilisé."}, status_code=409)
+        owner_id = None
+        try:
+            res = await supa.auth.admin.invite_user_by_email(owner_email)
+            owner_id = str(res.user.id) if res and res.user else None
+        except Exception as e:
+            if "already registered" in str(e).lower():
+                users = await supa.auth.admin.list_users()
+                raw = users.users if hasattr(users, 'users') else (users if isinstance(users, list) else [])
+                for u in raw:
+                    if getattr(u, 'email', '').lower() == owner_email:
+                        owner_id = str(u.id)
+                        break
+        if not owner_id:
+            return JSONResponse({"error": "Impossible de créer/trouver l'utilisateur."}, status_code=500)
+        tenant_res = await supa.table("tenants").insert({
+            "name": name, "slug": slug, "owner_id": owner_id, "plan": plan,
+            "max_users": 10 if plan == "pro" else (50 if plan == "enterprise" else 5),
+        }).execute()
+        tenant = tenant_res.data[0] if tenant_res.data else None
+        if not tenant:
+            return JSONResponse({"error": "Échec création."}, status_code=500)
+        await supa.table("user_roles").insert({
+            "user_id": owner_id, "tenant_id": tenant["id"], "role": "owner",
+        }).execute()
+        await track("tenant_create", detail=f"slug={slug} name={name}")
+        return {"message": f"Tenant '{name}' créé.", "tenant": {"id": tenant["id"], "name": name, "slug": slug, "plan": plan}}
+    except Exception as e:
+        logger.error(f"[TENANTS] Erreur création: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.delete("/api/admin/tenants/{tenant_id}")
+async def delete_tenant(tenant_id: str, request: Request):
+    """Supprime un tenant et ses données."""
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        try:
+            from src.ingestion.vector_store import _get_client as _qdrant, _COLLECTION_NAME
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            qdrant = _qdrant()
+            qdrant.delete(collection_name=_COLLECTION_NAME, points_selector=Filter(
+                must=[FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))]))
+        except Exception:
+            pass
+        import shutil
+        tenant_dir = os.path.join(DATA_DIR, tenant_id)
+        if os.path.exists(tenant_dir):
+            shutil.rmtree(tenant_dir, ignore_errors=True)
+        await supa.table("tenants").delete().eq("id", tenant_id).execute()
+        await track("tenant_delete", detail=f"tenant_id={tenant_id}")
+        return {"message": "Tenant supprimé.", "tenant_id": tenant_id}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.get("/api/admin/metrics")
+async def admin_metrics(request: Request):
+    """Métriques globales + par tenant (admin)."""
+    require_monitoring(request)
+    try:
+        from src.monitoring.tracker import _get_client
+        from datetime import timedelta
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        total_reqs = await supa.table("usage_metrics").select("requests", "tokens_input", "tokens_output").execute()
+        total_requests = sum(r.get("requests", 0) for r in (total_reqs.data or []))
+        total_tokens_in = sum(r.get("tokens_input", 0) for r in (total_reqs.data or []))
+        total_tokens_out = sum(r.get("tokens_output", 0) for r in (total_reqs.data or []))
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        tenants_res = await supa.table("tenants").select("id, name, slug, plan").execute()
+        tenants_usage = []
+        for t in (tenants_res.data or []):
+            usage_res = await supa.table("usage_metrics").select("*").eq("tenant_id", t["id"]).gte("date", week_ago).execute()
+            week_reqs = sum(r.get("requests", 0) for r in (usage_res.data or []))
+            week_tokens = sum(r.get("tokens_input", 0) + r.get("tokens_output", 0) for r in (usage_res.data or []))
+            tenants_usage.append({"tenant_id": t["id"], "name": t["name"], "slug": t["slug"], "plan": t["plan"],
+                                  "week_requests": week_reqs, "week_tokens": week_tokens})
+        return {"global": {"total_requests": total_requests, "total_tokens_input": total_tokens_in, "total_tokens_output": total_tokens_out},
+                "tenants": sorted(tenants_usage, key=lambda x: x["week_tokens"], reverse=True)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+def _generate_api_key() -> tuple[str, str, str]:
+    raw = "rk_" + secrets.token_urlsafe(32)
+    return raw, hashlib.sha256(raw.encode()).hexdigest(), raw[:10]
+
+
+@admin_router.get("/api/tenant/api-keys")
+async def tenant_api_keys(user_id: str = Depends(get_current_user)):
+    tenant = await _get_tenant_for_user(user_id)
+    if not tenant:
+        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        res = await supa.table("api_keys").select("id, name, key_prefix, is_active, last_used, created_at").eq("tenant_id", tenant["id"]).execute()
+        return {"keys": res.data or [], "tenant_id": tenant["id"]}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.post("/api/tenant/api-keys")
+async def create_api_key(request: Request, user_id: str = Depends(get_current_user)):
+    tenant = await _get_tenant_for_user(user_id)
+    if not tenant:
+        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+    body = await request.json()
+    name = (body or {}).get("name", "Default").strip() or "Default"
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        raw_key, key_hash, prefix = _generate_api_key()
+        await supa.table("api_keys").insert({"tenant_id": tenant["id"], "name": name, "key_hash": key_hash, "key_prefix": prefix}).execute()
+        await track("api_key_create", detail=f"tenant={tenant['id']}")
+        return {"message": "Clé API créée. Conservez-la — plus jamais affichée.", "api_key": raw_key, "prefix": prefix, "name": name}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.delete("/api/tenant/api-keys/{key_id}")
+async def revoke_api_key(key_id: str, user_id: str = Depends(get_current_user)):
+    tenant = await _get_tenant_for_user(user_id)
+    if not tenant:
+        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+        existing = await supa.table("api_keys").select("id").eq("id", key_id).eq("tenant_id", tenant["id"]).execute()
+        if not existing.data:
+            return JSONResponse({"error": "Clé introuvable."}, status_code=404)
+        await supa.table("api_keys").update({"is_active": False}).eq("id", key_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@admin_router.get("/api/tenant/me")
+async def tenant_me(user_id: str = Depends(get_current_user)):
+    tenant = await _get_tenant_for_user(user_id)
+    if not tenant:
+        return {"tenant": None, "mode": "solo", "message": "Pas de tenant B2B. Mode individuel."}
+    return {"tenant": tenant, "mode": "b2b"}
+
+
+# ── Usage tracking (appelé depuis routes.py) ──────────────────────────────────
+
+async def _increment_usage(user_id: str, tokens_in: int = 0, tokens_out: int = 0):
+    """Incrémente les métriques d'usage pour le tenant de l'utilisateur (background)."""
+    try:
+        from src.monitoring.tracker import _get_client
+        from datetime import date
+        supa = await _get_client()
+        if not supa:
+            return
+        tenant = await _get_tenant_for_user(user_id)
+        if not tenant:
+            return
+        today = date.today().isoformat()
+        existing = await supa.table("usage_metrics").select("id, requests, tokens_input, tokens_output") \
+            .eq("tenant_id", tenant["id"]).eq("date", today).execute()
+        if existing.data:
+            row = existing.data[0]
+            await supa.table("usage_metrics").update({
+                "requests": row["requests"] + 1,
+                "tokens_input": row["tokens_input"] + tokens_in,
+                "tokens_output": row["tokens_output"] + tokens_out,
+            }).eq("id", row["id"]).execute()
+        else:
+            await supa.table("usage_metrics").insert({
+                "tenant_id": tenant["id"],
+                "date": today,
+                "requests": 1,
+                "tokens_input": tokens_in,
+                "tokens_output": tokens_out,
+            }).execute()
+    except Exception:
+        pass  # Fail-open — ne bloque jamais la réponse

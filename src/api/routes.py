@@ -384,6 +384,12 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             latency = int((time.time() - start) * 1000)
             await track("question", detail=f"{question[:150]} | model:{model_name}", latency_ms=latency)
+            # ── B2B Usage tracking ──
+            try:
+                from src.api.blueprints.admin import _increment_usage
+                await _increment_usage(user_id, tokens_in=len(question) // 4, tokens_out=len(answer) // 4)
+            except Exception:
+                pass
             logger.info(f"[{req_id}] {model_name} ({latency}ms)")
 
         except Exception as e:
