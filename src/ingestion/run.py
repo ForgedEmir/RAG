@@ -559,19 +559,21 @@ def _indexed_at_map(memoire: Dict[str, dict]) -> Dict[str, float]:
 
 
 def _run_async(coro):
-    """Helper pour lancer de l'async depuis du code sync."""
+    """Helper pour lancer de l'async depuis du code sync (thread pool)."""
     import asyncio
     try:
-        return asyncio.run(coro)
-    except RuntimeError:
-        # Déjà dans une boucle d'événements (rare pour index_data mais possible via tests)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # On ne peut pas facilement attendre ici sans bloquer, 
-            # mais index_data est généralement lancé en thread.
-            return asyncio.ensure_future(coro, loop=loop)
-        else:
+        # Dans un thread sans event loop (asyncio.to_thread) — crée un loop dédié
+        loop = asyncio.new_event_loop()
+        try:
             return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+    except Exception:
+        # Fallback silencieux — le cache ne bloque pas l'indexation
+        try:
+            coro.close()
+        except Exception:
+            pass
 
 
 def index_data(force_reindex: bool = False, tenant_id: str = "") -> bool:

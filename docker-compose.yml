@@ -31,7 +31,6 @@ services:
       FASTEMBED_CACHE_PATH: ${FASTEMBED_CACHE_PATH:-/app/fastembed_cache}
       HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ./data:/app/data
       - rabelia_data:/app/data
       - fastembed_cache:/app/fastembed_cache
     depends_on:

@@ -234,15 +234,12 @@ async def tenant_upload(
         except Exception as e:
             logger.warning("[UPLOAD] Supabase Storage archive échoué: %s", e)
 
-        async def _run_ingestion_archive():
-            try:
-                from src.ingestion.run import index_data as _index
-                await asyncio.to_thread(_index, False, tenant_id)
-                logger.info("[UPLOAD] Ingestion archive OK — tenant=%s fichiers=%s", tenant_id, extracted_names)
-            except Exception as e:
-                logger.error("[UPLOAD] Ingestion archive échouée — tenant=%s : %s", tenant_id, e)
-
-        asyncio.create_task(_run_ingestion_archive())
+        try:
+            from src.ingestion.run import index_data as _index
+            await asyncio.to_thread(_index, False, tenant_id)
+            logger.info("[UPLOAD] Ingestion archive OK — tenant=%s fichiers=%s", tenant_id, extracted_names)
+        except Exception as e:
+            logger.error("[UPLOAD] Ingestion archive échouée — tenant=%s : %s", tenant_id, e)
         await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} fichiers")
         return {
             "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}'. Ingestion en cours.",
@@ -286,16 +283,13 @@ async def tenant_upload(
     with open(destination, "wb") as f:
         f.write(content)
 
-    # ── Ingestion en arrière-plan (non bloquant) ─────────────────────────────
-    async def _run_ingestion():
-        try:
-            from src.ingestion.run import index_data as _index
-            await asyncio.to_thread(_index, False, tenant_id)
-            logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} fichier={safe_name}")
-        except Exception as e:
-            logger.error(f"[UPLOAD] Ingestion échouée — tenant={tenant_id} : {e}")
-
-    asyncio.create_task(_run_ingestion())
+    # ── Ingestion synchrone — le 200 est renvoyé après indexation ───────────
+    try:
+        from src.ingestion.run import index_data as _index
+        await asyncio.to_thread(_index, False, tenant_id)
+        logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} fichier={safe_name}")
+    except Exception as e:
+        logger.error(f"[UPLOAD] Ingestion échouée — tenant={tenant_id} : {e}")
 
     action = "replace" if existed_before else "upload"
     await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} Ko")
