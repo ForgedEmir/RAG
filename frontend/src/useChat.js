@@ -27,7 +27,13 @@ function newSessionId() {
 }
 
 function flatToMessages(flat) {
-  return flat.map((m, i) => ({ id: m.id ?? i, role: m.role, content: m.content }));
+  return flat.map((m, i) => ({
+    id: m.id ?? i,
+    role: m.role,
+    content: m.content,
+    sources: m.payload?.sources ?? [],
+    context_chunks: m.payload?.context_chunks ?? [],
+  }));
 }
 
 export function useChat() {

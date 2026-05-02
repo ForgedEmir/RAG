@@ -306,7 +306,8 @@ async def delete_conversation(session_id: str) -> None:
     except Exception as e:
         logger.warning(f"[MEMORY] delete_conversation : {e}")
 
-async def save_exchange(session_id: str, question: str, answer: str, user_id: str = "") -> None:
+async def save_exchange(session_id: str, question: str, answer: str, user_id: str = "",
+                        sources: list = None, context_chunks: list = None) -> None:
     client = await _get_client()
     if not client or not session_id:
         return
@@ -314,9 +315,15 @@ async def save_exchange(session_id: str, question: str, answer: str, user_id: st
         normalized_uid = _normalize_user_id(user_id)
         cid = await _get_or_create_conversation(client, session_id, normalized_uid)
         if cid:
+            assistant_row = {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": normalized_uid}
+            if sources or context_chunks:
+                assistant_row["payload"] = {
+                    **({"sources": sources} if sources else {}),
+                    **({"context_chunks": context_chunks} if context_chunks else {}),
+                }
             await client.table("messages").insert([
                 {"conversation_id": cid, "role": "user", "content": question, "user_id": normalized_uid},
-                {"conversation_id": cid, "role": "assistant", "content": answer, "user_id": normalized_uid},
+                assistant_row,
             ]).execute()
     except Exception as e:
         logger.warning(f"[MEMORY] save_exchange : {e}")

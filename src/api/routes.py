@@ -367,7 +367,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"
 
             if body.session_id:
-                await save_exchange(body.session_id, question, answer, user_id)
+                await save_exchange(body.session_id, question, answer, user_id,
+                                    sources=unique_sources, context_chunks=context_chunks)
                 await cache_store(question, answer, source_files=unique_sources, context_chunks=context_chunks)
                 
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
@@ -542,7 +543,7 @@ async def get_messages_for_session(session_id: str = "", user_id: str = Depends(
         cid = await _get_conv_id(client, session_id)
         if not cid:
             return {"messages": []}
-        r = await (client.table("messages").select("id, role, content, created_at")
+        r = await (client.table("messages").select("id, role, content, payload, created_at")
              .eq("conversation_id", cid)
              .order("id").execute())
         return {"messages": r.data or []}
