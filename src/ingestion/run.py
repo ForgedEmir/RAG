@@ -77,6 +77,8 @@ def _get_llm_summarizer() -> ChatOpenAI:
 _redis_client      = None
 _redis_client_lock = threading.Lock()
 
+_index_lock = threading.Lock()
+
 def _get_redis():
     """Retourne un client Redis singleton ou None si indisponible. Fail-open."""
     global _redis_client
@@ -578,6 +580,11 @@ def index_data(force_reindex: bool = False, tenant_id: str = "") -> bool:
     tenant_id : si fourni, les chunks sont tagués et les recherches/suppressions
     sont isolées à ce tenant. Laisser vide pour l'indexation globale (admin).
     """
+    with _index_lock:
+        return _index_data_locked(force_reindex=force_reindex, tenant_id=tenant_id)
+
+
+def _index_data_locked(force_reindex: bool = False, tenant_id: str = "") -> bool:
     logger.info("Vérification des fichiers à indexer (tenant=%s)...", tenant_id or "global")
     fichiers_actuels = list_current_files()
 
@@ -619,7 +626,7 @@ def index_data(force_reindex: bool = False, tenant_id: str = "") -> bool:
             _info = _store.client.get_collection(_store.collection_name)
             if (_info.points_count or 0) == 0 and actuels:
                 logger.warning("Qdrant vide mais mémoire non vide — réindexation forcée.")
-                return index_data(force_reindex=True, tenant_id=tenant_id)
+                return _index_data_locked(force_reindex=True, tenant_id=tenant_id)
         except Exception as e:
             logger.warning(f"Impossible de vérifier l'état Qdrant : {e}")
         if not _is_bm25_corpus_healthy(actuels):
