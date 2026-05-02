@@ -23,7 +23,7 @@ fastembed>=0.2.0
 rank-bm25>=0.2.2
 
 # === Data Parsing ===
-unstructured[md,csv]>=0.12.0
+unstructured[md,csv,xlsx]>=0.12.0
 openpyxl>=3.1.0
 python-docx>=1.1.0
 msoffcrypto-tool>=5.0.0

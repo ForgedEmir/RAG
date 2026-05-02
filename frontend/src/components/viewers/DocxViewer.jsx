@@ -85,8 +85,8 @@ export default function DocxViewer({ filename, passage }) {
           Chargement…
         </div>
       )}
-      {/* Fallback banner if highlight injection failed */}
-      {passage && !markFound && status === 'ok' && (
+      {/* Passage cité — toujours affiché au-dessus du document */}
+      {passage && status === 'ok' && (
         <div style={{ margin: '12px 16px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
           <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
         </div>

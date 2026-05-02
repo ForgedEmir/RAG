@@ -16,15 +16,6 @@ _LLAMA_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
 
 
 def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
-    """
-    Tente d'extraire le texte d'un PDF en utilisant l'API LlamaParse.
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte extrait au format Markdown, ou None si l'API est indisponible ou en cas d'erreur.
-    """
     if not _LLAMA_API_KEY:
         return None
     try:
@@ -41,45 +32,18 @@ def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
 
 
 def clean_text(raw_text: str) -> str:
-    """
-    Nettoie et normalise le texte brut extrait des documents.
-    Supprime le HTML, les en-têtes Markdown, gère les variables de jeu et normalise les espaces.
-
-    Args:
-        raw_text (str): Le texte brut à nettoyer.
-
-    Returns:
-        str: Le texte nettoyé et formaté.
-    """
     if not raw_text:
         return ""
-
-    # Suppression des balises HTML
     text = re.sub(r'<[^>]+>', '', raw_text)
-    
-    # Suppression des symboles de titres Markdown (#)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    
-    # Remplacement des variables de jeu par des termes lisibles
     text = text.replace('%PLAYER_NAME%', 'le joueur')
     text = re.sub(r'%[A-Z_0-9]+%', lambda m: m.group(0).replace('%', ''), text)
-
-    # Normalisation des espaces et gestion des paragraphes
     paragraphs = re.split(r'\n\s*\n', text)
     cleaned_paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
     return "\n\n".join(cleaned_paragraphs)
 
 
 def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
-    """
-    Moteur de secours pour le parsing PDF utilisant la bibliothèque Unstructured.
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte extrait, ou None en cas d'échec.
-    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
@@ -93,7 +57,6 @@ def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
 
 
 def _parse_pdf_pypdf(filepath: str) -> Optional[str]:
-    """Extrait le texte d'un PDF en utilisant pypdf (très fiable)."""
     try:
         import pypdf
         reader = pypdf.PdfReader(filepath)
@@ -109,30 +72,20 @@ def _parse_pdf_pypdf(filepath: str) -> Optional[str]:
 
 
 def _parse_pdf(filepath: str) -> Optional[str]:
-    """
-    Orchestre le parsing PDF en privilégiant LlamaParse, puis pypdf, et enfin Unstructured.
-    """
-    # 1. LlamaParse (Premium / Markdown)
     result = _parse_pdf_llamaparse(filepath)
     if result:
         return result
-    
-    # 2. PyPDF (Local / Rapide / Fiable)
     result = _parse_pdf_pypdf(filepath)
     if result:
         return result
-
-    # 3. Unstructured (Repli historique)
     return _parse_pdf_unstructured(filepath)
 
 
 def _parse_docx(filepath: str) -> Optional[str]:
-    """Extrait le texte d'un fichier Word (.docx) via python-docx avec fallback unstructured."""
     try:
         import docx as _docx
         doc = _docx.Document(filepath)
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-        # Tables
         for table in doc.tables:
             for row in table.rows:
                 cells = [c.text.strip() for c in row.cells if c.text.strip()]
@@ -151,15 +104,6 @@ def _parse_docx(filepath: str) -> Optional[str]:
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
-    """
-    Fonction principale pour extraire le texte d'un fichier en fonction de son extension.
-
-    Args:
-        filepath (str): Chemin vers le fichier à traiter.
-
-    Returns:
-        Optional[str]: Le texte brut extrait du fichier, ou None si le format n'est pas supporté ou si le fichier est introuvable.
-    """
     if not os.path.exists(filepath):
         logger.error(f"Fichier introuvable au chemin spécifié : {filepath}")
         return None
@@ -176,12 +120,12 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
         '.docx': _parse_docx,
         '.doc': _parse_docx,
     }
-    
+
     loader = loaders.get(ext)
     if not loader:
         logger.warning(f"Format de fichier non supporté : {ext}")
         return None
-        
+
     try:
         return loader(filepath)
     except Exception as e:
@@ -190,50 +134,83 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
 
 
 def _read_text_file(filepath: str) -> str:
-    """Lit un fichier texte simple ou Markdown."""
     with open(filepath, 'r', encoding='utf-8') as f:
         return f.read()
 
 
 def _read_json_file(filepath: str) -> str:
-    """Lit et convertit un fichier JSON en texte structuré."""
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
     return _json_to_text(data)
 
 
 def _read_csv(filepath: str) -> str:
-    """Extrait les données d'un fichier CSV en tentant de détecter son dialecte."""
     with open(filepath, 'r', encoding='utf-8') as f:
         sample = f.read(8192)
         f.seek(0)
         dialect = csv.Sniffer().sniff(sample)
         reader = csv.reader(f, dialect)
-        lines = [" ".join(cell for cell in row if cell.strip()) for row in reader]
+        lines = [" | ".join(cell for cell in row if cell.strip()) for row in reader]
         return "\n".join(line for line in lines if line)
 
 
 def _xlsx_to_text(filepath: str) -> str:
     """
-    Convertit un fichier Excel (.xlsx) en texte au format 'Colonne: Valeur'.
+    Convertit un fichier Excel (.xlsx) en texte structuré avec contexte sémantique.
+    Ajoute un en-tête décrivant le fichier, les feuilles et les colonnes
+    pour que le contenu soit trouvable par recherche vectorielle et BM25.
 
-    Args:
-        filepath (str): Chemin vers le fichier Excel.
-
-    Returns:
-        str: Texte structuré représentant le contenu des feuilles Excel.
+    Exemple de sortie :
+        [FICHIER: base_prospect_V2.xlsx]
+        Ce fichier contient 3 feuilles : Prospects, Statistiques, Notes.
+        Feuille 'Prospects' (120 lignes) — Colonnes: Nom, Âge, Ville, Email, Téléphone
+        ---
+        Nom: Jean | Âge: 35 | Ville: Paris | Email: jean@test.com
+        Nom: Marie | Âge: 28 | Ville: Lyon | Email: marie@test.com
     """
     try:
         import openpyxl
-        classeur = openpyxl.load_workbook(filepath, read_only=True)
+        classeur = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
         lignes = []
+
+        filename = os.path.basename(filepath)
+        nom_sans_ext = os.path.splitext(filename)[0]
+
+        # En-tête sémantique — rend le fichier trouvable par recherche
+        sheet_info = []
+        total_rows = 0
+        for nom_feuille in classeur.sheetnames:
+            sheet = classeur[nom_feuille]
+            rows = list(sheet.iter_rows(max_row=min(sheet.max_row, 2000)))
+            if rows:
+                headers = [str(cell.value or "") for cell in rows[0]]
+                n_rows = max(0, len(rows) - 1)
+                total_rows += n_rows
+                sheet_info.append(
+                    f"Feuille '{nom_feuille}' ({n_rows} lignes)"
+                    f" — Colonnes: {', '.join(h for h in headers if h)}"
+                )
+
+        lignes.append(f"[FICHIER: {filename}]")
+        lignes.append(
+            f"Ce fichier contient {len(classeur.sheetnames)} feuille(s) : "
+            f"{', '.join(classeur.sheetnames)}."
+        )
+        for info in sheet_info:
+            lignes.append(info)
+        lignes.append("---")
 
         for nom_feuille in classeur.sheetnames:
             sheet = classeur[nom_feuille]
-            rows = list(sheet.rows)
+            rows = list(sheet.iter_rows(max_row=min(sheet.max_row, 2000)))
             if not rows:
                 continue
             headers = [str(cell.value or "") for cell in rows[0]]
+
+            # Ligne d'en-tête avec noms de colonnes explicites
+            if len(classeur.sheetnames) > 1:
+                lignes.append(f"\n=== Feuille: {nom_feuille} ===")
+
             for row in rows[1:]:
                 parties = [
                     f"{headers[i] if i < len(headers) else f'Col{i}'}: {cell.value}"
@@ -250,16 +227,6 @@ def _xlsx_to_text(filepath: str) -> str:
 
 
 def _json_to_text(data: Any, niveau: int = 0) -> str:
-    """
-    Convertit récursivement un objet Python (issu d'un JSON) en texte lisible avec indentation.
-
-    Args:
-        data (Any): L'objet à convertir (dict, list, str, etc.).
-        niveau (int): Niveau d'indentation actuel.
-
-    Returns:
-        str: Représentation textuelle de l'objet.
-    """
     lignes = []
     indent = "  " * niveau
 
@@ -283,15 +250,6 @@ def _json_to_text(data: Any, niveau: int = 0) -> str:
 
 
 def _xml_to_text(filepath: str) -> str:
-    """
-    Extrait le texte d'un fichier XML en utilisant Unstructured pour gérer la hiérarchie.
-
-    Args:
-        filepath (str): Chemin vers le fichier XML.
-
-    Returns:
-        str: Texte extrait ou chaîne vide en cas d'erreur.
-    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
