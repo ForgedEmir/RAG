@@ -396,10 +396,11 @@ def prepare_files_for_ai(
                     continue
                 seen_chunk_hashes.add(chunk_sha256)
                 chunk_id = f"{nom}_{chunk_idx}"
+                file_label = f"[Source: {os.path.basename(nom)}]\n"
                 documents.append(Document(
                     # page_content = texte contextuel → vecteur capte le contexte voisin
                     # Le texte original est conservé dans metadata pour la génération
-                    page_content=contextual_chunk,
+                    page_content=file_label + contextual_chunk,
                     metadata={
                         "fichier":        nom,
                         "chunk_id":       chunk_id,
