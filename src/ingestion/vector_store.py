@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 _BASE_DIR        = os.path.dirname(__file__)
 _DB_PATH         = os.path.join(_BASE_DIR, "qdrant_db")
-_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "lore")
+_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "documents_chunks")
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
