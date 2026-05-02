@@ -311,6 +311,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     if not passages:
         no_data_msg = "Les archives ne contiennent aucune information sur ce sujet."
         await register_trace_context(trace_id, question, no_data_msg, body.session_id, user_id)
+        if body.session_id:
+            await save_exchange(body.session_id, question, no_data_msg, user_id)
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'context_chunks': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': no_data_msg})}\n\n",
