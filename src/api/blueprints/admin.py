@@ -327,7 +327,14 @@ async def user_sources(user_id: str = Depends(get_current_user)):
         client = _get_client()
         filenames: set[str] = set()
         offset = None
-        filt = Filter(must=[FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))]) if tenant_id else None
+        # Include both tenant-specific docs AND admin-uploaded global docs (tenant_id="")
+        if tenant_id:
+            filt = Filter(should=[
+                FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id)),
+                FieldCondition(key="metadata.tenant_id", match=MatchValue(value="")),
+            ])
+        else:
+            filt = None
         while True:
             results, next_offset = client.scroll(
                 collection_name=_COLLECTION_NAME,
