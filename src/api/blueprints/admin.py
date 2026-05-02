@@ -321,15 +321,34 @@ async def admin_sources(request: Request):
 @admin_router.get("/api/sources")
 async def user_sources(user_id: str = Depends(get_current_user)):
     tenant_id = await get_tenant_id(user_id)
-    tenant_dir = os.path.join(DATA_DIR, tenant_id)
-    if not os.path.isdir(tenant_dir):
+    try:
+        from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        client = _get_client()
+        filenames: set[str] = set()
+        offset = None
+        filt = Filter(must=[FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))]) if tenant_id else None
+        while True:
+            results, next_offset = client.scroll(
+                collection_name=_COLLECTION_NAME,
+                scroll_filter=filt,
+                limit=256,
+                offset=offset,
+                with_payload=["metadata.fichier"],
+                with_vectors=False,
+            )
+            for point in results:
+                fichier = (point.payload or {}).get("metadata", {}).get("fichier")
+                if fichier:
+                    filenames.add(os.path.basename(fichier))
+            if next_offset is None:
+                break
+            offset = next_offset
+        files = sorted(filenames)
+        return {"files": files, "total": len(files)}
+    except Exception as e:
+        logger.warning("Lecture sources Qdrant impossible: %s", e)
         return {"files": [], "total": 0}
-    files = sorted(
-        f for f in os.listdir(tenant_dir)
-        if os.path.isfile(os.path.join(tenant_dir, f))
-        and os.path.splitext(f)[1].lower() in ALLOWED_EXTENSIONS
-    )
-    return {"files": files, "total": len(files)}
 
 
 @admin_router.post("/api/admin/upload")
