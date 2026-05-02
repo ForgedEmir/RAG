@@ -20,7 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN python -m spacy download en_core_web_sm
+# spacy était requis par Unstructured (optionnel depuis v2.2)
+# Si besoin : décommenter + ajouter 'spacy' dans requirements.txt
+# RUN python -m spacy download en_core_web_sm
 
 COPY . .
 RUN rm -rf /app/src/frontend/assets /app/src/frontend/index.html
@@ -28,14 +30,11 @@ COPY --from=frontend /output/ /app/src/frontend/
 
 RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
 
-# Run as non-root for security
 RUN useradd -m -u 1000 appuser \
     && mkdir -p /app/data/sample /app/logs \
     && chown -R appuser:appuser /app
 USER appuser
 
-# Port 8000 : API + frontend web
-# Port 8001 : MCP SSE (Claude Desktop, Cursor, etc.)
 EXPOSE 8000 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
