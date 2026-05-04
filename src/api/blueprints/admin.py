@@ -831,6 +831,23 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
         os.path.join(DATA_DIR, safe_name),
     ]
     path = next((p for p in candidates if os.path.isfile(p)), None)
+
+    # Supabase Storage fallback — file missing from disk after container restart
+    if not path:
+        try:
+            from src.monitoring.tracker import _get_client
+            supa = await _get_client()
+            if supa:
+                data = await supa.storage.from_("tenant-docs").download(f"{tenant_id}/{safe_name}")
+                if data:
+                    local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    with open(local_path, "wb") as fh:
+                        fh.write(data)
+                    path = local_path
+        except Exception as e:
+            logger.warning(f"[FILE-TEXT] Supabase fallback échoué pour '{safe_name}': {e}")
+
     if not path:
         return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
 
@@ -864,8 +881,26 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
     tenant_id = await get_tenant_id(user_id)
     candidates = [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]
     path = next((p for p in candidates if os.path.isfile(p)), None)
+
+    # Supabase Storage fallback — file missing from disk after container restart
+    if not path:
+        try:
+            from src.monitoring.tracker import _get_client
+            supa = await _get_client()
+            if supa:
+                data = await supa.storage.from_("tenant-docs").download(f"{tenant_id}/{safe_name}")
+                if data:
+                    local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    with open(local_path, "wb") as fh:
+                        fh.write(data)
+                    path = local_path
+        except Exception as e:
+            logger.warning(f"[FILE-XLSX] Supabase fallback échoué pour '{safe_name}': {e}")
+
     if not path:
         return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+
     try:
         import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
