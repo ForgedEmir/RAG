@@ -39,13 +39,14 @@ export function findPassage(content, passage) {
 
 /**
  * Walk all text nodes inside a DOM element, find the passage via normalized
- * matching, and wrap the match in a <mark data-passage> element.
- * Returns the <mark> element or null if no match found.
+ * matching, and wrap each matching segment in its own <mark data-passage>.
+ * Handles passages that span multiple block elements (p, li, h1…) by creating
+ * one <mark> per text node instead of one cross-element surroundContents call.
+ * Returns the first <mark> element or null if no match found.
  */
 export function injectPassageMark(container, passage) {
   if (!container || !passage) return null;
 
-  // Remove previous highlights
   container.querySelectorAll('mark[data-passage]').forEach(m => m.replaceWith(...m.childNodes));
 
   const normPassage = normalize(passage);
@@ -55,53 +56,52 @@ export function injectPassageMark(container, passage) {
   while ((node = walker.nextNode())) textNodes.push(node);
   if (!textNodes.length) return null;
 
-  // Build per-node info in normalized space
-  const nodeInfo = [];
-  let npos = 0;
-  for (const tn of textNodes) {
-    const normText = normalize(tn.textContent);
-    const start = npos;
-    if (normText.length > 0) {
-      npos += normText.length;
-      if (nodeInfo.length > 0) npos++; // space separator between nodes
-    }
-    nodeInfo.push({ node: tn, normStart: start, normLen: normText.length });
-  }
-
-  const fullNorm = textNodes.map(n => normalize(n.textContent)).join(' ');
+  const normTexts = textNodes.map(n => normalize(n.textContent));
+  const fullNorm  = normTexts.join(' ');
   const matchStart = fullNorm.indexOf(normPassage);
   if (matchStart === -1) return null;
   const matchEnd = matchStart + normPassage.length;
 
-  // Find start and end nodes
-  let startNode = null, startOffset = 0, endNode = null, endOffset = 0;
-  for (const info of nodeInfo) {
-    const ns = info.normStart;
-    const ne = ns + info.normLen;
-    if (startNode === null && matchStart >= ns && matchStart <= ne) {
-      startNode = info.node;
-      startOffset = Math.min(matchStart - ns, info.node.textContent.length);
-    }
-    if (endNode === null && matchEnd >= ns && matchEnd <= ne) {
-      endNode = info.node;
-      endOffset = Math.min(matchEnd - ns, info.node.textContent.length);
-    }
+  // Compute the start position of each node in the joined string.
+  // normTexts.join(' ') puts one space between every node (including empty ones).
+  const nodeStarts = [];
+  let pos = 0;
+  for (let i = 0; i < normTexts.length; i++) {
+    nodeStarts.push(pos);
+    pos += normTexts[i].length + 1;
   }
 
-  if (!startNode || !endNode) return null;
+  const MARK_STYLE = 'background:rgba(250,204,21,0.45);border-radius:3px;padding:1px 0;color:inherit';
+  let firstMark = null;
 
-  try {
-    const range = document.createRange();
-    range.setStart(startNode, startOffset);
-    range.setEnd(endNode, endOffset);
-    const mark = document.createElement('mark');
-    mark.setAttribute('data-passage', '1');
-    mark.style.cssText = 'background:rgba(250,204,21,0.45);border-radius:3px;padding:1px 0;color:inherit';
-    range.surroundContents(mark);
-    return mark;
-  } catch (_) {
-    return null;
+  for (let i = 0; i < textNodes.length; i++) {
+    const ns = nodeStarts[i];
+    const ne = ns + normTexts[i].length;
+    if (ne <= matchStart || ns >= matchEnd || normTexts[i].length === 0) continue;
+
+    // Overlap in normalized space, relative to this node's start
+    const overlapNormStart = Math.max(matchStart, ns) - ns;
+    const overlapNormEnd   = Math.min(matchEnd,   ne) - ns;
+
+    // Map back to original-text offsets (approximate; fine for clean text)
+    const origLen   = textNodes[i].textContent.length;
+    const wrapStart = Math.min(overlapNormStart, origLen);
+    const wrapEnd   = Math.min(overlapNormEnd,   origLen);
+    if (wrapStart >= wrapEnd) continue;
+
+    try {
+      const range = document.createRange();
+      range.setStart(textNodes[i], wrapStart);
+      range.setEnd(textNodes[i], wrapEnd);
+      const mark = document.createElement('mark');
+      mark.setAttribute('data-passage', '1');
+      mark.style.cssText = MARK_STYLE;
+      range.surroundContents(mark);
+      if (!firstMark) firstMark = mark;
+    } catch (_) {}
   }
+
+  return firstMark;
 }
 
 /**
