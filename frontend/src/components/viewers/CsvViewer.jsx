@@ -74,13 +74,7 @@ export default function CsvViewer({ filename, passage }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Passage cité — toujours affiché au-dessus du document */}
-      {passage && (
-        <div style={{ margin: '12px 16px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5, flexShrink: 0 }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
-        </div>
-      )}
-      <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
+<div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
         <table ref={tableRef} style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%' }}>
           <thead>
             <tr>{headers.map((h, i) => <th key={i} style={TH}>{h || `Col ${i + 1}`}</th>)}</tr>

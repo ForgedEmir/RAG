@@ -11,17 +11,13 @@ function encodeFilePath(filename) {
 }
 
 export default function MarkdownViewer({ filename, passage }) {
-  const [content, setContent]           = useState(null);
-  const [error, setError]               = useState(false);
-  const [markFound, setMarkFound]       = useState(false);
-  const [markAttempted, setMarkAttempted] = useState(false);
+  const [content, setContent] = useState(null);
+  const [error, setError]     = useState(false);
   const containerRef = useRef(null);
 
   useEffect(() => {
     setContent(null);
     setError(false);
-    setMarkFound(false);
-    setMarkAttempted(false);
     getAuthHeader().then(headers =>
       fetch(`/api/file-text/${encodeFilePath(filename)}`, { headers })
         .then(r => r.ok ? r.text() : Promise.reject())
@@ -34,30 +30,17 @@ export default function MarkdownViewer({ filename, passage }) {
     if (!containerRef.current || !content) return;
     if (!passage) {
       containerRef.current.querySelectorAll('mark[data-passage]').forEach(m => m.replaceWith(...m.childNodes));
-      setMarkFound(false);
-      setMarkAttempted(false);
       return;
     }
-    setMarkFound(false);
-    setMarkAttempted(false);
-    // ReactMarkdown may still be painting — retry up to 3 times with increasing delay
-    let attempt = 0;
-    let tid;
+    let attempt = 0, tid;
     const tryMark = () => {
       let el = injectPassageMark(containerRef.current, passage);
-      if (!el) {
-        // surroundContents() fails when passage spans multiple block elements — span fallback
-        el = highlightPdfLayer(containerRef.current, passage);
-      }
+      if (!el) el = highlightPdfLayer(containerRef.current, passage);
       if (el) {
-        setMarkFound(true);
-        setMarkAttempted(true);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (attempt < 3) {
         attempt++;
         tid = setTimeout(tryMark, 80 * attempt);
-      } else {
-        setMarkAttempted(true);
       }
     };
     tid = setTimeout(tryMark, 60);
@@ -77,12 +60,6 @@ export default function MarkdownViewer({ filename, passage }) {
 
   return (
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
-      {/* Fallback banner — only shown if all highlight attempts failed */}
-      {passage && markAttempted && !markFound && (
-        <div style={{ margin: '12px 20px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
-        </div>
-      )}
       <div
         ref={containerRef}
         className="docviewer-md"

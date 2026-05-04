@@ -35,13 +35,7 @@ export default function TextViewer({ filename, passage }) {
 
   return (
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto' }}>
-      {/* Passage cité — toujours affiché au-dessus du document */}
-      {passage && (
-        <div style={{ margin: '12px 20px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
-        </div>
-      )}
-      <pre style={preStyle}>{content}</pre>
+<pre style={preStyle}>{content}</pre>
     </div>
   );
 }

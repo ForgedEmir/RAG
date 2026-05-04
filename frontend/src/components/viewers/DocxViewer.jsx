@@ -7,17 +7,12 @@ function encodeFilePath(filename) {
 }
 
 export default function DocxViewer({ filename, passage }) {
-  const [status, setStatus]             = useState('loading'); // 'loading' | 'ok' | 'error'
-  const [markFound, setMarkFound]       = useState(false);
-  const [markAttempted, setMarkAttempted] = useState(false);
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const containerRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     setStatus('loading');
-    setMarkFound(false);
-    setMarkAttempted(false);
-
     let cancelled = false;
     (async () => {
       try {
@@ -26,20 +21,12 @@ export default function DocxViewer({ filename, passage }) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();
         if (cancelled) return;
-
-        // Clear previous render
         containerRef.current.innerHTML = '';
-
         const { renderAsync } = await import('docx-preview');
         await renderAsync(buf, containerRef.current, null, {
-          className:       'docx-preview',
-          inWrapper:       true,
-          ignoreWidth:     true,
-          ignoreHeight:    true,
-          renderHeaders:   true,
-          renderFooters:   true,
-          renderFootnotes: true,
-          useBase64URL:    true,
+          className: 'docx-preview', inWrapper: true, ignoreWidth: true,
+          ignoreHeight: true, renderHeaders: true, renderFooters: true,
+          renderFootnotes: true, useBase64URL: true,
         });
         if (cancelled) return;
         setStatus('ok');
@@ -47,37 +34,20 @@ export default function DocxViewer({ filename, passage }) {
         if (!cancelled) setStatus('error');
       }
     })();
-
     return () => { cancelled = true; };
   }, [filename]);
 
-  // Inject passage highlight after render
   useEffect(() => {
-    if (status !== 'ok' || !passage || !containerRef.current) {
-      setMarkFound(false);
-      setMarkAttempted(false);
-      return;
-    }
-    setMarkFound(false);
-    setMarkAttempted(false);
-    let attempt = 0;
-    let tid;
+    if (status !== 'ok' || !passage || !containerRef.current) return;
+    let attempt = 0, tid;
     const tryMark = () => {
-      // Try DOM-range injection first (works when text isn't split across spans)
       let el = injectPassageMark(containerRef.current, passage);
-      if (!el) {
-        // docx-preview renders each text run in its own span — use span-by-span fallback
-        el = highlightPdfLayer(containerRef.current, passage);
-      }
+      if (!el) el = highlightPdfLayer(containerRef.current, passage);
       if (el) {
-        setMarkFound(true);
-        setMarkAttempted(true);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (attempt < 3) {
         attempt++;
         tid = setTimeout(tryMark, 80 * attempt);
-      } else {
-        setMarkAttempted(true);
       }
     };
     tid = setTimeout(tryMark, 80);
@@ -97,16 +67,7 @@ export default function DocxViewer({ filename, passage }) {
           Chargement…
         </div>
       )}
-      {/* Fallback banner — only shown if all highlight attempts failed */}
-      {passage && markAttempted && !markFound && status === 'ok' && (
-        <div style={{ margin: '12px 16px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
-        </div>
-      )}
-      <div
-        ref={containerRef}
-        style={{ display: status === 'loading' ? 'none' : 'block' }}
-      />
+      <div ref={containerRef} style={{ display: status === 'loading' ? 'none' : 'block' }} />
     </div>
   );
 }
