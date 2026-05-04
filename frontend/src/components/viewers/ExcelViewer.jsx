@@ -1,14 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAuthHeader } from '../../auth.js';
 
 function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
-export default function ExcelViewer({ filename }) {
+function normCell(val) {
+  return String(val ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function rowMatchesPassage(row, normPassage) {
+  if (!normPassage) return false;
+  const rowText = row.map(normCell).join(' ');
+  return rowText.includes(normPassage) || row.some(c => normCell(c).includes(normPassage));
+}
+
+function cellMatchesPassage(cell, normPassage) {
+  if (!normPassage) return false;
+  return normCell(cell).includes(normPassage);
+}
+
+export default function ExcelViewer({ filename, passage }) {
   const [sheets, setSheets] = useState(null);
   const [activeSheet, setActiveSheet] = useState(0);
   const [loading, setLoading] = useState(true);
+  const firstMatchRef = useRef(null);
+
+  const normPassage = passage ? passage.replace(/\s+/g, ' ').trim().toLowerCase() : '';
 
   useEffect(() => {
     setLoading(true);
@@ -23,10 +41,24 @@ export default function ExcelViewer({ filename }) {
     );
   }, [filename]);
 
+  // Auto-scroll to first highlighted row when passage or sheet changes
+  const setMatchRef = useCallback(el => {
+    if (el && firstMatchRef.current !== el) {
+      firstMatchRef.current = el;
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    }
+  }, []);
+
+  useEffect(() => {
+    firstMatchRef.current = null;
+  }, [normPassage, activeSheet]);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
   if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de lire le fichier Excel.</div>;
 
   const current = sheets[activeSheet];
+  let firstMatchSeen = false;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {sheets.length > 1 && (
@@ -63,16 +95,35 @@ export default function ExcelViewer({ filename }) {
             </thead>
           )}
           <tbody>
-            {current.rows.map((row, ri) => (
-              <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'var(--bg-subtle, rgba(0,0,0,0.02))' }}>
-                {row.map((cell, ci) => (
-                  <td key={ci} style={{
-                    padding: '5px 12px', borderBottom: '1px solid var(--border-subtle)',
-                    color: cell ? 'var(--fg-primary)' : 'var(--fg-muted)',
-                  }}>{cell || ''}</td>
-                ))}
-              </tr>
-            ))}
+            {current.rows.map((row, ri) => {
+              const isMatch = normPassage && rowMatchesPassage(row, normPassage);
+              const isFirst = isMatch && !firstMatchSeen;
+              if (isFirst) firstMatchSeen = true;
+              return (
+                <tr
+                  key={ri}
+                  ref={isFirst ? setMatchRef : null}
+                  style={{
+                    background: isMatch
+                      ? 'rgba(250,204,21,0.22)'
+                      : ri % 2 === 0 ? 'transparent' : 'var(--bg-subtle, rgba(0,0,0,0.02))',
+                    outline: isFirst ? '2px solid rgba(250,204,21,0.6)' : undefined,
+                  }}
+                >
+                  {row.map((cell, ci) => {
+                    const cellMatch = isMatch && normPassage && cellMatchesPassage(cell, normPassage);
+                    return (
+                      <td key={ci} style={{
+                        padding: '5px 12px', borderBottom: '1px solid var(--border-subtle)',
+                        color: cell ? 'var(--fg-primary)' : 'var(--fg-muted)',
+                        background: cellMatch ? 'rgba(250,204,21,0.45)' : undefined,
+                        fontWeight: cellMatch ? 600 : undefined,
+                      }}>{cell || ''}</td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

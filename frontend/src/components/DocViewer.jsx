@@ -26,7 +26,7 @@ function ViewerBody({ filename, passage }) {
   if (PDF_EXTS.has(ext))   return <PDFViewer filename={filename} passage={passage} />;
   if (MD_EXTS.has(ext))    return <MarkdownViewer filename={filename} passage={passage} />;
   if (DOCX_EXTS.has(ext))  return <DocxViewer filename={filename} passage={passage} />;
-  if (EXCEL_EXTS.has(ext)) return <ExcelViewer filename={filename} />;
+  if (EXCEL_EXTS.has(ext)) return <ExcelViewer filename={filename} passage={passage} />;
   if (CSV_EXTS.has(ext))   return <CsvViewer filename={filename} passage={passage} />;
   if (TEXT_EXTS.has(ext))  return <TextViewer filename={filename} passage={passage} />;
   return <TextViewer filename={filename} passage={passage} />;

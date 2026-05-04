@@ -1,20 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { getAuthHeader } from '../../auth.js';
-import { injectPassageMark } from '../../utils/highlight.js';
+import { injectPassageMark, highlightPdfLayer } from '../../utils/highlight.js';
 
 function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
 export default function DocxViewer({ filename, passage }) {
-  const [status, setStatus]       = useState('loading'); // 'loading' | 'ok' | 'error'
-  const [markFound, setMarkFound] = useState(false);
+  const [status, setStatus]             = useState('loading'); // 'loading' | 'ok' | 'error'
+  const [markFound, setMarkFound]       = useState(false);
+  const [markAttempted, setMarkAttempted] = useState(false);
   const containerRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     setStatus('loading');
     setMarkFound(false);
+    setMarkAttempted(false);
 
     let cancelled = false;
     (async () => {
@@ -53,19 +55,29 @@ export default function DocxViewer({ filename, passage }) {
   useEffect(() => {
     if (status !== 'ok' || !passage || !containerRef.current) {
       setMarkFound(false);
+      setMarkAttempted(false);
       return;
     }
     setMarkFound(false);
+    setMarkAttempted(false);
     let attempt = 0;
     let tid;
     const tryMark = () => {
-      const mark = injectPassageMark(containerRef.current, passage);
-      if (mark) {
+      // Try DOM-range injection first (works when text isn't split across spans)
+      let el = injectPassageMark(containerRef.current, passage);
+      if (!el) {
+        // docx-preview renders each text run in its own span — use span-by-span fallback
+        el = highlightPdfLayer(containerRef.current, passage);
+      }
+      if (el) {
         setMarkFound(true);
-        mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setMarkAttempted(true);
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (attempt < 3) {
         attempt++;
         tid = setTimeout(tryMark, 80 * attempt);
+      } else {
+        setMarkAttempted(true);
       }
     };
     tid = setTimeout(tryMark, 80);
@@ -85,8 +97,8 @@ export default function DocxViewer({ filename, passage }) {
           Chargement…
         </div>
       )}
-      {/* Passage cité — toujours affiché au-dessus du document */}
-      {passage && status === 'ok' && (
+      {/* Fallback banner — only shown if all highlight attempts failed */}
+      {passage && markAttempted && !markFound && status === 'ok' && (
         <div style={{ margin: '12px 16px 0', padding: '8px 12px', background: 'rgba(250,204,21,0.15)', border: '1px solid rgba(250,204,21,0.4)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }}>
           <span style={{ fontWeight: 600, color: '#b45309', marginRight: 6 }}>Passage cité :</span>{passage}
         </div>
