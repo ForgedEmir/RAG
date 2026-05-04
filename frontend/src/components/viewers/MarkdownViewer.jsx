@@ -25,7 +25,11 @@ function stripMarkdown(s) {
     .replace(/^\s{0,3}[-*+]\s+/gm, '')
     .replace(/^\s{0,3}\d+\.\s+/gm, '')
     .replace(/^\s{0,3}>\s?/gm, '')
-    .replace(/^\s*[-*_]{3,}\s*$/gm, '');
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    // Markdown tables: drop separator rows, replace | with spaces in row lines
+    .replace(/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/gm, '')
+    .replace(/^\s*\|.*\|\s*$/gm, m => m.replace(/\|/g, ' '))
+    .replace(/\\([\\`*_{}\[\]()#+\-.!|])/g, '$1');
 }
 
 export default function MarkdownViewer({ filename, passage }) {
