@@ -779,6 +779,34 @@ async def team_cancel_invitation(email: str, user_id: str = Depends(get_current_
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def _resolve_file(tenant_id: str, safe_name: str) -> str | None:
+    """
+    Retourne le chemin local du fichier, en le téléchargeant depuis Supabase
+    Storage si absent du disque (VPS stateless — Supabase est la source de vérité).
+    """
+    local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
+    if os.path.isfile(local_path):
+        return local_path
+    # Fallback legacy (admin upload sans tenant)
+    legacy = os.path.join(DATA_DIR, safe_name)
+    if os.path.isfile(legacy):
+        return legacy
+    # Supabase Storage — source primaire sur VPS
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if supa:
+            data = await supa.storage.from_("tenant-docs").download(f"{tenant_id}/{safe_name}")
+            if data:
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                with open(local_path, "wb") as fh:
+                    fh.write(data)
+                return local_path
+    except Exception as e:
+        logger.warning("[FILE] Supabase download échoué pour '%s/%s': %s", tenant_id, safe_name, e)
+    return None
+
+
 @admin_router.get("/api/file/{filename:path}")
 async def serve_file(filename: str, request: Request, user_id: str = Depends(get_current_user)):
     """Serve a file from tenant storage for in-browser preview."""
@@ -787,35 +815,14 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
         return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
+    path = await _resolve_file(tenant_id, safe_name)
+    if not path:
+        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+
     mime, _ = mimetypes.guess_type(safe_name)
     mime = mime or "application/octet-stream"
     disp = "inline" if (mime.startswith("text/") or mime == "application/pdf") else "attachment"
-    headers = {"Content-Disposition": f'{disp}; filename="{safe_name}"'}
-
-    # 1. Local file (fast path)
-    for path in [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]:
-        if os.path.isfile(path):
-            return FileResponse(path, media_type=mime, headers=headers)
-
-    # 2. Supabase Storage fallback — re-download and stream
-    try:
-        from src.monitoring.tracker import _get_client
-        from fastapi.responses import Response as FastAPIResponse
-        supa = await _get_client()
-        if supa:
-            storage_path = f"{tenant_id}/{safe_name}"
-            data = await supa.storage.from_("tenant-docs").download(storage_path)
-            if data:
-                # Save locally for next time
-                local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                with open(local_path, "wb") as fh:
-                    fh.write(data)
-                return FastAPIResponse(content=data, media_type=mime, headers=headers)
-    except Exception as e:
-        logger.warning(f"[FILE] Supabase Storage fallback échoué pour '{safe_name}': {e}")
-
-    return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+    return FileResponse(path, media_type=mime, headers={"Content-Disposition": f'{disp}; filename="{safe_name}"'})
 
 
 @admin_router.get("/api/file-text/{filename:path}")
@@ -826,28 +833,7 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
         return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
-    candidates = [
-        os.path.join(DATA_DIR, tenant_id, safe_name),
-        os.path.join(DATA_DIR, safe_name),
-    ]
-    path = next((p for p in candidates if os.path.isfile(p)), None)
-
-    # Supabase Storage fallback — file missing from disk after container restart
-    if not path:
-        try:
-            from src.monitoring.tracker import _get_client
-            supa = await _get_client()
-            if supa:
-                data = await supa.storage.from_("tenant-docs").download(f"{tenant_id}/{safe_name}")
-                if data:
-                    local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
-                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    with open(local_path, "wb") as fh:
-                        fh.write(data)
-                    path = local_path
-        except Exception as e:
-            logger.warning(f"[FILE-TEXT] Supabase fallback échoué pour '{safe_name}': {e}")
-
+    path = await _resolve_file(tenant_id, safe_name)
     if not path:
         return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
 
@@ -879,25 +865,7 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
     if not safe_name or not safe_name.lower().endswith(".xlsx"):
         return JSONResponse({"error": "Fichier invalide."}, status_code=400)
     tenant_id = await get_tenant_id(user_id)
-    candidates = [os.path.join(DATA_DIR, tenant_id, safe_name), os.path.join(DATA_DIR, safe_name)]
-    path = next((p for p in candidates if os.path.isfile(p)), None)
-
-    # Supabase Storage fallback — file missing from disk after container restart
-    if not path:
-        try:
-            from src.monitoring.tracker import _get_client
-            supa = await _get_client()
-            if supa:
-                data = await supa.storage.from_("tenant-docs").download(f"{tenant_id}/{safe_name}")
-                if data:
-                    local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
-                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    with open(local_path, "wb") as fh:
-                        fh.write(data)
-                    path = local_path
-        except Exception as e:
-            logger.warning(f"[FILE-XLSX] Supabase fallback échoué pour '{safe_name}': {e}")
-
+    path = await _resolve_file(tenant_id, safe_name)
     if not path:
         return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
 
