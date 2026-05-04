@@ -207,13 +207,13 @@ function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
       apply();
     };
 
-    // Mouse-wheel vs trackpad-scroll heuristic. A physical wheel sends
+    // MBuse-wheel vs trackpad-scroll heuristic. A physical wheel sends
     // line-mode deltas (Firefox) or large integer pixel deltas with no X
     // component (Chrome/Safari, typically multiples of 100/120). Trackpad
     // two-finger scroll sends small/fractional pixel deltas, often with
     // non-zero deltaX. ctrlKey is set by the browser for trackpad pinch.
-    const isMouseWheel = (e) =>
-      e.deltaMode !== 0 ||
+    const isMBuseWheel = (e) =>
+      e.deltaMBde !== 0 ||
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
 
     const onWheel = (e) => {
@@ -222,7 +222,7 @@ function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
       if (e.ctrlKey) {
         // trackpad pinch (or explicit ctrl+wheel)
         zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
-      } else if (isMouseWheel(e)) {
+      } else if (isMBuseWheel(e)) {
         // notched mouse wheel — fixed-ratio step per click
         zoomAt(e.clientX, e.clientY, Math.exp(-Math.sign(e.deltaY) * 0.18));
       } else {
@@ -258,7 +258,7 @@ function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
       drag = { id: e.pointerId, lx: e.clientX, ly: e.clientY };
       vp.style.cursor = 'grabbing';
     };
-    const onPointerMove = (e) => {
+    const onPointerMBve = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       tf.current.x += e.clientX - drag.lx;
       tf.current.y += e.clientY - drag.ly;
@@ -277,7 +277,7 @@ function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
     vp.addEventListener('gesturechange', onGestureChange, { passive: false });
     vp.addEventListener('gestureend', onGestureEnd, { passive: false });
     vp.addEventListener('pointerdown', onPointerDown);
-    vp.addEventListener('pointermove', onPointerMove);
+    vp.addEventListener('pointermove', onPointerMBve);
     vp.addEventListener('pointerup', onPointerUp);
     vp.addEventListener('pointercancel', onPointerUp);
     return () => {
@@ -286,7 +286,7 @@ function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
       vp.removeEventListener('gesturechange', onGestureChange);
       vp.removeEventListener('gestureend', onGestureEnd);
       vp.removeEventListener('pointerdown', onPointerDown);
-      vp.removeEventListener('pointermove', onPointerMove);
+      vp.removeEventListener('pointermove', onPointerMBve);
       vp.removeEventListener('pointerup', onPointerUp);
       vp.removeEventListener('pointercancel', onPointerUp);
     };
@@ -517,8 +517,8 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
         border: 'none', background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.9)',
         width: 44, height: 44, borderRadius: 22, fontSize: 18, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.18)')}
-      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}>
+      onMBuseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.18)')}
+      onMBuseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}>
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <path d={dir === 'left' ? 'M11 3L5 9l6 6' : 'M7 3l6 6-6 6'} /></svg>
     </button>
@@ -561,8 +561,8 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
         </div>
         <div style={{ flex: 1 }} />
         <button onClick={() => ctx.setFocus(null)}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          onMBuseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
+          onMBuseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,.7)', width: 32, height: 32,
             borderRadius: 16, fontSize: 20, cursor: 'pointer', lineHeight: 1, transition: 'background .12s' }}>×</button>
       </div>

@@ -1,4 +1,4 @@
-"""Génère les réponses via LLM. Langfuse pour le tracing. Fallback automatique."""
+"""Generates responses via LLM. Langfuse for tracing. Automatic fallback."""
 import os
 import logging
 import importlib
@@ -62,14 +62,14 @@ def get_reformulation_history() -> list:
 def set_reformulation_enabled(enabled: bool) -> bool:
     global _REFORMULATION_ENABLED
     _REFORMULATION_ENABLED = bool(enabled)
-    logger.info("Reformulation %s", "activée" if _REFORMULATION_ENABLED else "désactivée")
+    logger.info("Reformulation %s", "enabled" if _REFORMULATION_ENABLED else "disabled")
     return _REFORMULATION_ENABLED
 
 
 # ── Langfuse (optionnel) ──────────────────────────────────────────────────────
 
 def _langfuse_handler(name: str = "nexus", **meta):
-    """Retourne un callback Langfuse si configuré, sinon None."""
+    """Returns a Langfuse callback if configured, otherwise None."""
     global _LANGFUSE_LOGGED
 
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
@@ -78,7 +78,7 @@ def _langfuse_handler(name: str = "nexus", **meta):
 
     if not public_key or not secret_key:
         if not _LANGFUSE_LOGGED:
-            logger.info("Langfuse désactivé (LANGFUSE_PUBLIC_KEY/SECRET_KEY manquantes).")
+            logger.info("Langfuse disabled (LANGFUSE_PUBLIC_KEY/SECRET_KEY missing).")
             _LANGFUSE_LOGGED = True
         return None
 
@@ -96,7 +96,7 @@ def _langfuse_handler(name: str = "nexus", **meta):
                     metadata=meta,
                 )
             except Exception:
-                # Langfuse récent (langchain integration)
+                # Langfuse recent version (langchain integration)
                 from langfuse import Langfuse
                 from langfuse.langchain import CallbackHandler
                 if _langfuse_client is None:
@@ -108,12 +108,12 @@ def _langfuse_handler(name: str = "nexus", **meta):
                 handler = CallbackHandler(public_key=public_key)
 
         if not _LANGFUSE_LOGGED:
-            logger.info(f"Langfuse activé sur {host}")
+            logger.info(f"Langfuse enabled on {host}")
             _LANGFUSE_LOGGED = True
         return handler
     except Exception as e:
         logger.warning(
-            "Langfuse indisponible : %s. Vérifie `pip install langfuse langchain` et les clés LANGFUSE_*." % e
+            "Langfuse unavailable: %s. Check `pip install langfuse langchain` and LANGFUSE_* keys." % e
         )
         return None
 
@@ -124,17 +124,17 @@ def _callbacks(name: str = "nexus", **meta) -> list:
 
 
 async def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> None:
-    """Envoie un score human_feedback sur la trace Langfuse liée à notre trace_id interne."""
+    """Send a human_feedback score on the Langfuse trace linked to our internal trace_id."""
     if not trace_id:
         return
     try:
-        # Résoudre le vrai trace_id Langfuse (récupéré après le stream via handler.get_trace_id())
+        # Resolve the real Langfuse trace_id (retrieved after the stream via handler.get_trace_id())
         from src.monitoring.tracker import get_trace_context
         ctx = await get_trace_context(trace_id)
         langfuse_id = ctx.get("langfuse_trace_id") or ""
 
         if not langfuse_id:
-            logger.debug(f"[LANGFUSE] Pas de trace Langfuse liée à {trace_id[:8]} — score ignoré.")
+            logger.debug(f"[LANGFUSE] No Langfuse trace linked to {trace_id[:8]} — score ignored.")
             return
 
         if _langfuse_client is None:
@@ -146,7 +146,7 @@ async def send_langfuse_score(trace_id: str, value: int, comment: str = "") -> N
                 value=float(value),
                 comment=comment or None,
             )
-            logger.debug(f"[LANGFUSE] Score human_feedback={value} sur trace Langfuse {langfuse_id[:8]}")
+            logger.debug(f"[LANGFUSE] Score human_feedback={value} on Langfuse trace {langfuse_id[:8]}")
     except Exception as e:
         logger.debug(f"[LANGFUSE] Score failed: {e}")
 
@@ -157,117 +157,123 @@ def _build_messages(question: str, passages: List[str], sources: List[str],
                     history: List[dict], user_summary: str = "",
                     vector_memories: List[str] = None,
                     tie_subjects: set = None) -> list:
-    contexte      = "\n\n".join(passages)
-    liste_sources = ", ".join(sources) if sources else "sources inconnues"
+    context       = "\n\n".join(passages)
+    source_list   = ", ".join(sources) if sources else "unknown sources"
     system = (
-        "Tu es RABELIA, un moteur de recherche sémantique de grade production."
-        "Ton rôle est d'analyser le CONTEXTE fourni pour répondre aux questions avec précision. "
+        "You are RABELIA, a production-grade semantic search engine."
+        "Your role is to analyze the provided CONTEXT to answer questions accurately. "
         "\n\n"
-        "Directives strictes : "
-        "1. Ne réponds QUE sur la base du contexte fourni. "
-        "2. Si l'information est absente, dis-le poliment et n'invente rien. "
-        "3. En cas de contradiction entre les sources, mentionne-le explicitement. "
-        "4. Cite toujours tes sources (ex: [fichier.md]) à la fin de chaque paragraphe pertinent. "
-        "5. Ton ton est professionnel, neutre et analytique. "
+        "Strict guidelines: "
+        "1. ONLY answer based on the provided context. "
+        "2. If the information is missing, say so politely and do not invent anything. "
+        "3. In case of a contradiction between sources, mention it explicitly. "
+        "4. Always cite your sources (e.g., [file.md]) at the end of each relevant paragraph. "
+        "5. Your tone is professional, neutral, and analytical. "
         "\n\n"
-        f"Sources : {liste_sources}\n\nContexte :\n{contexte}"
+        f"Sources: {source_list}\n\nContext:\n{context}"
     )
-    # WHY: quand plusieurs fichiers traitent du même sujet et partagent la même date
-    # d'indexation, on ne peut pas savoir lequel est "officiel". On prévient le LLM
-    # pour qu'il signale explicitement la divergence plutôt que de trancher arbitrairement.
+    # WHY: When multiple files cover the same subject and share the same indexing date,
+    # we cannot know which one is "official". We warn the LLM
+    # so it explicitly points out the discrepancy rather than deciding arbitrarily.
     if tie_subjects:
-        sujets_str = ", ".join(sorted(tie_subjects))
+        subjects_str = ", ".join(sorted(tie_subjects))
         system += (
-            f"\n\n[AVERTISSEMENT] Plusieurs sources de même date traitent du/des sujet(s) : {sujets_str}. "
-            "Il n'est pas possible de déterminer laquelle est la version officielle. "
-            "Tu DOIS signaler cette ambigüité dans ta réponse en citant les deux sources et leurs informations divergentes, "
-            "et inviter l'administrateur à clarifier la version de référence."
+            f"\n\n[WARNING] Multiple sources with the same date discuss the subject(s): {subjects_str}. "
+            "It is not possible to determine which is the official version. "
+            "You MUST point out this ambiguity in your answer by citing both sources and their diverging information, "
+            "and invite the administrator to clarify the reference version."
         )
     if user_summary:
-        system += f"\n\nMémoire utilisateur :\n{user_summary}"
+        system += f"\n\nUser memory:\n{user_summary}"
     if vector_memories:
-        system += "\n\nSouvenirs précis :\n" + "\n".join(vector_memories)
+        system += "\n\nPrecise memories:\n" + "\n".join(vector_memories)
 
     messages = [SystemMessage(content=system)]
     for ex in history[-_CONV_DEPTH:]:
         messages += [HumanMessage(content=ex["question"]), AIMessage(content=ex["answer"])]
     messages.append(HumanMessage(content=question))
 
-    # Estimation tokens (1 token ≈ 4 chars) — log si contexte > 50k tokens
+    # Token estimation (1 token ≈ 4 chars) — log if context > 50k tokens
     estimated_tokens = sum(len(m.content) for m in messages) // 4
     if estimated_tokens > 50_000:
-        logger.warning(f"[CONTEXT] Contexte large : ~{estimated_tokens} tokens estimés ({len(history)} msgs historique)")
+        logger.warning(f"[CONTEXT] Large context: ~{estimated_tokens} estimated tokens ({len(history)} history msgs)")
     else:
-        logger.debug(f"[CONTEXT] ~{estimated_tokens} tokens estimés")
+        logger.debug(f"[CONTEXT] ~{estimated_tokens} estimated tokens")
 
     return messages
 
 
 # ── LLM calls ─────────────────────────────────────────────────────────────────
 
-async def generer_resume_utilisateur(new_exchanges: List[dict], old_summary: str = "") -> str:
-    """Met à jour le résumé long-terme (max 150 mots)."""
+async def generate_user_summary(new_exchanges: List[dict], old_summary: str = "") -> str:
+    """Update the long-term summary (max 150 words)."""
     if not _llm or not new_exchanges:
         return old_summary
-    nouveaux = "\n".join(
+    recent_exchanges = "\n".join(
         f"User: {e['question']}\nAssistant: {e['answer'][:200]}" for e in new_exchanges[-5:]
     )
-    context = (f"Résumé précédent :\n{old_summary}\n\nNouveaux échanges :\n{nouveaux}"
-               if old_summary else f"Échanges :\n{nouveaux}")
+    context = (f"Previous summary:\n{old_summary}\n\nNew exchanges:\n{recent_exchanges}"
+               if old_summary else f"Exchanges:\n{recent_exchanges}")
     try:
         result = await _llm.ainvoke([
             SystemMessage(content=(
-                "Tu maintiens la mémoire long-terme d'un utilisateur professionnel. "
-                "Mets à jour le résumé : sujets abordés, documents consultés, préférences, objectifs. "
-                "Règles : n'invente rien, 150 mots max, pas d'introduction."
+                "You maintain the long-term memory of a professional user. "
+                "Update the summary: covered topics, viewed documents, preferences, goals. "
+                "Rules: do not invent anything, max 150 words, no introduction."
             )),
             HumanMessage(content=context),
-        ], config={"callbacks": _callbacks("résumé-utilisateur")})
+        ], config={"callbacks": _callbacks("user-summary")})
         return result.content.strip()
     except Exception as e:
-        logger.warning(f"Résumé échoué : {e}")
+        logger.warning(f"Summary failed: {e}")
         return old_summary
 
 
-async def reformuler_question(question: str, history: List[dict]) -> str:
-    """Reformule une question vague grâce à l'historique."""
+async def reformulate_question(question: str, history: List[dict]) -> str:
+    """Reformulate a vague question using history."""
     if not _REFORMULATION_ENABLED:
         return question
     if not history:
         return question
-    # Skip reformulation si la question est autonome (pas de pronom anaphorique ni référence floue)
+    # Skip reformulation if the question is self-contained (no anaphoric pronoun or vague reference).
+    # Includes French pronouns because users write queries in French.
     if len(question.split()) <= 8 and not any(
-        w in question.lower() for w in ("il", "elle", "ils", "elles", "ce", "ça", "cela", "celui", "celle", "lui", "en", "y")
+        w in question.lower() for w in (
+            # French (user queries)
+            "il", "elle", "ils", "elles", "ce", "ça", "cela", "celui", "celle", "lui", "en", "y",
+            # English (future l10n)
+            "it", "he", "she", "they", "this", "that", "those", "these", "him", "her", "them",
+        )
     ):
         return question
     # Use fast dedicated model (Groq ~500ms), fall back to primary if unavailable
     llm = _llm_reformulation or _llm_fallback or _llm
     if not llm:
         return question
-    historique = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
+    history_text = "\n".join(f"User: {e['question']}\nAssistant: {e['answer']}" for e in history[-_CONV_DEPTH:])
     try:
         result = await llm.ainvoke([
             SystemMessage(content=(
-                "Tu est un assistant qui reformule des questions. "
-                "Retourne UNIQUEMENT la question reformulée en une seule phrase, sans répondre, sans explication, sans ponctuation finale."
+                "You are an assistant that reformulates questions. "
+                "Return ONLY the reformulated question in a single sentence, without answering, without explanation, without final punctuation."
             )),
-            HumanMessage(content=f"Historique :\n{historique}\n\nQuestion : {question}"),
+            HumanMessage(content=f"History:\n{history_text}\n\nQuestion: {question}"),
         ], config={"callbacks": _callbacks("reformulation", model=_reformulation_model)})
         reformulated = result.content.strip()
-        logger.info(f"Reformulée ({_reformulation_model}) : {reformulated!r}")
+        logger.info(f"Reformulated ({_reformulation_model}): {reformulated!r}")
         _reformulation_history.append({"original": question, "reformulated": reformulated})
         return reformulated
     except Exception as e:
-        logger.warning(f"Reformulation échouée ({_reformulation_model}) : {e}")
+        logger.warning(f"Reformulation failed ({_reformulation_model}): {e}")
         return question
 
 
-async def generer_reponse(question: str, passages: List[str], sources: List[str] = None,
+async def generate_response(question: str, passages: List[str], sources: List[str] = None,
                     history: List[dict] = None, user_summary: str = "",
                     vector_memories: List[str] = None,
                     tie_subjects: set = None) -> str:
     if not _llm:
-        raise ValueError("OPENAI_API_KEY manquante dans .env")
+        raise ValueError("OPENAI_API_KEY missing in .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories, tie_subjects)
     fallbacks = [llm for llm in [_llm_fallback] if llm is not None]
     chain = _llm.with_fallbacks(fallbacks)
@@ -275,14 +281,14 @@ async def generer_reponse(question: str, passages: List[str], sources: List[str]
     return result.content.strip()
 
 
-async def stream_reponse(question: str, passages: List[str], sources: List[str] = None,
+async def stream_response(question: str, passages: List[str], sources: List[str] = None,
                    history: List[dict] = None, model_used: Optional[list] = None,
                    user_summary: str = "", vector_memories: List[str] = None,
                    langfuse_trace_ids: Optional[list] = None,
                    tie_subjects: set = None):
-    """Streame la réponse token par token. Bascule sur le fallback si erreur."""
+    """Stream the response token by token. Switch to fallback on error."""
     if not _llm:
-        raise ValueError("OPENAI_API_KEY manquante dans .env")
+        raise ValueError("OPENAI_API_KEY missing in .env")
     messages = _build_messages(question, passages, sources or [], history or [], user_summary, vector_memories, tie_subjects)
     cb = _callbacks("ask-stream", question=question[:80])
     handler = cb[0] if cb else None
@@ -309,13 +315,13 @@ async def stream_reponse(question: str, passages: List[str], sources: List[str] 
         is_rate_limit = "429" in err_str or "rate limit" in err_str or "quota" in err_str or "too many" in err_str
         is_timeout    = "timeout" in err_str or "timed out" in err_str or "read timeout" in err_str
         if is_rate_limit:
-            logger.warning(f"[FALLBACK] Cerebras rate-limited (429) — bascule sur Groq.")
+            logger.warning(f"[FALLBACK] Cerebras rate-limited (429) — switching to Groq.")
         elif is_timeout:
-            logger.warning(f"[FALLBACK] Cerebras timeout — bascule sur Groq.")
+            logger.warning(f"[FALLBACK] Cerebras timeout — switching to Groq.")
         else:
             logger.warning(
                 f"[FALLBACK] Cerebras KO ({primary_err.__class__.__name__}: "
-                f"{str(primary_err)[:120]}) — bascule sur Groq."
+                f"{str(primary_err)[:120]}) — switching to Groq."
             )
 
         last_err = primary_err
@@ -329,14 +335,14 @@ async def stream_reponse(question: str, passages: List[str], sources: List[str] 
                 async for chunk in fb_llm.astream(messages, config={"callbacks": _callbacks(fb_label)}):
                     if chunk.content:
                         yield chunk.content
-                logger.info(f"[FALLBACK] Groq ({fb_model}) a pris le relais avec succès.")
+                logger.info(f"[FALLBACK] Groq ({fb_model}) took over successfully.")
                 return
             except Exception as fb_err:
                 last_err = fb_err
-                logger.warning(f"[FALLBACK] Groq ({fb_model}) aussi KO : {fb_err}")
+                logger.warning(f"[FALLBACK] Groq ({fb_model}) also failed: {fb_err}")
         raise last_err
     finally:
-        # Récupère l'ID de trace Langfuse généré par le handler (v4 API)
+        # Retrieve Langfuse trace ID generated by the handler (v4 API)
         if langfuse_trace_ids is not None and handler is not None:
             try:
                 lf_id = handler.get_trace_id()

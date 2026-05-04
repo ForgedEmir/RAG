@@ -21,7 +21,7 @@ from src.ingestion.run import (
 @patch('os.path.exists')
 @patch('builtins.open', new_callable=mock_open, read_data='{"file.md": 1234567890, "doc.txt": 9876543210}')
 def test_load_memory_existe_ancien_format(mock_file, mock_exists):
-    """Compat ascendante : l'ancien format {nom: mtime_float} est migré vers
+    """Backwards compatibility: old format {name: mtime_float} is migrated to
     {nom: {mtime, indexed_at}}. indexed_at = mtime en fallback (on n'a pas mieux)."""
     mock_exists.return_value = True
 
@@ -70,14 +70,15 @@ def test_save_memory(mock_file, mock_makedirs):
 
 # ===== TESTS POUR list_current_files =====
 
+@patch('src.ingestion.run.DATA_FOLDER', '/fake/data')
 @patch('os.path.exists')
-@patch('os.listdir')
+@patch('os.walk')
 @patch('os.path.getmtime')
-def test_list_current_files_ok(mock_getmtime, mock_listdir, mock_exists):
-    """On peut lister les fichiers supportes avec leur date de modification."""
+def test_list_current_files_ok(mock_getmtime, mock_walk, mock_exists):
+    """Lists supported files with their modification date."""
     mock_exists.return_value = True
-    mock_listdir.return_value = ["file1.md", "file2.txt", "image.png", "DOC.MD"]
-    mock_getmtime.side_effect = [1000, 2000, 3000, 4000]
+    mock_walk.return_value = [("/fake/data", [], ["file1.md", "file2.txt", "image.png", "DOC.MD"])]
+    mock_getmtime.side_effect = [1000, 2000, 4000]  # only 3 supported files (image.png skipped)
 
     fichiers = list_current_files()
 
@@ -110,10 +111,10 @@ def test_prepare_files_ok(mock_is_lore, mock_ctx, mock_split, mock_clean, mock_e
     assert isinstance(documents[0], Document)
     # page_content = texte contextuel (late chunking) ; original_text = chunk brut
     assert documents[0].metadata["original_text"] == "Chunk 1"
-    assert documents[0].metadata["fichier"] == "file.md"
+    assert documents[0].metadata["filename"] == "file.md"
     assert documents[0].metadata["chunk_id"] == "file.md_0"
     assert documents[1].metadata["original_text"] == "Chunk 2"
-    assert documents[1].metadata["fichier"] == "file.md"
+    assert documents[1].metadata["filename"] == "file.md"
     assert documents[1].metadata["chunk_id"] == "file.md_1"
     assert "chunk_sha256" in documents[0].metadata
 
@@ -126,7 +127,7 @@ def test_prepare_files_ok(mock_is_lore, mock_ctx, mock_split, mock_clean, mock_e
 @patch('src.ingestion.run._get_doc_context', return_value={"doc_summary": "", "entities": []})
 @patch('src.ingestion.run._is_lore_content', return_value=True)
 def test_prepare_files_dedup_sha256(mock_is_lore, mock_ctx, mock_split, mock_clean, mock_extract, mock_exists):
-    """Deux chunks identiques ne doivent être indexés qu'une seule fois."""
+    """Two identical chunks must only be indexed once."""
     mock_exists.return_value = True
     mock_extract.return_value = "Texte brut"
     mock_clean.return_value = "Texte nettoye"
@@ -152,7 +153,7 @@ def test_index_force_reindex(mock_bm25, mock_save, mock_add, mock_get_store, moc
     """On peut forcer une reindexation complete de tous les fichiers."""
     mock_list.return_value = {"file1.md": 1000, "file2.txt": 2000}
     mock_prepare.return_value = [
-        Document(page_content="Chunk", metadata={"fichier": "file1.md"})
+        Document(page_content="Chunk", metadata={"filename": "file1.md"})
     ]
     mock_get_store.return_value = Mock()
 
@@ -176,14 +177,14 @@ def test_index_force_reindex(mock_bm25, mock_save, mock_add, mock_get_store, moc
 def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
                                 mock_get_store, mock_load, mock_list):
     """Les nouveaux fichiers sont detectes et indexes.
-    prepare_files_for_ai est appelé deux fois : une pour indexer les nouveaux,
+    prepare_files_for_ai is called twice: once to index new ones,
     une pour reconstruire le corpus BM25 complet.
     """
     mock_list.return_value = {"file1.md": 1000, "file2.txt": 2000}
     mock_load.return_value = {"file1.md": {"mtime": 1000, "indexed_at": 900}}
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [
-        Document(page_content="New chunk", metadata={"fichier": "file2.txt"})
+        Document(page_content="New chunk", metadata={"filename": "file2.txt"})
     ]
 
     result = index_data(force_reindex=False)
@@ -191,7 +192,7 @@ def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
     assert result is True
     # Premier appel : indexation des nouveaux fichiers seulement
     assert mock_prepare.call_args_list[0][0][0] == {"file2.txt"}
-    # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (file1.md)
+    # Second call: BM25 reconstruction on unchanged files (file1.md)
     assert mock_prepare.call_args_list[1][0][0] == {"file1.md"}
     mock_add.assert_called_once()
     mock_save.assert_called_once()
@@ -208,23 +209,23 @@ def test_index_nouveaux_fichiers(mock_bm25, mock_save, mock_add, mock_prepare,
 def test_index_fichiers_modifies(mock_bm25, mock_save, mock_add, mock_prepare,
                                 mock_remove, mock_get_store, mock_load, mock_list):
     """Les fichiers modifies sont reindexes (supprimes puis ajoutes).
-    prepare_files_for_ai est appelé deux fois : une pour les modifiés,
+    prepare_files_for_ai is called twice: once for modified ones,
     une pour reconstruire le corpus BM25 complet.
     """
     mock_list.return_value = {"file.md": 2000}
     mock_load.return_value = {"file.md": {"mtime": 1000, "indexed_at": 500}}
     mock_get_store.return_value = Mock()
     mock_prepare.return_value = [
-        Document(page_content="Updated", metadata={"fichier": "file.md"})
+        Document(page_content="Updated", metadata={"filename": "file.md"})
     ]
 
     result = index_data(force_reindex=False)
 
     assert result is True
     mock_remove.assert_called_once()  # Supprime l'ancienne version
-    # Premier appel : indexation du fichier modifié
+    # First call: indexing the modified file
     assert mock_prepare.call_args_list[0][0][0] == {"file.md"}
-    # Deuxième appel : reconstruction BM25 sur les fichiers inchangés (aucun ici)
+    # Second call: BM25 reconstruction on unchanged files (aucun ici)
     assert mock_prepare.call_args_list[1][0][0] == set()
     mock_add.assert_called_once()  # Ajoute la nouvelle version
 
@@ -244,14 +245,14 @@ def test_index_invalide_semantic_cache_sur_modif(
     mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
     mock_get_store, mock_load, mock_list, mock_invalidate,
 ):
-    """Quand un fichier change, index_data() doit invalider le semantic cache ciblé."""
+    """When a file changes, index_data() must invalidate the targeted semantic cache."""
     mock_list.return_value = {"file.md": 2000, "autre.md": 500}
     mock_load.return_value = {
         "file.md":  {"mtime": 1000, "indexed_at": 100},
         "autre.md": {"mtime": 500,  "indexed_at": 100},
-    }  # file.md modifié
+    }  # file.md modified
     mock_get_store.return_value = Mock()
-    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "file.md"})]
+    mock_prepare.return_value = [Document(page_content="x", metadata={"filename": "file.md"})]
 
     index_data(force_reindex=False)
 
@@ -273,11 +274,11 @@ def test_index_invalide_semantic_cache_sur_nouveau_fichier(
     mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
     mock_get_store, mock_load, mock_list, mock_invalidate,
 ):
-    """Un nouveau fichier peut contredire une réponse cachée → invalidation ciblée."""
+    """A new file can contradict a cached response -> targeted invalidation."""
     mock_list.return_value = {"ancien.md": 1000, "nouveau.md": 2000}
     mock_load.return_value = {"ancien.md": {"mtime": 1000, "indexed_at": 100}}
     mock_get_store.return_value = Mock()
-    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "nouveau.md"})]
+    mock_prepare.return_value = [Document(page_content="x", metadata={"filename": "nouveau.md"})]
 
     index_data(force_reindex=False)
 
@@ -298,7 +299,7 @@ def test_index_invalide_semantic_cache_sur_suppression(
     mock_bm25, mock_save, mock_add, mock_prepare, mock_remove,
     mock_get_store, mock_load, mock_list, mock_invalidate,
 ):
-    """Un fichier supprimé : on doit invalider les réponses qui s'y référaient."""
+    """A deleted file: we must invalidate responses referring to it."""
     mock_list.return_value = {"reste.md": 1000}
     mock_load.return_value = {
         "reste.md":  {"mtime": 1000, "indexed_at": 100},
@@ -324,9 +325,9 @@ def test_force_reindex_vide_tout_le_semantic_cache(
     mock_bm25, mock_save, mock_add, mock_get_store, mock_prepare,
     mock_list, mock_clear_all,
 ):
-    """force_reindex=True → tout le cache sémantique est vidé, pas seulement une partie."""
+    """force_reindex=True -> entire semantic cache cleared, not just part."""
     mock_list.return_value = {"file.md": 1000}
-    mock_prepare.return_value = [Document(page_content="x", metadata={"fichier": "file.md"})]
+    mock_prepare.return_value = [Document(page_content="x", metadata={"filename": "file.md"})]
     mock_get_store.return_value = Mock()
 
     index_data(force_reindex=True)

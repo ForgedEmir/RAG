@@ -3,7 +3,7 @@
 // =============================================================
 // SCREEN 4 — SETTINGS
 // =============================================================
-const SettingsScreen = ({ tab = "workspace", showInviteModal = false, width = 1280, height = 820 }) => {
+const SettingsScreen = ({ tab = "workspace", showInviteMBdal = false, width = 1280, height = 820 }) => {
   return (
     <div className="rb-frame" style={{
       width, height,
@@ -16,7 +16,7 @@ const SettingsScreen = ({ tab = "workspace", showInviteModal = false, width = 12
       <SettingsAppNav />
       <SettingsSubNav active={tab} />
       <SettingsContent tab={tab} />
-      {showInviteModal && <InviteModal />}
+      {showInviteMBdal && <InviteMBdal />}
     </div>
   );
 };
@@ -34,7 +34,7 @@ const SettingsAppNav = () => (
       {[
         { name: "Conversations", icon: "chat" },
         { name: "Importer", icon: "upload" },
-        { name: "Paramètres", icon: "settings", active: true },
+        { name: "Settings", icon: "settings", active: true },
       ].map((it, i) => (
         <a key={i} className={"rb-listitem" + (it.active ? " rb-listitem--active" : "")}
            style={{ height: 32, padding: "0 10px", gap: 10 }}>
@@ -64,12 +64,12 @@ const SettingsSubNav = ({ active }) => (
     borderRight: "1px solid var(--border-default)",
     padding: "20px 12px",
   }}>
-    <div className="rb-section-label" style={{ padding: "0 10px", marginBottom: 8 }}>Paramètres</div>
+    <div className="rb-section-label" style={{ padding: "0 10px", marginBottom: 8 }}>Settings</div>
     <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {[
-        { id: "workspace", name: "Mon espace", icon: "building" },
+        { id: "workspace", name: "My workspace", icon: "building" },
         { id: "documents", name: "Documents", icon: "folder" },
-        { id: "members", name: "Membres", icon: "users" },
+        { id: "members", name: "Members", icon: "users" },
       ].map((it) => (
         <a key={it.id} className={"rb-listitem" + (it.id === active ? " rb-listitem--active" : "")}
            style={{ height: 32, padding: "0 10px", gap: 10 }}>
@@ -83,8 +83,8 @@ const SettingsSubNav = ({ active }) => (
       marginTop: 24, padding: "0 10px",
       fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5,
     }}>
-      Espace géré par RABELIA.<br />
-      Plan Cabinet · 12 sièges
+      Workspace managed by RABELIA.<br />
+      Firm Plan · 12 seats
     </div>
   </aside>
 );
@@ -98,7 +98,7 @@ const SettingsContent = ({ tab }) => (
       background: "var(--bg-surface)",
     }}>
       <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>
-        {tab === "workspace" ? "Mon espace" : tab === "documents" ? "Documents indexés" : "Membres"}
+        {tab === "workspace" ? "My workspace" : tab === "documents" ? "Documents indexed" : "Members"}
       </h1>
     </header>
     <div style={{ flex: 1, padding: "28px 32px 100px", maxWidth: 880 }}>
@@ -131,7 +131,7 @@ const WorkspacePane = () => (
     <div style={{ marginBottom: 28 }}>
       <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px", letterSpacing: "0.02em" }}>Profil entreprise</h2>
       <p style={{ fontSize: 12.5, color: "var(--fg-secondary)", margin: 0 }}>
-        Informations renseignées à la création du compte. Lecture seule.
+        Information provided at account creation. Read-only.
       </p>
     </div>
 
@@ -148,17 +148,17 @@ const WorkspacePane = () => (
         <ReadOnlyField label="Raison sociale" value="RABELIA AARPI" />
         <ReadOnlyField label="SIRET" value="894 217 308 00012" mono />
         <ReadOnlyField label="Adresse" value="42 rue de Vaugirard, 75006 Paris" />
-        <ReadOnlyField label="Numéro de Toque" value="P0421" mono />
-        <ReadOnlyField label="Référent compte" value="Claire Mercier — Associée" />
-        <ReadOnlyField label="Plan" value="Cabinet · 12 sièges · facturation annuelle" />
+        <ReadOnlyField label="Toque Number" value="P0421" mono />
+        <ReadOnlyField label="Account Referent" value="Claire Mercier — Partner" />
+        <ReadOnlyField label="Plan" value="Cabinet · 12 seats · annual billing" />
         <ReadOnlyField label="Identifiant espace" value="ws_rabelia_p0421" mono />
-        <ReadOnlyField label="Région données" value="Paris (FR-1)" />
+        <ReadOnlyField label="Data Region" value="Paris (FR-1)" />
       </div>
     </div>
 
     <div style={{ marginTop: 16, fontSize: 12, color: "var(--fg-muted)", display: "flex", alignItems: "center", gap: 6 }}>
       <Icon name="info" size={13} />
-      Pour modifier ces informations, contactez votre référent commercial RABELIA.
+      To modify this information, contact your RABELIA sales representative.
     </div>
   </>
 );
@@ -167,9 +167,9 @@ const DocumentsPane = () => (
   <>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
       <div>
-        <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Documents indexés</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Documents indexed</h2>
         <p style={{ fontSize: 12.5, color: "var(--fg-secondary)", margin: 0 }}>
-          {DOCS.length} documents · 13,4 Go utilisés sur 40 Go
+          {DOCS.length} documents · 13.4 GB used of 40 GB
         </p>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
@@ -195,7 +195,7 @@ const DocumentsPane = () => (
         textTransform: "uppercase", color: "var(--fg-muted)",
       }}>
         <span>Nom</span>
-        <span>Indexé le</span>
+        <span>Indexed on</span>
         <span style={{ textAlign: "right" }}>Pages</span>
         <span style={{ textAlign: "right" }}>Taille</span>
         <span></span>
@@ -227,22 +227,22 @@ const DocumentsPane = () => (
 );
 
 const MEMBERS = [
-  { name: "Claire Mercier", email: "claire.mercier@rabelia.fr", role: "Administrateur", status: "active", since: "12 jan. 2026", initials: "CM" },
-  { name: "Antoine Beaufort", email: "a.beaufort@rabelia.fr", role: "Avocat associé", status: "active", since: "12 jan. 2026", initials: "AB" },
-  { name: "Hélène Dussart", email: "h.dussart@rabelia.fr", role: "Avocat collaborateur", status: "active", since: "18 jan. 2026", initials: "HD" },
-  { name: "Maxime Roussel", email: "m.roussel@rabelia.fr", role: "Avocat collaborateur", status: "active", since: "02 fév. 2026", initials: "MR" },
-  { name: "Sophie Leclerc", email: "s.leclerc@rabelia.fr", role: "Juriste", status: "active", since: "14 fév. 2026", initials: "SL" },
-  { name: "Julien Pernaud", email: "j.pernaud@rabelia.fr", role: "Avocat collaborateur", status: "invited", since: "Invitation envoyée le 21 mars", initials: "JP" },
-  { name: "Inès Caillaux", email: "i.caillaux@rabelia.fr", role: "Assistante juridique", status: "invited", since: "Invitation envoyée le 23 mars", initials: "IC" },
+  { name: "Claire Mercier", email: "claire.mercier@rabelia.fr", role: "Administrator", status: "active", since: "12 Jan. 2026", initials: "CM" },
+  { name: "Antoine Beaufort", email: "a.beaufort@rabelia.fr", role: "Partner Lawyer", status: "active", since: "12 Jan. 2026", initials: "AB" },
+  { name: "Helene Dussart", email: "h.dussart@rabelia.fr", role: "Associate Lawyer", status: "active", since: "18 Jan. 2026", initials: "HD" },
+  { name: "Maxime Roussel", email: "m.roussel@rabelia.fr", role: "Associate Lawyer", status: "active", since: "02 Feb. 2026", initials: "MR" },
+  { name: "Sophie Leclerc", email: "s.leclerc@rabelia.fr", role: "Legal Counsel", status: "active", since: "14 Feb. 2026", initials: "SL" },
+  { name: "Julien Pernaud", email: "j.pernaud@rabelia.fr", role: "Associate Lawyer", status: "invited", since: "Invitation sent on 21 March", initials: "JP" },
+  { name: "Ines Caillaux", email: "i.caillaux@rabelia.fr", role: "Legal Assistant", status: "invited", since: "Invitation sent on 23 March", initials: "IC" },
 ];
 
 const MembersPane = () => (
   <>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
       <div>
-        <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Membres de l'espace</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>Members de l'espace</h2>
         <p style={{ fontSize: 12.5, color: "var(--fg-secondary)", margin: 0 }}>
-          5 membres actifs · 2 invitations en attente · 5 sièges disponibles
+          5 active members · 2 invitations queued · 5 seats available
         </p>
       </div>
       <button className="rb-btn rb-btn--primary" style={{ gap: 6 }}>
@@ -270,7 +270,7 @@ const MembersPane = () => (
             {m.status === "active" ? (
               <span className="rb-pill rb-pill--ok"><span className="rb-dot" />Actif</span>
             ) : (
-              <span className="rb-pill rb-pill--warn">Invitation envoyée</span>
+              <span className="rb-pill rb-pill--warn">Invitation sent</span>
             )}
             <div style={{ fontSize: 10.5, color: "var(--fg-muted)", marginTop: 3 }}>{m.since}</div>
           </div>
@@ -296,15 +296,14 @@ const AdminLockedZone = () => (
     <Icon name="lock" size={18} style={{ color: "var(--fg-muted)", marginTop: 2 }} />
     <div style={{ flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: "var(--fg-secondary)" }}>
-        Actions réservées à l'administrateur système
+        Actions reserved for the system administrator
       </div>
       <p style={{ fontSize: 12, color: "var(--fg-muted)", margin: "0 0 12px", lineHeight: 1.55 }}>
-        Suppression d'espace, rotation des clés de chiffrement, export complet et réinitialisation
-        de l'index vectoriel. Ces opérations sont gérées par l'équipe RABELIA — contactez votre
-        référent compte pour toute demande.
+        Workspace deletion, encryption key rotation, full export, and vector index reset.
+        These operations are managed by the RABELIA team — contact your account owner for any request.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {["Réinitialiser l'index", "Rotation des clés", "Export complet", "Supprimer l'espace"].map((a, i) => (
+        {["Reset index", "Key rotation", "Full export", "Delete workspace"].map((a, i) => (
           <button key={i} className="rb-btn rb-btn--secondary rb-btn--disabled" disabled
             style={{ background: "transparent", color: "var(--fg-disabled)", fontSize: 12 }}>
             <Icon name="lock" size={12} />
@@ -319,7 +318,7 @@ const AdminLockedZone = () => (
 // =============================================================
 // EXTRA STATE — INVITE MEMBER MODAL
 // =============================================================
-const InviteModal = () => (
+const InviteMBdal = () => (
   <div style={{
     position: "absolute", inset: 0,
     background: "rgba(15, 26, 43, 0.32)",
@@ -336,15 +335,15 @@ const InviteModal = () => (
         borderBottom: "1px solid var(--border-subtle)",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Inviter un membre</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Invite a member</h3>
         <button className="rb-btn rb-btn--ghost" style={{ width: 26, height: 26, padding: 0 }}>
           <Icon name="x" size={14} />
         </button>
       </div>
       <div style={{ padding: "20px" }}>
         <p style={{ fontSize: 12.5, color: "var(--fg-secondary)", margin: "0 0 18px", lineHeight: 1.55 }}>
-          Le membre recevra un email avec un lien de connexion personnel.
-          Il accédera aux mêmes documents que vous.
+          The member will receive an email with a personal sign-in link.
+          They will have access to the same documents as you.
         </p>
 
         <div style={{ marginBottom: 14 }}>
@@ -354,7 +353,7 @@ const InviteModal = () => (
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
           <div>
-            <label className="rb-label">Prénom</label>
+            <label className="rb-label">First name</label>
             <input className="rb-input" defaultValue="Julien" />
           </div>
           <div>
@@ -364,13 +363,13 @@ const InviteModal = () => (
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label className="rb-label">Rôle</label>
+          <label className="rb-label">Role</label>
           <div style={{
             border: "1px solid var(--border-default)", borderRadius: 6,
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "0 10px", height: 32, fontSize: 13,
           }}>
-            <span>Avocat collaborateur</span>
+            <span>Associate Lawyer</span>
             <Icon name="chevron_down" size={14} style={{ color: "var(--fg-muted)" }} />
           </div>
         </div>
@@ -382,7 +381,7 @@ const InviteModal = () => (
           display: "flex", gap: 8, alignItems: "flex-start",
         }}>
           <Icon name="info" size={13} style={{ marginTop: 1, flex: "none" }} />
-          <span>5 sièges restants sur votre plan Cabinet (12 sièges).</span>
+          <span>5 seats remaining on your Cabinet plan (12 seats).</span>
         </div>
       </div>
       <div style={{
@@ -398,4 +397,4 @@ const InviteModal = () => (
   </div>
 );
 
-Object.assign(window, { SettingsScreen, InviteModal });
+Object.assign(window, { SettingsScreen, InviteMBdal });

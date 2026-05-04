@@ -39,14 +39,14 @@ const LoginScreen = ({ width = 1280, height = 820 }) => (
         fontSize: 22, fontWeight: 600, margin: "0 0 8px",
         letterSpacing: "-0.015em",
       }}>
-        Connexion à votre espace
+        Login to your workspace
       </h1>
       <p style={{
         fontSize: 13, color: "var(--fg-secondary)", margin: "0 0 32px",
         lineHeight: 1.55,
       }}>
         Saisissez votre adresse professionnelle.<br />
-        Un lien de connexion vous sera envoyé.
+        A login link will be sent to you.
       </p>
 
       <form style={{ textAlign: "left" }} onSubmit={(e) => e.preventDefault()}>
@@ -68,8 +68,8 @@ const LoginScreen = ({ width = 1280, height = 820 }) => (
         fontSize: 11.5, color: "var(--fg-muted)", margin: "24px 0 0",
         lineHeight: 1.5,
       }}>
-        Accès réservé aux collaborateurs autorisés.<br />
-        En cas de difficulté, contactez votre administrateur interne.
+        Access reserved for authorized collaborators.<br />
+        In case of difficulty, contact your internal administrator.
       </p>
     </div>
   </div>
@@ -99,7 +99,7 @@ const UploadScreen = ({ state = "drop", width = 1280, height = 820 }) => {
           <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Importer des documents</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>
-              Formats acceptés : PDF, DOCX, TXT · 50 Mo max
+              Accepted formats: PDF, DOCX, TXT · 50 MB max
             </span>
           </div>
         </header>
@@ -129,7 +129,7 @@ const UploadSidebar = () => (
       {[
         { name: "Conversations", icon: "chat" },
         { name: "Importer", icon: "upload", active: true },
-        { name: "Paramètres", icon: "settings" },
+        { name: "Settings", icon: "settings" },
       ].map((it, i) => (
         <a key={i} className={"rb-listitem" + (it.active ? " rb-listitem--active" : "")}
            style={{ height: 32, padding: "0 10px", gap: 10 }}>
@@ -140,7 +140,7 @@ const UploadSidebar = () => (
     </nav>
     <div style={{ flex: 1 }} />
     <div style={{ padding: 14, borderTop: "1px solid var(--border-subtle)", fontSize: 11.5, color: "var(--fg-muted)", lineHeight: 1.5 }}>
-      <div style={{ fontWeight: 500, color: "var(--fg-secondary)", marginBottom: 4 }}>Espace utilisé</div>
+      <div style={{ fontWeight: 500, color: "var(--fg-secondary)", marginBottom: 4 }}>Space used</div>
       <div style={{ height: 4, background: "var(--bg-muted)", borderRadius: 2, marginBottom: 4 }}>
         <div style={{ width: "34%", height: "100%", background: "var(--accent)", borderRadius: 2 }} />
       </div>
@@ -167,21 +167,21 @@ const DropZone = () => (
         <Icon name="cloud_up" size={26} />
       </div>
       <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px" }}>
-        Déposez vos documents ici
+        Drop your documents here
       </h2>
       <p style={{ fontSize: 13, color: "var(--fg-secondary)", margin: "0 0 18px" }}>
-        ou parcourez votre poste pour les sélectionner
+        or browse your computer to select them
       </p>
       <button className="rb-btn rb-btn--primary">Parcourir les fichiers</button>
       <div style={{ marginTop: 24, fontSize: 11.5, color: "var(--fg-muted)", fontFamily: "var(--font-mono)" }}>
-        PDF · DOCX · TXT — 50 Mo par fichier
+        PDF · DOCX · TXT — 50 MB par fichier
       </div>
     </div>
 
     <div style={{ marginTop: 24, fontSize: 12, color: "var(--fg-secondary)", lineHeight: 1.55, padding: "0 4px" }}>
-      <div style={{ fontWeight: 500, color: "var(--fg-primary)", marginBottom: 6 }}>À propos de l'indexation</div>
-      Les documents sont chiffrés au dépôt et indexés en local sur votre instance dédiée.
-      L'extraction du texte et la création de l'index vectoriel prennent en moyenne
+      <div style={{ fontWeight: 500, color: "var(--fg-primary)", marginBottom: 6 }}>About indexing</div>
+      Documents are encrypted upon deposit and indexed locally on your dedicated instance.
+      Text extraction and vector index creation take on average
       40 secondes par tranche de 100 pages.
     </div>
   </>
@@ -190,8 +190,8 @@ const DropZone = () => (
 const ProgressView = () => {
   const files = [
     { name: "Convention collective Syntec.pdf", pct: 100, state: "done" },
-    { name: "Pacte d'associés ProTech SAS.pdf", pct: 72, state: "indexing" },
-    { name: "Mémoire en défense Dossier 2025-114.docx", pct: 38, state: "indexing" },
+    { name: "Shareholders' agreement ProTech SAS.pdf", pct: 72, state: "indexing" },
+    { name: "Defense memorandum Dossier 2025-114.docx", pct: 38, state: "indexing" },
     { name: "Notes RGPD — audit interne.pdf", pct: 0, state: "queued" },
   ];
   return (
@@ -203,7 +203,7 @@ const ProgressView = () => {
         </span>
       </div>
       <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--fg-secondary)" }}>
-        Vous pouvez fermer cette page — l'indexation continue en arrière-plan.
+        You can close this page — indexing continues in the background.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {files.map((f, i) => (
@@ -219,7 +219,7 @@ const ProgressView = () => {
                   {f.name}
                 </span>
                 <span style={{ fontSize: 11.5, color: "var(--fg-muted)", fontFamily: "var(--font-mono)" }}>
-                  {f.state === "queued" ? "en attente" : f.state === "done" ? "indexé" : `${f.pct} %`}
+                  {f.state === "queued" ? "queued" : f.state === "done" ? "indexed" : `${f.pct} %`}
                 </span>
               </div>
               <div style={{ height: 4, background: "var(--bg-muted)", borderRadius: 2, overflow: "hidden" }}>
@@ -247,9 +247,9 @@ const DoneView = () => (
     }}>
       <Icon name="check" size={22} />
     </div>
-    <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 6px" }}>Documents prêts</h2>
+    <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 6px" }}>Documents ready</h2>
     <p style={{ fontSize: 13, color: "var(--fg-secondary)", margin: "0 0 24px" }}>
-      4 documents ont été indexés et sont désormais interrogeables depuis l'assistant.
+      4 documents have been indexed and are now searchable from the assistant.
     </p>
     <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
       <button className="rb-btn rb-btn--primary">Ouvrir l'assistant</button>
@@ -261,11 +261,11 @@ const DoneView = () => (
       borderTop: "1px solid var(--border-subtle)",
       textAlign: "left",
     }}>
-      <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Récapitulatif</div>
+      <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Summary</div>
       {[
         { name: "Convention collective Syntec.pdf", pages: 156 },
-        { name: "Pacte d'associés ProTech SAS.pdf", pages: 18 },
-        { name: "Mémoire en défense Dossier 2025-114.docx", pages: 22 },
+        { name: "Shareholders' agreement ProTech SAS.pdf", pages: 18 },
+        { name: "Defense memorandum Dossier 2025-114.docx", pages: 22 },
         { name: "Notes RGPD — audit interne.pdf", pages: 31 },
       ].map((f, i) => (
         <div key={i} style={{
@@ -276,7 +276,7 @@ const DoneView = () => (
           <Icon name="file_check" size={16} style={{ color: "var(--ok)" }} />
           <span style={{ flex: 1 }}>{f.name}</span>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--fg-muted)" }}>
-            {f.pages} p. · indexé
+            {f.pages} p. · indexed
           </span>
         </div>
       ))}
@@ -302,11 +302,11 @@ const ErrorView = () => (
       </div>
       <div style={{ flex: 1 }}>
         <h2 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 4px", color: "var(--danger)" }}>
-          1 fichier n'a pas pu être importé
+          1 file could not be imported
         </h2>
         <p style={{ fontSize: 12.5, color: "var(--fg-secondary)", margin: 0, lineHeight: 1.5 }}>
-          Les autres fichiers ont été indexés normalement.
-          Vérifiez le format ou la taille du fichier rejeté.
+          The other files were indexed normally.
+          Check the format or size of the rejected file.
         </p>
       </div>
     </div>
@@ -320,7 +320,7 @@ const ErrorView = () => (
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 500 }}>Plaidoirie audience 14-03.zip</div>
           <div style={{ fontSize: 11.5, color: "var(--fg-muted)", fontFamily: "var(--font-mono)" }}>
-            Format .zip non supporté · 12,4 Mo
+            .zip format not supported · 12,4 MB
           </div>
         </div>
         <button className="rb-btn rb-btn--ghost" style={{ color: "var(--danger)" }}>
@@ -337,7 +337,7 @@ const ErrorView = () => (
         }}>
           <Icon name="file_check" size={20} style={{ color: "var(--ok)" }} />
           <div style={{ flex: 1, fontSize: 13 }}>{n}</div>
-          <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexé</span>
+          <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexed</span>
         </div>
       ))}
     </div>
@@ -349,10 +349,10 @@ const ErrorView = () => (
       display: "flex", justifyContent: "space-between", alignItems: "center",
     }}>
       <span style={{ fontSize: 12, color: "var(--fg-secondary)" }}>
-        Convertissez le fichier en PDF, DOCX ou TXT puis ré-importez-le.
+        Convert the file to PDF, DOCX or TXT and re-import it.
       </span>
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="rb-btn rb-btn--secondary">Réessayer</button>
+        <button className="rb-btn rb-btn--secondary">Retry</button>
         <button className="rb-btn rb-btn--primary">Continuer</button>
       </div>
     </div>

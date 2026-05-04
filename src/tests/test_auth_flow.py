@@ -54,8 +54,8 @@ def test_auth_me_sans_token_prod_mode(app_client):
 
 
 def test_guest_mode_efface_apres_oauth():
-    """La logique guest doit être effacée si une session OAuth est détectée."""
-    # Ce test vérifie la logique JS (côté frontend) — on simule via l'API /api/auth/config
+    """Guest logic must be cleared if an OAuth session is detected."""
+    # This test checks the JS logic (frontend side) - simulated via /api/auth/config API
     # et on s'assure que le header Authorization prend le dessus sur x-local-guest-id
     from fastapi.testclient import TestClient
     from main import app
@@ -66,7 +66,7 @@ def test_guest_mode_efface_apres_oauth():
             "/api/auth/me",
             headers={
                 "Authorization": "Bearer real-oauth-token",
-                "x-local-guest-id": "guest_old_session",   # doit être ignoré
+                "x-local-guest-id": "guest_old_session",   # must be ignored
             },
         )
     assert resp.status_code == 200

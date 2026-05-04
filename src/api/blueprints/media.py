@@ -24,7 +24,7 @@ async def tts(request: Request):
         return Response(content=audio, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"TTS Error: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 @media_router.post("/api/stt")
 @limiter.limit("20/minute")
@@ -32,7 +32,7 @@ async def stt(request: Request, audio: UploadFile = File(...)):
     import asyncio
     try:
         if audio.content_type and audio.content_type.lower() not in ALLOWED_AUDIO:
-            return JSONResponse({"error": "Format audio non supporté"}, status_code=400)
+            return JSONResponse({"error": "Audio format not supported"}, status_code=400)
 
         content = await audio.read()
         if len(content) > MAX_STT_SIZE:
@@ -58,4 +58,4 @@ async def stt(request: Request, audio: UploadFile = File(...)):
         return {"text": transcription.text, "detected_language": detected_lang}
     except Exception as e:
         logger.error(f"STT Error: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)

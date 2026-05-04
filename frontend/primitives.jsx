@@ -66,28 +66,28 @@ const RabeliaLogo = ({ size = "md" }) => {
 
 // Document data — used across screens
 const DOCS = [
-  { name: "Contrat LogiTrans 2026.pdf", date: "12 mars 2026", size: "1.2 Mo", pages: 24 },
-  { name: "Statuts SARL Mercier.pdf", date: "08 mars 2026", size: "480 Ko", pages: 8 },
-  { name: "Bail commercial 14 rue Vaugirard.docx", date: "02 mars 2026", size: "320 Ko", pages: 12 },
-  { name: "Jurisprudence Cass. com. 2024.pdf", date: "27 fév. 2026", size: "2.8 Mo", pages: 47 },
-  { name: "Convention collective Syntec.pdf", date: "21 fév. 2026", size: "3.1 Mo", pages: 156 },
-  { name: "Procès-verbal AG Mercier.pdf", date: "18 fév. 2026", size: "210 Ko", pages: 4 },
-  { name: "Pacte d'associés ProTech SAS.pdf", date: "11 fév. 2026", size: "890 Ko", pages: 18 },
-  { name: "Mémoire en défense Dossier 2025-114.docx", date: "04 fév. 2026", size: "640 Ko", pages: 22 },
-  { name: "Contrat de cession parts sociales.pdf", date: "29 jan. 2026", size: "510 Ko", pages: 9 },
-  { name: "Notes RGPD — audit interne.pdf", date: "22 jan. 2026", size: "1.8 Mo", pages: 31 },
-  { name: "Conditions générales v3.2.pdf", date: "15 jan. 2026", size: "280 Ko", pages: 6 },
-  { name: "Compromis de vente Levallois.pdf", date: "08 jan. 2026", size: "1.1 Mo", pages: 16 },
+  { name: "Contrat LogiTrans 2026.pdf", date: "12 March 2026", size: "1.2 MB", pages: 24 },
+  { name: "Statuts SARL Mercier.pdf", date: "08 March 2026", size: "480 KB", pages: 8 },
+  { name: "Bail commercial 14 rue Vaugirard.docx", date: "02 March 2026", size: "320 KB", pages: 12 },
+  { name: "Jurisprudence Cass. com. 2024.pdf", date: "27 Feb. 2026", size: "2.8 MB", pages: 47 },
+  { name: "Convention collective Syntec.pdf", date: "21 Feb. 2026", size: "3.1 MB", pages: 156 },
+  { name: "General Meeting Minutes Mercier.pdf", date: "18 Feb. 2026", size: "210 KB", pages: 4 },
+  { name: "Shareholders' agreement ProTech SAS.pdf", date: "11 Feb. 2026", size: "890 KB", pages: 18 },
+  { name: "Defense memorandum Dossier 2025-114.docx", date: "04 Feb. 2026", size: "640 KB", pages: 22 },
+  { name: "Contrat de cession parts sociales.pdf", date: "29 Jan. 2026", size: "510 KB", pages: 9 },
+  { name: "Notes RGPD — audit interne.pdf", date: "22 Jan. 2026", size: "1.8 MB", pages: 31 },
+  { name: "Terms and conditions v3.2.pdf", date: "15 Jan. 2026", size: "280 KB", pages: 6 },
+  { name: "Compromis de vente Levallois.pdf", date: "08 Jan. 2026", size: "1.1 MB", pages: 16 },
 ];
 
 const CONVERSATIONS = [
-  { title: "Clauses de non-concurrence LogiTrans", when: "Aujourd'hui" },
-  { title: "Conditions de résiliation bail", when: "Aujourd'hui" },
-  { title: "Délais préavis convention Syntec", when: "Hier" },
-  { title: "Cession parts — agrément requis ?", when: "Hier" },
-  { title: "Procédure AG extraordinaire", when: "21 mars" },
-  { title: "Indemnité éviction commercial", when: "18 mars" },
-  { title: "Régime fiscal apport en nature", when: "12 mars" },
+  { title: "Clauses de non-concurrence LogiTrans", when: "Today" },
+  { title: "Lease termination conditions", when: "Today" },
+  { title: "Syntec agreement notice periods", when: "Yesterday" },
+  { title: "Transfer of shares — approval required?", when: "Yesterday" },
+  { title: "Extraordinary General Meeting procedure", when: "21 March" },
+  { title: "Commercial eviction indemnity", when: "18 March" },
+  { title: "Tax regime for contribution in kind", when: "12 March" },
 ];
 
 // Expose globally

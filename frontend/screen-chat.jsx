@@ -44,12 +44,12 @@ const ChatSidebar = ({ activeConv }) => (
     {/* Documents */}
     <div className="rb-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 8px 12px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px 6px" }}>
-        <span className="rb-section-label" style={{ padding: 0 }}>Documents indexés</span>
+        <span className="rb-section-label" style={{ padding: 0 }}>Documents indexed</span>
         <span style={{ fontSize: 10.5, color: "var(--fg-muted)", fontFamily: "var(--font-mono)" }}>{DOCS.length}</span>
       </div>
       {DOCS.slice(0, 12).map((d, i) => (
         <div key={i} className="rb-listitem">
-          <span className="rb-dot" title="Indexé" />
+          <span className="rb-dot" title="Indexed" />
           <span className="rb-listitem__name" title={d.name}>{d.name}</span>
         </div>
       ))}
@@ -76,9 +76,9 @@ const ChatSidebar = ({ activeConv }) => (
       <div className="rb-mono rb-mono--user">CM</div>
       <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
         <div style={{ fontSize: 13, fontWeight: 500 }}>Claire Mercier</div>
-        <div style={{ fontSize: 11, color: "var(--fg-muted)" }}>Associée · Droit des affaires</div>
+        <div style={{ fontSize: 11, color: "var(--fg-muted)" }}>Partner · Droit des affaires</div>
       </div>
-      <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} aria-label="Paramètres">
+      <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} aria-label="Settings">
         <Icon name="settings" size={14} />
       </button>
     </div>
@@ -100,7 +100,7 @@ const ChatMain = ({ empty }) => (
         </h1>
         <span className="rb-pill rb-pill--ok">
           <span className="rb-dot" />
-          {DOCS.length} documents indexés
+          {DOCS.length} documents indexed
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -110,7 +110,7 @@ const ChatMain = ({ empty }) => (
         </button>
         <button className="rb-btn rb-btn--ghost" style={{ gap: 6 }}>
           <Icon name="settings" size={14} />
-          <span>Paramètres</span>
+          <span>Settings</span>
         </button>
       </div>
     </header>
@@ -132,7 +132,7 @@ const ChatMain = ({ empty }) => (
           marginTop: 8, fontSize: 11, color: "var(--fg-muted)",
           display: "flex", justifyContent: "space-between",
         }}>
-          <span>Les réponses citent les passages des documents indexés.</span>
+          <span>Responses cite passages from indexed documents.</span>
           <span style={{ fontFamily: "var(--font-mono)" }}>↵ pour envoyer · ⇧↵ saut de ligne</span>
         </div>
       </div>
@@ -156,7 +156,7 @@ const Composer = ({ value = "" }) => (
       flex: 1, minHeight: 32, padding: "8px 4px",
       fontSize: 14, color: value ? "var(--fg-primary)" : "var(--fg-disabled)",
     }}>
-      {value || "Posez votre question sur les documents indexés…"}
+      {value || "Posez votre question sur les documents indexed…"}
     </div>
     <button className="rb-btn rb-btn--primary" style={{ width: 32, height: 32, padding: 0 }} aria-label="Envoyer">
       <Icon name="send" size={14} />
@@ -181,16 +181,16 @@ const ChatEmptyState = () => (
       Bonjour Claire.
     </h2>
     <p style={{ fontSize: 14, color: "var(--fg-secondary)", margin: "0 0 28px", maxWidth: 540, lineHeight: 1.55 }}>
-      Vos {DOCS.length} documents sont indexés et prêts à être interrogés. Posez une
-      question en langage naturel — chaque réponse renvoie aux passages sources cités.
+      Your {DOCS.length} documents are indexed and ready to query. Ask a question
+      in natural language — each response links back to the cited source passages.
     </p>
 
     <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Suggestions</div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {[
         "Quelles sont les clauses de non-concurrence dans le contrat LogiTrans ?",
-        "Quel est le préavis de résiliation du bail Vaugirard ?",
-        "Résume le pacte d'associés ProTech SAS en 5 points.",
+        "What is the notice period for terminating the Vaugirard lease?",
+        "Summarize the ProTech SAS shareholders' agreement in 5 points.",
         "Quels documents traitent de la cession de parts sociales ?",
       ].map((s, i) => (
         <button key={i} style={{
@@ -209,27 +209,27 @@ const ChatEmptyState = () => (
 
 const ChatTranscript = () => (
   <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px", display: "flex", flexDirection: "column", gap: 28 }}>
-    <UserMsg text="Quelles sont les clauses de non-concurrence dans le contrat LogiTrans, et quelle est leur durée d'application ?" />
+    <UserMsg text="What are the non-compete clauses in the LogiTrans contract, and how long do they apply?" />
 
     <AIMsg
       paragraphs={[
         "Le contrat LogiTrans 2026 contient deux clauses de non-concurrence distinctes.",
-        "La première (§8.2) lie le dirigeant pendant 24 mois après la cessation de ses fonctions, sur le territoire de l'Union européenne, avec une contrepartie financière équivalente à 30 % de la rémunération brute annuelle. La seconde (§12.4) s'applique aux salariés cadres et prévoit une durée réduite de 12 mois limitée au territoire français.",
-        "Les deux clauses sont conformes à la jurisprudence Cass. com. 2024 que vous avez indexée — notamment l'arrêt du 14 mars 2024 confirmant l'exigence de proportionnalité géographique et de contrepartie pécuniaire.",
+        "The first (§8.2) binds the executive for 24 months after leaving office, across the European Union, with financial compensation equal to 30% of gross annual salary. The second (§12.4) applies to senior employees and provides for a shorter 12-month term limited to French territory.",
+        "Both clauses comply with the Cass. com. 2024 case law you have indexed — notably the ruling of 14 March 2024 confirming the requirements of geographic proportionality and financial consideration.",
       ]}
       cites={[
         { doc: "Contrat LogiTrans 2026", loc: "§8.2 · p. 14" },
         { doc: "Contrat LogiTrans 2026", loc: "§12.4 · p. 19" },
-        { doc: "Jurisprudence Cass. com.", loc: "arrêt 14/03/24" },
+        { doc: "Jurisprudence Cass. com.", loc: "ruling 14/03/24" },
       ]}
     />
 
-    <UserMsg text="La contrepartie de 30 % est-elle suffisante au regard de la jurisprudence récente ?" />
+    <UserMsg text="Is the 30% consideration sufficient in light of recent case law?" />
 
     <AIMsg
       paragraphs={[
-        "Oui. La Cour de cassation considère qu'une contrepartie comprise entre 25 % et 33 % de la rémunération est conforme dès lors qu'elle est versée mensuellement et qu'elle ne dépend pas du motif de la rupture.",
-        "Dans le contrat LogiTrans, la formulation du §8.2 satisfait ces deux conditions : le versement est mensualisé et la clause s'applique « quel que soit le motif de cessation des fonctions ».",
+        "Yes. The Court of Cassation holds that compensation between 25% and 33% of salary is valid provided it is paid monthly and does not depend on the grounds for termination.",
+        "In the LogiTrans contract, the wording of §8.2 satisfies both conditions: payment is monthly and the clause applies 'regardless of the grounds for termination'.",
       ]}
       cites={[
         { doc: "Jurisprudence Cass. com.", loc: "p. 22-24" },
@@ -264,7 +264,7 @@ const AIMsg = ({ paragraphs, cites }) => (
     </div>
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 11.5, color: "var(--fg-muted)", marginBottom: 6, letterSpacing: "0.02em" }}>
-        Assistant · à partir de 3 documents
+        Assistant · from 3 documents
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {paragraphs.map((p, i) => (

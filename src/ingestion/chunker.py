@@ -17,7 +17,7 @@ def split_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CH
         return []
     if chunk_size == CHUNK_SIZE and overlap == CHUNK_OVERLAP:
         return _DEFAULT_SPLITTER.split_text(text)
-    # Évite les erreurs si overlap >= chunk_size
+    # Prevents errors if overlap >= chunk_size
     safe_overlap = min(overlap, chunk_size // 5) if overlap >= chunk_size else overlap
     return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=safe_overlap, separators=_SEPARATORS

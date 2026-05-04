@@ -24,7 +24,7 @@ def create_client(user_id: str = "user_test") -> TestClient:
 
 
 def parse_sse(content: bytes) -> list:
-    """Extrait les événements JSON d'une réponse SSE."""
+    """Extracts JSON events from an SSE response."""
     events = []
     for line in content.decode().splitlines():
         if line.startswith("data: "):
@@ -38,26 +38,26 @@ def parse_sse(content: bytes) -> list:
 # ===== TESTS POUR /api/ask =====
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
-@patch("src.api.routes.stream_reponse")
+@patch("src.api.routes.search_passages", new_callable=AsyncMock)
+@patch("src.api.routes.stream_response")
 @patch("src.api.routes.track", new_callable=AsyncMock)
 @patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
 @patch("src.api.routes.cache_check", new_callable=AsyncMock)
 @patch("src.api.routes.valider_entree", new_callable=AsyncMock)
 def test_ask_question_valide(mock_valider, mock_cache, mock_reg, mock_track, mock_stream, mock_rechercher, mock_index):
-    """On peut poser une question valide et recevoir une réponse streamée."""
+    """Can ask a valid question and get a streamed response."""
     mock_index.return_value = True
     mock_valider.return_value = {"valid": True}
     mock_cache.return_value = None
     mock_rechercher.return_value = (["Passage 1", "Passage 2"], ["source1.md", "source2.md"], [0.9, 0.8], set())
     
     async def mock_stream_gen(*args, **kwargs):
-        yield "Réponse "
+        yield "Answer "
         yield "de l'IA"
     mock_stream.side_effect = mock_stream_gen
 
     response = create_client().post("/api/ask",
-                                    json={"question": "Qui est le héros?", "user_id": "user_test"})
+                                    json={"question": "Who is the hero?", "user_id": "user_test"})
 
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
@@ -65,7 +65,7 @@ def test_ask_question_valide(mock_valider, mock_cache, mock_reg, mock_track, moc
     events = parse_sse(response.content)
     text_events = [e for e in events if e.get("type") == "text"]
     full_text = "".join(e["text"] for e in text_events)
-    assert full_text == "Réponse de l'IA"
+    assert full_text == "Answer de l'IA"
 
     meta = next((e for e in events if e.get("type") == "meta"), None)
     assert meta is not None
@@ -75,27 +75,27 @@ def test_ask_question_valide(mock_valider, mock_cache, mock_reg, mock_track, moc
     assert done_evt is not None
     assert isinstance(done_evt.get("trace_id"), str)
     assert len(done_evt["trace_id"]) >= 8
-    assert done_evt.get("question_for_feedback") == "Qui est le héros?"
+    assert done_evt.get("question_for_feedback") == "Who is the hero?"
 
-    mock_rechercher.assert_called_once_with("Qui est le héros?")
+    mock_rechercher.assert_called_once_with("Who is the hero?")
 
 
 @patch("src.api.routes.index_data")
-def test_ask_question_vide(mock_index):
+def test_ask_empty_question(mock_index):
     """Une question vide renvoie une erreur."""
     mock_index.return_value = True
     response = create_client().post("/api/ask", json={"question": ""})
     assert response.status_code == 400
-    assert response.json()["error"] == "Question vide"
+    assert response.json()["error"] == "Empty question"
 
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
+@patch("src.api.routes.search_passages", new_callable=AsyncMock)
 @patch("src.api.routes.valider_entree", new_callable=AsyncMock)
 @patch("src.api.routes.cache_check", new_callable=AsyncMock)
 @patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
 def test_ask_aucun_passage_trouve(mock_reg, mock_cache, mock_valider, mock_rechercher, mock_index):
-    """Quand aucun passage n'est trouvé, on reçoit un message d'information."""
+    """When no passage is found, an info message is received."""
     mock_index.return_value = True
     mock_valider.return_value = {"valid": True}
     mock_cache.return_value = None
@@ -105,17 +105,17 @@ def test_ask_aucun_passage_trouve(mock_reg, mock_cache, mock_valider, mock_reche
                                     json={"question": "Question inconnue", "user_id": "user_test"})
 
     assert response.status_code == 200
-    assert "archives ne contiennent aucune information" in response.text
+    assert "archives contain no information" in response.text
 
 
 @patch("src.api.routes.index_data")
-@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
-@patch("src.api.routes.stream_reponse")
+@patch("src.api.routes.search_passages", new_callable=AsyncMock)
+@patch("src.api.routes.stream_response")
 @patch("src.api.routes.valider_entree", new_callable=AsyncMock)
 @patch("src.api.routes.cache_check", new_callable=AsyncMock)
 @patch("src.api.routes.track", new_callable=AsyncMock)
-def test_ask_erreur_generation(mock_track, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_index):
-    """Si la génération échoue, un événement erreur est envoyé dans le stream."""
+def test_ask_generation_error(mock_track, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_index):
+    """If generation fails, an error event is sent in the stream."""
     mock_index.return_value = True
     mock_valider.return_value = {"valid": True}
     mock_cache.return_value = None
@@ -123,7 +123,7 @@ def test_ask_erreur_generation(mock_track, mock_cache, mock_valider, mock_stream
     
     async def mock_stream_error(*args, **kwargs):
         if False: yield "" # make it a generator
-        raise Exception("Erreur API")
+        raise Exception("Error API")
     mock_stream.side_effect = mock_stream_error
 
     response = create_client().post("/api/ask",
@@ -133,25 +133,25 @@ def test_ask_erreur_generation(mock_track, mock_cache, mock_valider, mock_stream
     events = parse_sse(response.content)
     error_event = next((e for e in events if e.get("type") == "error"), None)
     assert error_event is not None
-    assert "Erreur API" in error_event["message"]
+    assert "Error API" in error_event["message"]
 
 
 # ===== TESTS POUR LE QUERY REWRITING =====
 
 @patch("src.api.routes.index_data")
 @patch("src.api.routes.get_history", new_callable=AsyncMock)
-@patch("src.api.routes.reformuler_question", new_callable=AsyncMock)
-@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
-@patch("src.api.routes.stream_reponse")
+@patch("src.api.routes.reformulate_question", new_callable=AsyncMock)
+@patch("src.api.routes.search_passages", new_callable=AsyncMock)
+@patch("src.api.routes.stream_response")
 @patch("src.api.routes.valider_entree", new_callable=AsyncMock)
 @patch("src.api.routes.cache_check", new_callable=AsyncMock)
 @patch("src.api.routes.register_trace_context", new_callable=AsyncMock)
 @patch("src.api.routes.track", new_callable=AsyncMock)
 @patch("src.api.routes.save_exchange", new_callable=AsyncMock)
 @patch("src.api.routes.cache_store", new_callable=AsyncMock)
-def test_ask_utilise_question_reformulee(mock_store, mock_save, mock_track, mock_reg, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
+def test_ask_uses_reformulated_question(mock_store, mock_save, mock_track, mock_reg, mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
                                          mock_history, mock_index):
-    """La question reformulée est utilisée pour la recherche RAG."""
+    """The reformulated question is used for the RAG search."""
     mock_index.return_value = True
     mock_valider.return_value = {"valid": True}
     mock_cache.return_value = None
@@ -173,14 +173,14 @@ def test_ask_utilise_question_reformulee(mock_store, mock_save, mock_track, mock
 
 @patch("src.api.routes.index_data")
 @patch("src.api.routes.get_history", new_callable=AsyncMock)
-@patch("src.api.routes.reformuler_question", new_callable=AsyncMock)
-@patch("src.api.routes.rechercher_passages", new_callable=AsyncMock)
-@patch("src.api.routes.stream_reponse")
+@patch("src.api.routes.reformulate_question", new_callable=AsyncMock)
+@patch("src.api.routes.search_passages", new_callable=AsyncMock)
+@patch("src.api.routes.stream_response")
 @patch("src.api.routes.valider_entree", new_callable=AsyncMock)
 @patch("src.api.routes.cache_check", new_callable=AsyncMock)
-def test_ask_sans_historique_pas_de_reformulation(mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
+def test_ask_without_history_no_reformulation(mock_cache, mock_valider, mock_stream, mock_rechercher, mock_reformuler,
                                                    mock_history, mock_index):
-    """Sans historique, reformuler_question retourne la question originale."""
+    """Sans historique, reformulate_question retourne la question originale."""
     mock_index.return_value = True
     mock_valider.return_value = {"valid": True}
     mock_cache.return_value = None
@@ -208,7 +208,7 @@ def test_reindex_sans_force(mock_track, mock_index):
     mock_index.return_value = True
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
-    assert "terminée" in response.json()["message"]
+    assert "complete" in response.json()["message"]
     mock_index.assert_called_once_with(force_reindex=False)
 
 
@@ -224,12 +224,12 @@ def test_reindex_avec_force(mock_track, mock_index):
 
 @patch("src.api.routes.index_data")
 @patch("src.api.auth._MONITORING_KEY", "test_key")
-def test_reindex_erreur(mock_index):
-    mock_index.side_effect = Exception("Erreur d'indexation")
+def test_reindex_error(mock_index):
+    mock_index.side_effect = Exception("Error d'indexation")
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 500
-    # Depuis le durcissement, le message d'erreur est générique
-    assert "Erreur interne" in response.json()["error"]
+    # Since hardening, the error message is generic
+    assert "Internal error" in response.json()["error"]
 
 
 @patch("src.api.auth._MONITORING_KEY", "test_key")

@@ -29,7 +29,7 @@ def test_feedback_rating_valide(mock_sb):
     resp = create_client().post("/api/feedback", json={
         "session_id": "sess-001",
         "rating": 5,
-        "comment": "Excellente réponse !",
+        "comment": "Excellent answer!",
     })
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
@@ -47,11 +47,11 @@ def test_feedback_rating_invalide():
 @patch("src.monitoring.tracker.get_history", return_value=[{"question": "Q?", "answer": "R."}])
 @patch("src.monitoring.tracker.track")
 def test_feedback_mauvaise_note_persiste(mock_track, mock_history, mock_sb):
-    """Rating ≤ 2 doit être stocké (le judge est géré par Langfuse)."""
+    """Rating <= 2 must be stored (judge is managed by Langfuse)."""
     resp = create_client().post("/api/feedback", json={
         "session_id": "sess-002",
         "rating": 1,
-        "comment": "Mauvaise réponse",
+        "comment": "Bad answer",
     })
     assert resp.status_code == 200
 
@@ -95,12 +95,12 @@ def test_feedback_vote_positif_trace_context(mock_trace_context, mock_sb, mock_r
 @patch("src.monitoring.tracker._get_client", return_value=None)
 @patch("src.api.routes.get_trace_context")
 def test_feedback_vote_negatif_persiste(mock_trace_context, mock_sb, mock_record, mock_submit):
-    """Vote négatif doit être stocké sans déclencher de judge local."""
+    """Negative vote must be stored without triggering a local judge."""
     mock_trace_context.return_value = {
         "trace_id": "trace-down",
         "session_id": "a859a0f8-4537-4135-a296-90a76ca846f4",
         "question": "Question test",
-        "answer": "Réponse test",
+        "answer": "Test answer",
     }
 
     resp = create_client().post("/api/feedback/vote", json={

@@ -1,4 +1,4 @@
-"""Tests unitaires — Watchdog (détection changements de fichiers)."""
+"""Unit tests — Watchdog (file change detection)."""
 import time
 from unittest.mock import patch
 
@@ -6,7 +6,7 @@ import pytest
 
 
 def test_watchdog_detecte_nouveau_fichier():
-    """Le watchdog doit planifier une réindexation à la création d'un fichier."""
+    """The watchdog must schedule a reindexing when a file is created."""
     import src.ingestion.watcher as watcher_module
     from src.ingestion.watcher import _LoreWatcher
 
@@ -19,7 +19,7 @@ def test_watchdog_detecte_nouveau_fichier():
 
 
 def test_watchdog_debounce_fusionne_events():
-    """Plusieurs events rapides ne doivent déclencher qu'une seule réindexation."""
+    """Multiple fast events must trigger only one reindexing."""
     import src.ingestion.watcher as watcher_module
     from src.ingestion.watcher import _LoreWatcher
 
@@ -34,7 +34,7 @@ def test_watchdog_debounce_fusionne_events():
 
 
 def test_watchdog_fail_sans_package():
-    """Sans watchdog installé, start() ne doit pas crasher."""
+    """Without installed watchdog, start() must not crash."""
     from src.ingestion.watcher import _LoreWatcher
 
     watcher = _LoreWatcher()
@@ -43,11 +43,11 @@ def test_watchdog_fail_sans_package():
             try:
                 watcher.start()
             except Exception as e:
-                pytest.fail(f"start() a levé une exception : {e}")
+                pytest.fail(f"start() raised an exception: {e}")
 
 
 def test_watchdog_stop_propre():
-    """stop() ne doit pas lever d'exception même si jamais démarré."""
+    """stop() must not raise an exception even if never started."""
     from src.ingestion.watcher import _LoreWatcher
 
     watcher = _LoreWatcher()

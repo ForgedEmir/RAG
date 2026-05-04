@@ -1,15 +1,15 @@
 """
-Validation des entrées utilisateur avant envoi au LLM.
+User input validation before sending to the LLM.
 
-Lakera Guard (<50ms) — classifieur IA pour les injections subtiles et jailbreaks.
-check_patterns() reste disponible pour la validation des chunks à l'ingestion.
+Lakera Guard (<50ms) — AI classifier for subtle injections and jailbreaks.
+check_patterns() remains available for chunk validation during ingestion.
 
-Config .env :
+.env Config:
   SECURITY_VALIDATOR = true | false | disabled
-  LAKERA_API_KEY     = clé API Lakera
-  LAKERA_PROJECT_ID  = projet Lakera (optionnel)
-  LAKERA_MODE        = enforce (défaut) | shadow | disabled
-  LAKERA_CACHE_TTL   = TTL Redis en secondes (défaut 60)
+  LAKERA_API_KEY     = Lakera API key
+  LAKERA_PROJECT_ID  = Lakera project (optional)
+  LAKERA_MODE        = enforce (default) | shadow | disabled
+  LAKERA_CACHE_TTL   = Redis TTL in seconds (default 60)
 """
 import hashlib
 import json
@@ -29,13 +29,13 @@ _LAKERA_URL       = "https://api.lakera.ai/v2/guard"
 _LAKERA_PRJ       = os.getenv("LAKERA_PROJECT_ID")
 _LAKERA_MODE      = os.getenv("LAKERA_MODE", "enforce").lower()   # enforce | shadow | disabled
 _CACHE_TTL        = int(os.getenv("LAKERA_CACHE_TTL", "60"))
-_LAKERA_THRESHOLD = float(os.getenv("LAKERA_THRESHOLD", "0.5"))   # 0.0 (très sensible) → 1.0 (peu sensible)
+_LAKERA_THRESHOLD = float(os.getenv("LAKERA_THRESHOLD", "0.5"))   # 0.0 (very sensitive) → 1.0 (less sensitive)
 
 _HTTP_CLIENT: httpx.AsyncClient | None = None
 _CLIENT_LOCK = asyncio.Lock()
 
 async def _get_http_client() -> httpx.AsyncClient:
-    """Retourne un client HTTP async singleton."""
+    """Returns a singleton async HTTP client."""
     global _HTTP_CLIENT
     if _HTTP_CLIENT is None:
         async with _CLIENT_LOCK:
@@ -50,29 +50,29 @@ class ValidationResult(TypedDict):
     reason: str
 
 
-# ── Patterns regex d'injection ────────────────────────────────────────────────
+# ── Injection regex patterns ────────────────────────────────────────────────
 
 _INJECTION_PATTERNS: list[str] = [
     r"you\s+are\s+now\s+", r"tu\s+es\s+maintenant\s+",
     r"act\s+as\s+(if\s+you\s+are|a\s+)", r"pretend\s+(you\s+are|to\s+be)",
-    r"agis?\s+comme\s+(si\s+tu\s+(es|étais)|un?e?\s+)",
+    r"act\s+as\s+(if\s+you\s+(are|were)|a\s+)",
     r"fais\s+semblant\s+d[''e]",
     r"do\s+anything\s+now", r"jailbreak", r"dan\s+mode",
     r"developer\s+mode", r"mode\s+sans\s+filtre",
     r"ignore\s+.*instructions?", r"oublie\s+.*instructions?",
-    r"ignore\s+ce\s+qui\s+précède",
+    r"ignore\s+previous\s+instructions",
     r"forget\s+(your|all|previous)\s+instructions?",
     r"bypass\s+the\s+(system|filter|rules|instructions)",
     r"tes\s+nouvelles?\s+instructions?\s+sont",
-    r"désormais\s+tu\s+(dois|es|vas)", r"constraints?\s+disabled",
+    r"from\s+now\s+on\s+you\s+(must|are|will)", r"constraints?\s+disabled",
     r"prompt\s+injection",
-    # Les tentatives d'extraction du system prompt (avec le mot "prompt") sont
-    # gérées par _check_prompt_extraction() — pas besoin de les dupliquer ici.
+    # Attempts to extract the system prompt (using the word "prompt") are
+    # handled by _check_prompt_extraction() — no need to duplicate them here.
     r"(reveal|print|show)\s+your\s+(prompt|instructions|system)",
     r"what\s+are\s+your\s+(instructions|constraints|rules)",
-    r"révèle?\s+(ton\s+|le\s+|ta\s+)?(system\s+)?prompt",
+    r"reveal\s+(your\s+|the\s+)?(system\s+)?prompt",
     r"montre\s+(-moi\s+)?(ton\s+|le\s+)?(system\s+)?prompt",
-    r"quelles?\s+sont\s+tes\s+(instructions?|contraintes?|règles?)",
+    r"what\s+are\s+your\s+(instructions?|constraints?|rules?)",
     r"(###|---)\s*system", r"\b(SYSTEM|ASSISTANT|USER)\s*:",
     r"\[system\]", r"\[inst\]", r"<\|system\|>", r"<\|im_start\|>",
     r"INIT\s+OVERRIDE", r"OVERRIDE_PROCEDURE", r"PRIMARY_DIRECTIVE",
@@ -96,7 +96,7 @@ _redis_client = None
 _redis_lock   = asyncio.Lock()
 
 async def _get_redis():
-    """Retourne un client Redis singleton ou None si indisponible. Fail-open."""
+    """Return a singleton Redis client or None if unavailable. Fail-open."""
     global _redis_client
     if _redis_client is not None:
         return _redis_client
@@ -134,10 +134,10 @@ async def _cache_set(texte: str, result: ValidationResult) -> None:
         pass
 
 
-# ── Langfuse métriques (fail-silent) ─────────────────────────────────────────
+# ── Langfuse metrics (fail-silent) ─────────────────────────────────────────
 
 def _track_false_positive(texte: str) -> None:
-    """Log un faux positif Lakera (message bloqué par Lakera mais passé dans la whitelist)."""
+    """Log a Lakera false positive (message blocked by Lakera but passed the whitelist)."""
     try:
         from src.monitoring.tracker import track
         try:
@@ -149,14 +149,14 @@ def _track_false_positive(texte: str) -> None:
         pass
 
 
-# ── Extraction du system prompt ───────────────────────────────────────────────
-# Le mot "prompt" n'est jamais présent dans une question lore légitime sur Aethelgard.
-# Cette vérification est donc sans faux positif, et s'applique indépendamment de Lakera.
+# ── System prompt extraction ───────────────────────────────────────────────
+# The word "prompt" is never present in a legitimate lore question about Aethelgard.
+# This check is therefore without false positives, and applies regardless of Lakera.
 
 _PROMPT_EXTRACTION_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
-    r"syst[eè]me?\s+prompt",
     r"system\s+prompt",
-    r"(donne|affiche|montre|révèle?|expose|dis|partage|répète?)\s+(moi\s+)?(?:ton|le|tes?|la)\s+(?:syst[eè]me?\s+)?prompt",
+    r"system\s+prompt",
+    r"(give|show|reveal|expose|tell|share|repeat)\s+(me\s+)?(your|the)\s+(system\s+)?prompt",
     r"(reveal|print|show|give|tell|display|output|repeat)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?prompt",
     r"(?:what(?:'s| is)|quel(?:s|le)?(?:\s+est)?)\s+(?:ton|your|le)\s+(?:system\s+)?prompt",
 ]]
@@ -165,36 +165,36 @@ _PROMPT_EXTRACTION_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
 def _check_prompt_extraction(texte: str) -> ValidationResult:
     for pattern in _PROMPT_EXTRACTION_PATTERNS:
         if pattern.search(texte):
-            return {"valid": False, "type": "prompt_injection", "reason": "Tentative d'extraction du system prompt"}
+            return {"valid": False, "type": "prompt_injection", "reason": "Attempted system prompt extraction"}
     return {"valid": True, "type": "ok", "reason": "ok"}
 
 
-# ── Interface publique ────────────────────────────────────────────────────────
+# ── Public interface ────────────────────────────────────────────────────────
 
 async def valider_entree(texte: str) -> ValidationResult:
-    """Point d'entrée principal : valide le texte avant envoi au LLM."""
+    """Main entry point: validates text before sending to LLM."""
     if not _ENABLED or _LAKERA_MODE == "disabled":
-        return {"valid": True, "type": "ok", "reason": "Validation désactivée"}
+        return {"valid": True, "type": "ok", "reason": "Validation disabled"}
 
     if not texte or not texte.strip():
-        return {"valid": False, "type": "prompt_injection", "reason": "Entrée vide"}
+        return {"valid": False, "type": "prompt_injection", "reason": "Empty input"}
 
-    # Vérification ciblée system-prompt : le mot "prompt" n'apparaît jamais dans
-    # une vraie question lore → zéro faux positif, zéro latence.
+    # Targeted system-prompt check: the word "prompt" never appears in
+    # a real lore question → zero false positive, zero latency.
     extraction = _check_prompt_extraction(texte)
     if not extraction["valid"]:
         return extraction
 
-    # Lakera Guard (IA) — couvre les attaques subtiles (roleplay, jailbreak, etc.)
+    # Lakera Guard (AI) — covers subtle attacks (roleplay, jailbreak, etc.)
     return await _valider_lakera(texte)
 
 
 def check_patterns(texte: str) -> ValidationResult:
-    """Couche regex uniquement, zéro dépendance externe."""
+    """Regex layer only, zero external dependency."""
     for pattern in _COMPILED_PATTERNS:
         if pattern.search(texte):
-            return {"valid": False, "type": "prompt_injection", "reason": "Motif suspect détecté"}
-    return {"valid": True, "type": "ok", "reason": "Aucun pattern suspect"}
+            return {"valid": False, "type": "prompt_injection", "reason": "Suspicious pattern detected"}
+    return {"valid": True, "type": "ok", "reason": "No suspicious pattern"}
 
 
 # ── Lakera Guard ──────────────────────────────────────────────────────────────
@@ -221,19 +221,19 @@ def _build_lakera_payload(texte: str) -> dict:
 
 
 async def _valider_lakera(texte: str) -> ValidationResult:
-    """Couche Lakera Guard. Cache Redis TTL 60s. Fail-open si API indisponible.
-    Mode shadow : analyse sans bloquer, log seulement.
+    """Lakera Guard layer. Redis cache TTL 60s. Fail-open if API unavailable.
+    Shadow mode: analyzes without blocking, logs only.
     """
     if not _LAKERA_KEY:
-        logger.warning("[LAKERA] Clé manquante — fail-open.")
-        return {"valid": True, "type": "ok", "reason": "Lakera Guard non configuré"}
+        logger.warning("[LAKERA] Missing key — fail-open.")
+        return {"valid": True, "type": "ok", "reason": "Lakera Guard not configured"}
 
     # Cache Redis
     cached = await _cache_get(texte)
     if cached:
         logger.debug("[LAKERA] Cache hit")
         if _LAKERA_MODE == "shadow" and not cached["valid"]:
-            logger.warning(f"[LAKERA][SHADOW] Aurait bloqué (depuis cache) : {cached['reason']}")
+            logger.warning(f"[LAKERA][SHADOW] Would have blocked (from cache): {cached['reason']}")
             return {"valid": True, "type": "ok", "reason": "Lakera Guard shadow (cached)"}
         return cached
 
@@ -250,11 +250,11 @@ async def _valider_lakera(texte: str) -> ValidationResult:
         if data.get("flagged"):
             breakdown = data.get("breakdown", [])
 
-            # WHY: Lakera v2 retourne plusieurs détecteurs (pii/name, moderated_content,
-            # prompt_attack, unknown_links...). On ne bloque QUE sur prompt_attack —
-            # le seul vrai détecteur d'attaque. Les détecteurs PII/content sont ignorés
-            # car le PII est déjà géré par pii_masker.py et les questions lore contiennent
-            # des prénoms légitimes ("Qui est Lucas ?") qui déclenchent sinon pii/name.
+            # WHY: Lakera v2 returns multiple detectors (pii/name, moderated_content,
+            # prompt_attack, unknown_links...). We ONLY block on prompt_attack —
+            # the only true attack detector. PII/content detectors are ignored
+            # because PII is already handled by pii_masker.py and lore questions contain
+            # legitimate first names ("Who is Lucas?") that otherwise trigger pii/name.
             prompt_attack_hits = [
                 item for item in breakdown
                 if item.get("detector_type") == "prompt_attack" and item.get("detected", False)
@@ -271,40 +271,40 @@ async def _valider_lakera(texte: str) -> ValidationResult:
                 logger.debug(f"[LAKERA] prompt_attack score={max_score:.3f} (seuil={_LAKERA_THRESHOLD})")
                 attack_detected = max_score >= _LAKERA_THRESHOLD
             elif prompt_attack_hits:
-                # Lakera policy peut parfois renvoyer `detected=true` sans score explicite.
-                # Dans ce cas, on exige une corroboration regex locale pour bloquer.
+                # Lakera policy can sometimes return `detected=true` without an explicit score.
+                # In this case, we require a local regex corroboration to block.
                 pattern_result = check_patterns(texte)
                 attack_detected = not pattern_result["valid"]
                 if attack_detected:
-                    logger.warning("[LAKERA] prompt_attack sans score + motif regex détecté => blocage.")
+                    logger.warning("[LAKERA] prompt_attack without score + regex pattern detected => blocking.")
                 else:
-                    logger.info("[LAKERA] prompt_attack sans score et sans motif regex => autorisé.")
+                    logger.info("[LAKERA] prompt_attack without score and no regex pattern => allowed.")
 
             if not attack_detected:
-                logger.info("[LAKERA] Flagged mais prompt_attack=False (PII/content seulement) — autorisé.")
-                ok_result: ValidationResult = {"valid": True, "type": "ok", "reason": "Pas d'attaque détectée"}
+                logger.info("[LAKERA] Flagged but prompt_attack=False (PII/content only) — allowed.")
+                ok_result: ValidationResult = {"valid": True, "type": "ok", "reason": "No attack detected"}
                 await _cache_set(texte, ok_result)
                 return ok_result
 
             result: ValidationResult = {
                 "valid": False, "type": "prompt_injection",
-                "reason": "Attaque détectée par Lakera Guard (prompt_attack)",
+                "reason": "Attack detected by Lakera Guard (prompt_attack)",
             }
             await _cache_set(texte, result)
 
             if _LAKERA_MODE == "shadow":
-                logger.warning("[LAKERA][SHADOW] prompt_attack détecté — mode shadow, message autorisé.")
+                logger.warning("[LAKERA][SHADOW] prompt_attack detected — shadow mode, message allowed.")
                 _track_false_positive(texte)
                 return {"valid": True, "type": "ok", "reason": "Lakera Guard shadow"}
 
-            logger.warning("[LAKERA] prompt_attack bloqué.")
+            logger.warning("[LAKERA] prompt_attack blocked.")
             return result
 
-        ok_result = {"valid": True, "type": "ok", "reason": "Aucune menace détectée"}
+        ok_result = {"valid": True, "type": "ok", "reason": "No threat detected"}
         await _cache_set(texte, ok_result)
         return ok_result
 
     except Exception as e:
-        logger.warning(f"[LAKERA] Indisponible, fail-open : {e}")
-        return {"valid": True, "type": "ok", "reason": "Lakera Guard indisponible"}
+        logger.warning(f"[LAKERA] Unavailable, fail-open: {e}")
+        return {"valid": True, "type": "ok", "reason": "Lakera Guard unavailable"}
 
