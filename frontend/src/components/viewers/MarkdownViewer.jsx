@@ -10,6 +10,24 @@ function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
+// Strip Markdown syntax so a raw-md passage matches the rendered plain-text DOM.
+function stripMarkdown(s) {
+  return s
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```\w*\n?|```/g, ''))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/(\*\*|__)(.+?)\1/gs, '$2')
+    .replace(/(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)/g, '$1')
+    .replace(/(?<!_)_(?!_)([^_\n]+?)_(?!_)/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')
+    .replace(/^\s{0,3}\d+\.\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '');
+}
+
 export default function MarkdownViewer({ filename, passage }) {
   const [content, setContent] = useState(null);
   const [error, setError]     = useState(false);
@@ -32,10 +50,12 @@ export default function MarkdownViewer({ filename, passage }) {
       containerRef.current.querySelectorAll('mark[data-passage]').forEach(m => m.replaceWith(...m.childNodes));
       return;
     }
+    const cleanPassage = stripMarkdown(passage);
     let attempt = 0, tid;
     const tryMark = () => {
-      let el = injectPassageMark(containerRef.current, passage);
-      if (!el) el = highlightPdfLayer(containerRef.current, passage);
+      let el = injectPassageMark(containerRef.current, cleanPassage);
+      if (!el) el = injectPassageMark(containerRef.current, passage);
+      if (!el) el = highlightPdfLayer(containerRef.current, cleanPassage);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (attempt < 3) {
