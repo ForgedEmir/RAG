@@ -126,8 +126,9 @@ export function highlightPdfLayer(container, passage) {
   const normPassage = normalize(passage).toLowerCase();
   if (!normPassage) return null;
 
-  // Build the full concatenated text of the layer to locate the passage
-  const spans = Array.from(container.querySelectorAll('span'));
+  // Only select leaf spans (no child spans) to avoid duplicated text from
+  // nested span structures used by docx-preview for bold/italic formatting.
+  const spans = Array.from(container.querySelectorAll('span')).filter(s => !s.querySelector('span'));
   const texts = spans.map(s => normalize(s.textContent).toLowerCase());
   const full  = texts.join(' ');
 
