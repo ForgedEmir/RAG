@@ -11,13 +11,19 @@ function normCell(val) {
 
 function rowMatchesPassage(row, normPassage) {
   if (!normPassage) return false;
-  const rowText = row.map(normCell).join(' ');
-  return rowText.includes(normPassage) || row.some(c => normCell(c).includes(normPassage));
+  // The passage is a multi-row text chunk — check if the passage contains this row's content
+  const rowText = row.map(normCell).filter(Boolean).join(' ');
+  if (rowText.length < 4) return false;
+  return normPassage.includes(rowText) || row.some(c => {
+    const nc = normCell(c);
+    return nc.length >= 4 && normPassage.includes(nc);
+  });
 }
 
 function cellMatchesPassage(cell, normPassage) {
   if (!normPassage) return false;
-  return normCell(cell).includes(normPassage);
+  const nc = normCell(cell);
+  return nc.length >= 4 && normPassage.includes(nc);
 }
 
 export default function ExcelViewer({ filename, passage }) {

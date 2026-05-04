@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github.css';
 import { getAuthHeader } from '../../auth.js';
-import { injectPassageMark } from '../../utils/highlight.js';
+import { injectPassageMark, highlightPdfLayer } from '../../utils/highlight.js';
 
 function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
@@ -44,11 +44,15 @@ export default function MarkdownViewer({ filename, passage }) {
     let attempt = 0;
     let tid;
     const tryMark = () => {
-      const mark = injectPassageMark(containerRef.current, passage);
-      if (mark) {
+      let el = injectPassageMark(containerRef.current, passage);
+      if (!el) {
+        // surroundContents() fails when passage spans multiple block elements — span fallback
+        el = highlightPdfLayer(containerRef.current, passage);
+      }
+      if (el) {
         setMarkFound(true);
         setMarkAttempted(true);
-        mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (attempt < 3) {
         attempt++;
         tid = setTimeout(tryMark, 80 * attempt);
