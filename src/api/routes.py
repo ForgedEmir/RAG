@@ -28,7 +28,7 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
-from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse, send_langfuse_score
+from src.generation.generator import generate_user_summary, reformulate_question, stream_response, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
@@ -37,7 +37,7 @@ from src.monitoring.tracker import (
     get_user_summary, record_feedback_event, register_trace_context, save_exchange,
     save_user_summary, track,
 )
-from src.search.search import rechercher_passages
+from src.search.search import search_passages
 from src.security.validator import valider_entree
 
 # ── Semantic cache ────────────────────────────────────────────────────────
@@ -79,11 +79,11 @@ async def _run_background_summary(uid: str, history: list) -> None:
         return
     try:
         old_summary = await get_user_summary(uid)
-        new_summary = await generer_resume_utilisateur(history, old_summary)
+        new_summary = await generate_user_summary(history, old_summary)
         if new_summary:
             try:
-                from src.security.pii_masker import masquer
-                new_summary = masquer(new_summary)
+                from src.security.pii_masker import mask
+                new_summary = mask(new_summary)
             except Exception:
                 pass
             await save_user_summary(uid, new_summary)
@@ -229,8 +229,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     # PII masking before security validation
     try:
-        from src.security.pii_masker import masquer
-        question = masquer(question)
+        from src.security.pii_masker import mask
+        question = mask(question)
     except Exception as e:
         logger.debug(f"PII masker skipped: {e}")
 
@@ -301,11 +301,11 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         memories = []
 
     t_ref = time.time()
-    query = await reformuler_question(question, history)
+    query = await reformulate_question(question, history)
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, raw_sources, conf_scores, tie_subjects = await rechercher_passages(query)
+    passages, raw_sources, conf_scores, tie_subjects = await search_passages(query)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
@@ -335,8 +335,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             langfuse_ids = []
             try:
-                # stream_reponse is now async (async generator)
-                async for chunk in stream_reponse(question, passages, unique_sources, history,
+                # stream_response is now async (async generator)
+                async for chunk in stream_response(question, passages, unique_sources, history,
                                             model_used=model_used, user_summary=summary,
                                             vector_memories=memories,
                                             langfuse_trace_ids=langfuse_ids,
