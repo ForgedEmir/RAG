@@ -40,7 +40,7 @@ BM25_FALLBACK_MIN = 3  # Minimum vector results before activating BM25
 _HYDE_THRESHOLD = float(os.getenv("HYDE_SCORE_THRESHOLD", "0.005"))
 _HYDE_ENABLED = env_bool("HYDE_ENABLED", True)
 _RERANKER_ENABLED = env_bool("RERANKER_ENABLED", True)
-_QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", False)
+_QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", True)
 _RERANKER_MODEL = os.getenv("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
 _RERANKER_MAX_INPUT = max(2, int(os.getenv("RERANKER_MAX_INPUT", "6")))
 _MIN_VECTOR_BEFORE_BM25 = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", str(BM25_FALLBACK_MIN))))
@@ -60,16 +60,29 @@ _BM25_FR_STOPWORDS = {
     "ta", "te", "tes", "toi", "ton", "tu", "un", "une", "vos", "votre", "vous",
 }
 
-# Linguistic signals for query routing
+# Linguistic signals for query routing — covers both EN and FR
 _COMPLEX_SIGNALS = {
+    # English
     "how", "why", "difference", "compare",
     "explain", "describe", "list", "relation", "link", "between",
-    "what", "what are", "tell",
+    "what", "tell",
+    # French
+    "pourquoi", "comment", "difference", "comparer", "compare",
+    "explique", "expliquer", "expliquez", "decrire", "decrivez",
+    "lister", "liste", "relation", "lien", "entre",
+    "quel", "quels", "quelle", "quelles",
+    # Accented FR (raw — the BM25 normalizer strips accents but signals match against lowered raw query)
+    "différence", "décrire", "décrivez",
 }
 
 _RERANK_REASONING_SIGNALS = {
+    # English
     "why", "how", "compare", "difference",
     "relation", "link", "between", "vs", "versus", "explain",
+    # French
+    "pourquoi", "comment", "comparer", "comparaison",
+    "lien", "entre", "expliquer", "explique",
+    "différence", "difference",
 }
 
 # Pipeline runtime statistics
@@ -221,21 +234,40 @@ def _rerank(query: str, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 async def _expand_query(question: str) -> List[str]:
-    """Generates question variants via the LLM to improve recall."""
+    """RAG-Fusion style query expansion: generate paraphrased + cross-lingual variants.
+
+    Why: improves recall on multilingual B2B corpora where the user phrasing
+    rarely matches indexed phrasing word-for-word, and where docs may be in
+    a different language than the query.
+    """
     try:
-        from src.generation.generator import _llm
+        from src.generation.generator import _llm, _llm_reformulation
         from langchain_core.messages import SystemMessage, HumanMessage
-        if not _llm:
+        # Prefer the faster reformulation LLM if available (cheaper, lower latency)
+        llm = _llm_reformulation or _llm
+        if not llm:
             return [question]
-        result = await _llm.ainvoke([
+        result = await llm.ainvoke([
             SystemMessage(content=(
-                "Generate exactly 2 reformulations of the question for searching a fantasy lore knowledge base. "
-                "One per line, no numbering or explanation."
+                "You generate alternate phrasings of a user question to improve document "
+                "retrieval in a multilingual (French/English) business knowledge base. "
+                "Output exactly 3 lines, no numbering, no explanation:\n"
+                "  Line 1: a paraphrase using different words but same meaning.\n"
+                "  Line 2: an expanded version that spells out acronyms and adds synonyms.\n"
+                "  Line 3: a translation of the question into the OTHER language "
+                "(English if the input is French, French if the input is English)."
             )),
             HumanMessage(content=question),
         ])
         variants = [q.strip() for q in result.content.strip().splitlines() if q.strip()]
-        return [question] + variants[:2]
+        # Dedup against the original (case-insensitive)
+        seen = {question.lower().strip()}
+        unique_variants = []
+        for v in variants[:3]:
+            if v.lower().strip() not in seen:
+                seen.add(v.lower().strip())
+                unique_variants.append(v)
+        return [question] + unique_variants
     except Exception as e:
         logger.warning(f"Query expansion failed: {e}")
         return [question]
