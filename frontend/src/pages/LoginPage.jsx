@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import Icon from '../components/Icon.jsx';
 import { loginWithEmail, sendMagicLink, getMfaLevel, listMfaFactors, challengeMfa, verifyMfa } from '../auth.js';
 
 export default function LoginPage({ onLogin }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState('magic'); // 'magic' | 'password'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +39,7 @@ export default function LoginPage({ onLogin }) {
       }
       navigate('/chat');
     } catch (err) {
-      setError(err.message || 'Échec de la connexion');
+      setError(err.message || t('login.error_login'));
     } finally {
       setLoading(false);
     }
@@ -51,7 +53,7 @@ export default function LoginPage({ onLogin }) {
       await verifyMfa(mfaStep.factorId, mfaStep.challengeId, totpCode.replace(/\s/g, ''));
       navigate('/chat');
     } catch (err) {
-      setError(err.message || 'Code invalide');
+      setError(err.message || t('login.error_invalid_code'));
     } finally {
       setLoading(false);
     }
@@ -64,9 +66,9 @@ export default function LoginPage({ onLogin }) {
     setSuccess('');
     try {
       await sendMagicLink(email);
-      setSuccess(`Lien envoyé à ${email}. Vérifiez votre boîte mail (lien valable 1h).`);
+      setSuccess(t('login.magic_success', { email }));
     } catch (err) {
-      setError(err.message || 'Échec de l\'envoi');
+      setError(err.message || t('login.error_send'));
     } finally {
       setLoading(false);
     }
@@ -85,15 +87,15 @@ export default function LoginPage({ onLogin }) {
         letterSpacing: '0.08em', textTransform: 'uppercase',
         fontFamily: 'var(--font-mono)',
       }}>
-        Portail client · v2.4
+        {t('login.title')}
       </div>
       <div style={{
         position: 'absolute', bottom: 24, left: 28, right: 28,
         display: 'flex', justifyContent: 'space-between',
         fontSize: 11, color: 'var(--fg-muted)',
       }}>
-        <span>© RABELIA 2026</span>
-        <span>support@rabelia.fr</span>
+        <span>{t('login.copyright')}</span>
+        <span>{t('login.support')}</span>
       </div>
 
       <div style={{ width: 380, textAlign: 'center' }}>
@@ -102,10 +104,10 @@ export default function LoginPage({ onLogin }) {
         </div>
 
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 8px', letterSpacing: '-0.015em' }}>
-          Connexion à votre espace
+          {t('login.heading')}
         </h1>
         <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px', lineHeight: 1.55 }}>
-          Accédez à votre assistant documentaire.
+          {t('login.subtitle')}
         </p>
 
         <div style={{
@@ -124,7 +126,7 @@ export default function LoginPage({ onLogin }) {
               transition: 'all 0.15s',
             }}
           >
-            Lien magique
+            {t('login.tab_magic')}
           </button>
           <button
             type="button"
@@ -138,7 +140,7 @@ export default function LoginPage({ onLogin }) {
               transition: 'all 0.15s',
             }}
           >
-            Mot de passe
+            {t('login.tab_password')}
           </button>
         </div>
 
@@ -168,10 +170,10 @@ export default function LoginPage({ onLogin }) {
         {mfaStep ? (
           <form onSubmit={handleMfaVerify} style={{ textAlign: 'left' }}>
             <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 16px', lineHeight: 1.55 }}>
-              Entrez le code à 6 chiffres de votre application d'authentification (Google Authenticator, Authy…)
+              {t('login.mfa_prompt')}
             </p>
             <div style={{ marginBottom: 16 }}>
-              <label className="rb-label">Code de vérification</label>
+              <label className="rb-label">{t('login.mfa_label')}</label>
               <input
                 className="rb-input rb-input--lg"
                 type="text"
@@ -190,27 +192,27 @@ export default function LoginPage({ onLogin }) {
               className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
               disabled={loading || totpCode.length < 6}
             >
-              {loading ? 'Vérification…' : 'Confirmer'}
+              {loading ? t('login.verifying') : t('login.confirm')}
             </button>
             <button
               type="button"
               onClick={() => { setMfaStep(null); setTotpCode(''); setError(''); }}
               style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 0' }}
             >
-              Retour
+              {t('login.back')}
             </button>
           </form>
         ) : mode === 'magic' ? (
           <form onSubmit={handleMagicLink} style={{ textAlign: 'left' }}>
             <div style={{ marginBottom: 16 }}>
-              <label className="rb-label" htmlFor="email-magic">Adresse email</label>
+              <label className="rb-label" htmlFor="email-magic">{t('login.email_label')}</label>
               <input
                 id="email-magic"
                 className="rb-input rb-input--lg"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="vous@entreprise.com"
+                placeholder={t('login.email_placeholder')}
                 autoComplete="email"
                 required
               />
@@ -220,29 +222,29 @@ export default function LoginPage({ onLogin }) {
               className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
               disabled={loading || !!success}
             >
-              {loading ? 'Envoi…' : success ? 'Lien envoyé' : 'Recevoir un lien de connexion'}
+              {loading ? t('login.sending') : success ? t('login.link_sent') : t('login.magic_btn')}
             </button>
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', margin: '10px 0 0', textAlign: 'center' }}>
-              Vous recevrez un lien valable 1 heure.
+              {t('login.magic_helper')}
             </p>
           </form>
         ) : (
           <form onSubmit={handlePassword} style={{ textAlign: 'left' }}>
             <div style={{ marginBottom: 12 }}>
-              <label className="rb-label" htmlFor="email-pwd">Adresse email</label>
+              <label className="rb-label" htmlFor="email-pwd">{t('login.email_label')}</label>
               <input
                 id="email-pwd"
                 className="rb-input rb-input--lg"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="vous@entreprise.com"
+                placeholder={t('login.email_placeholder')}
                 autoComplete="email"
                 required
               />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label className="rb-label" htmlFor="password">Mot de passe</label>
+              <label className="rb-label" htmlFor="password">{t('login.password_label')}</label>
               <div style={{ position: 'relative' }}>
                 <input
                   id="password"
@@ -273,13 +275,13 @@ export default function LoginPage({ onLogin }) {
               className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
               disabled={loading}
             >
-              {loading ? 'Connexion…' : 'Se connecter'}
+              {loading ? t('login.logging_in') : t('login.btn_login')}
             </button>
           </form>
         )}
 
         <p style={{ fontSize: 11.5, color: 'var(--fg-muted)', margin: '24px 0 0', lineHeight: 1.5 }}>
-          Accès réservé aux collaborateurs autorisés.
+          {t('login.footer')}
         </p>
       </div>
     </div>

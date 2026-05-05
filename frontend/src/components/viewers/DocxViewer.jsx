@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAuthHeader } from '../../auth.js';
 import { injectPassageMark, highlightPdfLayer } from '../../utils/highlight.js';
 
@@ -7,6 +8,7 @@ function encodeFilePath(filename) {
 }
 
 export default function DocxViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const containerRef = useRef(null);
 
@@ -56,7 +58,7 @@ export default function DocxViewer({ filename, passage }) {
 
   if (status === 'error') return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Impossible de charger le document.
+      {t('viewer.error_load_doc')}
     </div>
   );
 
@@ -64,7 +66,7 @@ export default function DocxViewer({ filename, passage }) {
     <div className="rb-scroll" style={{ flex: 1, overflow: 'auto', background: '#f5f5f5' }}>
       {status === 'loading' && (
         <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-          Chargement…
+          {t('viewer.loading')}
         </div>
       )}
       <div ref={containerRef} style={{ display: status === 'loading' ? 'none' : 'block' }} />

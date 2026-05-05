@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAuthHeader } from '../../auth.js';
 
 function encodeFilePath(filename) {
@@ -6,6 +7,7 @@ function encodeFilePath(filename) {
 }
 
 export default function TextViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [content, setContent] = useState(null);
   const [error, setError]      = useState(false);
 
@@ -22,12 +24,12 @@ export default function TextViewer({ filename, passage }) {
 
   if (error) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Impossible de charger le fichier.
+      {t('viewer.error_load')}
     </div>
   );
   if (content === null) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Chargement…
+      {t('viewer.loading')}
     </div>
   );
 

@@ -90,7 +90,7 @@ async def _verify_supabase_jwt(token: str) -> Optional[str]:
 
 
 async def get_tenant_id(user_id: str) -> str:
-    """Retourne le tenant_id du user : celui d'un autre si invité, sinon le sien."""
+    """Return the user's tenant_id: another user's if invited, otherwise their own."""
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()

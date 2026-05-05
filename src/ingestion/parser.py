@@ -1,7 +1,7 @@
 """
-Module de parsing de documents pour le système RAG.
-Supporte les formats : .md, .txt, .json, .csv, .xlsx, .xml, .pdf.
-Utilise LlamaParse pour les PDF complexes et Unstructured en repli.
+Document parsing module for the RAG system.
+Supported formats: .md, .txt, .json, .csv, .xlsx, .xml, .pdf.
+Uses LlamaParse for complex PDFs and Unstructured as fallback.
 """
 import os
 import re
@@ -24,10 +24,10 @@ def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
         documents = parser.load_data(filepath)
         return "\n\n".join(doc.text for doc in documents if doc.text)
     except ImportError:
-        logger.warning("Bibliothèque 'llama-parse' non installée. Exécutez 'pip install llama-parse'.")
+        logger.warning("Library 'llama-parse' not installed. Run 'pip install llama-parse'.")
         return None
     except Exception as e:
-        logger.warning(f"LlamaParse a échoué pour {filepath}, passage au moteur Unstructured : {e}")
+        logger.warning(f"LlamaParse failed for {filepath}, falling back to Unstructured: {e}")
         return None
 
 
@@ -36,7 +36,7 @@ def clean_text(raw_text: str) -> str:
         return ""
     text = re.sub(r'<[^>]+>', '', raw_text)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = text.replace('%PLAYER_NAME%', 'le joueur')
+    text = text.replace('%PLAYER_NAME%', 'the player')
     text = re.sub(r'%[A-Z_0-9]+%', lambda m: m.group(0).replace('%', ''), text)
     paragraphs = re.split(r'\n\s*\n', text)
     cleaned_paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
@@ -49,10 +49,10 @@ def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("Bibliothèque 'unstructured' non installée. Exécutez 'pip install unstructured'.")
+        logger.warning("Library 'unstructured' not installed. Run 'pip install unstructured'.")
         return None
     except Exception as e:
-        logger.error(f"Échec de l'extraction Unstructured pour {filepath} : {e}")
+        logger.error(f"Unstructured extraction failed for {filepath}: {e}")
         return None
 
 
@@ -67,7 +67,7 @@ def _parse_pdf_pypdf(filepath: str) -> Optional[str]:
                 text += content + "\n\n"
         return text.strip() if text.strip() else None
     except Exception as e:
-        logger.warning(f"pypdf a échoué pour {filepath} : {e}")
+        logger.warning(f"pypdf failed for {filepath}: {e}")
         return None
 
 
@@ -93,19 +93,19 @@ def _parse_docx(filepath: str) -> Optional[str]:
                     paragraphs.append(" | ".join(cells))
         return "\n\n".join(paragraphs) if paragraphs else None
     except Exception as e:
-        logger.warning(f"python-docx a échoué pour {filepath}, fallback unstructured : {e}")
+        logger.warning(f"python-docx failed for {filepath}, falling back to unstructured: {e}")
         try:
             from unstructured.partition.docx import partition_docx
             elements = partition_docx(filename=filepath)
             return "\n".join(str(el) for el in elements if str(el).strip()) or None
         except Exception as e2:
-            logger.error(f"Échec extraction DOCX pour {filepath} : {e2}")
+            logger.error(f"DOCX extraction failed for {filepath}: {e2}")
             return None
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
     if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable au chemin spécifié : {filepath}")
+        logger.error(f"File not found at specified path: {filepath}")
         return None
 
     ext = os.path.splitext(filepath)[1].lower()
@@ -123,13 +123,13 @@ def extract_text_from_file(filepath: str) -> Optional[str]:
 
     loader = loaders.get(ext)
     if not loader:
-        logger.warning(f"Format de fichier non supporté : {ext}")
+        logger.warning(f"Unsupported file format: {ext}")
         return None
 
     try:
         return loader(filepath)
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture du fichier {filepath} : {e}")
+        logger.error(f"Error reading file {filepath}: {e}")
         return None
 
 
@@ -156,97 +156,96 @@ def _read_csv(filepath: str) -> str:
 
 def _xlsx_to_text(filepath: str) -> str:
     """
-    Convertit un fichier Excel (.xlsx) en texte structuré avec contexte sémantique.
-    Ajoute un en-tête décrivant le fichier, les feuilles et les colonnes
-    pour que le contenu soit trouvable par recherche vectorielle et BM25.
+    Convert an Excel file (.xlsx) to structured text with semantic context.
+    Adds a header describing the file, sheets and columns so the content is
+    findable by both vector search and BM25.
 
-    Exemple de sortie :
-        [FICHIER: base_prospect_V2.xlsx]
-        Ce fichier contient 3 feuilles : Prospects, Statistiques, Notes.
-        Feuille 'Prospects' (120 lignes) — Colonnes: Nom, Âge, Ville, Email, Téléphone
+    Example output:
+        [FILE: base_prospect_V2.xlsx]
+        This file contains 3 sheets: Prospects, Statistics, Notes.
+        Sheet 'Prospects' (120 rows) — Columns: Name, Age, City, Email, Phone
         ---
-        Nom: Jean | Âge: 35 | Ville: Paris | Email: jean@test.com
-        Nom: Marie | Âge: 28 | Ville: Lyon | Email: marie@test.com
+        Name: John | Age: 35 | City: Paris | Email: john@test.com
+        Name: Mary | Age: 28 | City: Lyon | Email: mary@test.com
     """
     try:
         import openpyxl
-        classeur = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
-        lignes = []
+        workbook = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+        lines = []
 
         filename = os.path.basename(filepath)
-        nom_sans_ext = os.path.splitext(filename)[0]
 
-        # En-tête sémantique — rend le fichier trouvable par recherche
+        # Semantic header — makes the file findable by search
         sheet_info = []
         total_rows = 0
-        for nom_feuille in classeur.sheetnames:
-            sheet = classeur[nom_feuille]
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
             rows = list(sheet.iter_rows(max_row=min(sheet.max_row, 2000)))
             if rows:
                 headers = [str(cell.value or "") for cell in rows[0]]
                 n_rows = max(0, len(rows) - 1)
                 total_rows += n_rows
                 sheet_info.append(
-                    f"Feuille '{nom_feuille}' ({n_rows} lignes)"
-                    f" — Colonnes: {', '.join(h for h in headers if h)}"
+                    f"Sheet '{sheet_name}' ({n_rows} rows)"
+                    f" — Columns: {', '.join(h for h in headers if h)}"
                 )
 
-        lignes.append(f"[FICHIER: {filename}]")
-        lignes.append(
-            f"Ce fichier contient {len(classeur.sheetnames)} feuille(s) : "
-            f"{', '.join(classeur.sheetnames)}."
+        lines.append(f"[FILE: {filename}]")
+        lines.append(
+            f"This file contains {len(workbook.sheetnames)} sheet(s): "
+            f"{', '.join(workbook.sheetnames)}."
         )
         for info in sheet_info:
-            lignes.append(info)
-        lignes.append("---")
+            lines.append(info)
+        lines.append("---")
 
-        for nom_feuille in classeur.sheetnames:
-            sheet = classeur[nom_feuille]
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
             rows = list(sheet.iter_rows(max_row=min(sheet.max_row, 2000)))
             if not rows:
                 continue
             headers = [str(cell.value or "") for cell in rows[0]]
 
-            # Ligne d'en-tête avec noms de colonnes explicites
-            if len(classeur.sheetnames) > 1:
-                lignes.append(f"\n=== Feuille: {nom_feuille} ===")
+            # Header row with explicit column names
+            if len(workbook.sheetnames) > 1:
+                lines.append(f"\n=== Sheet: {sheet_name} ===")
 
             for row in rows[1:]:
-                parties = [
+                parts = [
                     f"{headers[i] if i < len(headers) else f'Col{i}'}: {cell.value}"
                     for i, cell in enumerate(row) if cell.value is not None
                 ]
-                if parties:
-                    lignes.append(" | ".join(parties))
+                if parts:
+                    lines.append(" | ".join(parts))
 
-        classeur.close()
-        return "\n".join(lignes)
+        workbook.close()
+        return "\n".join(lines)
     except ImportError:
-        logger.warning("Bibliothèque 'openpyxl' non installée.")
+        logger.warning("Library 'openpyxl' not installed.")
         return ""
 
 
-def _json_to_text(data: Any, niveau: int = 0) -> str:
-    lignes = []
-    indent = "  " * niveau
+def _json_to_text(data: Any, level: int = 0) -> str:
+    lines = []
+    indent = "  " * level
 
     if isinstance(data, dict):
-        for cle, valeur in data.items():
-            if isinstance(valeur, (dict, list)):
-                lignes.append(f"{indent}{cle}:")
-                lignes.append(_json_to_text(valeur, niveau + 1))
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                lines.append(f"{indent}{key}:")
+                lines.append(_json_to_text(value, level + 1))
             else:
-                lignes.append(f"{indent}{cle}: {valeur}")
+                lines.append(f"{indent}{key}: {value}")
 
     elif isinstance(data, list):
         for element in data:
-            lignes.append(_json_to_text(element, niveau))
-            lignes.append(f"{indent}---")
+            lines.append(_json_to_text(element, level))
+            lines.append(f"{indent}---")
 
     else:
-        lignes.append(f"{indent}{data}")
+        lines.append(f"{indent}{data}")
 
-    return "\n".join(line for line in lignes if line)
+    return "\n".join(line for line in lines if line)
 
 
 def _xml_to_text(filepath: str) -> str:
@@ -255,8 +254,8 @@ def _xml_to_text(filepath: str) -> str:
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("Bibliothèque 'unstructured' non installée.")
+        logger.warning("Library 'unstructured' not installed.")
         return ""
     except Exception as e:
-        logger.error(f"Erreur lors du traitement XML de {filepath} : {e}")
+        logger.error(f"Error processing XML for {filepath}: {e}")
         return ""

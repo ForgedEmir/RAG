@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useScopedLenis } from '../useLenis.js';
 import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
@@ -7,6 +8,7 @@ import { getAuthHeader } from '../auth.js';
 import DocViewer from '../components/DocViewer.jsx';
 
 export default function DocsPage({ user, onLogout }) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadState, setUploadState] = useState(null); // null | 'progress' | 'done' | 'error'
@@ -79,7 +81,7 @@ export default function DocsPage({ user, onLogout }) {
   };
 
   const handleDelete = async (filename) => {
-    if (!confirm(`Supprimer "${filename}" de l'index ?`)) return;
+    if (!confirm(t('docs.delete_confirm', { filename }))) return;
     try {
       const authHeader = await getAuthHeader();
       await fetch('/api/admin/delete', {
@@ -108,10 +110,10 @@ export default function DocsPage({ user, onLogout }) {
         </div>
         <nav style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {[
-            { label: 'Conversations', icon: 'chat', path: '/chat' },
-            { label: 'Documents', icon: 'folder', path: '/docs', active: true },
-            { label: 'Paramètres', icon: 'settings', path: '/settings' },
-            { label: 'Monitoring', icon: 'activity', path: '/monitoring' },
+            { label: t('docs.nav_conversations'), icon: 'chat', path: '/chat' },
+            { label: t('docs.nav_documents'), icon: 'folder', path: '/docs', active: true },
+            { label: t('docs.nav_settings'), icon: 'settings', path: '/settings' },
+            { label: t('docs.nav_monitoring'), icon: 'activity', path: '/monitoring' },
           ].map(item => (
             <div
               key={item.path}
@@ -129,10 +131,10 @@ export default function DocsPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || t('docs.user_guest')}
             </div>
           </div>
-          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Déconnexion">
+          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title={t('docs.logout')}>
             <Icon name="logout" size={14} />
           </button>
         </div>
@@ -148,9 +150,9 @@ export default function DocsPage({ user, onLogout }) {
             background: 'var(--bg-surface)',
             flexShrink: 0,
           }}>
-            <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Importer des documents</h1>
+            <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{t('docs.heading')}</h1>
             <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-              Formats acceptés : PDF, DOCX, TXT · 50 Mo max
+              {t('docs.format_info')}
             </span>
           </header>
 
@@ -158,6 +160,7 @@ export default function DocsPage({ user, onLogout }) {
             <div style={{ maxWidth: 800, margin: '0 auto' }}>
               {uploadState === null && (
                 <DropZone
+                  t={t}
                   dragging={dragging}
                   onDragOver={e => { e.preventDefault(); setDragging(true); }}
                   onDragLeave={() => setDragging(false)}
@@ -165,9 +168,10 @@ export default function DocsPage({ user, onLogout }) {
                   onBrowse={() => fileInputRef.current?.click()}
                 />
               )}
-              {uploadState === 'progress' && <ProgressView files={uploadFiles} />}
+              {uploadState === 'progress' && <ProgressView files={uploadFiles} t={t} />}
               {uploadState === 'done' && (
                 <DoneView
+                  t={t}
                   files={uploadFiles}
                   onNewUpload={resetUpload}
                   onGoToChat={() => navigate('/chat')}
@@ -175,6 +179,7 @@ export default function DocsPage({ user, onLogout }) {
               )}
               {uploadState === 'error' && (
                 <ErrorView
+                  t={t}
                   files={uploadFiles}
                   onRetry={resetUpload}
                   onContinue={() => { setUploadState('done'); }}
@@ -193,9 +198,9 @@ export default function DocsPage({ user, onLogout }) {
               <div style={{ marginTop: 32 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
                   <div>
-                    <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Documents indexés</h2>
+                    <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{t('docs.indexed_section')}</h2>
                     <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-                      {files.length} document{files.length !== 1 ? 's' : ''} dans la base
+                      {t('docs.doc_count', { count: files.length })}
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -203,7 +208,7 @@ export default function DocsPage({ user, onLogout }) {
                       <Icon name="search" size={14} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
                       <input
                         className="rb-input"
-                        placeholder="Rechercher…"
+                        placeholder={t('docs.search_placeholder')}
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         style={{ paddingLeft: 32, width: 200 }}
@@ -215,7 +220,7 @@ export default function DocsPage({ user, onLogout }) {
                       onClick={() => fileInputRef.current?.click()}
                     >
                       <Icon name="plus" size={13} />
-                      <span>Importer</span>
+                      <span>{t('docs.import')}</span>
                     </button>
                   </div>
                 </div>
@@ -229,18 +234,18 @@ export default function DocsPage({ user, onLogout }) {
                     fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
                     textTransform: 'uppercase', color: 'var(--fg-muted)',
                   }}>
-                    <span>Nom</span>
-                    <span>Statut</span>
+                    <span>{t('docs.col_name')}</span>
+                    <span>{t('docs.col_status')}</span>
                     <span />
                     <span />
                   </div>
                   {loading ? (
                     <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                      Chargement…
+                      {t('docs.loading')}
                     </div>
                   ) : filtered.length === 0 ? (
                     <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>
-                      {search ? 'Aucun résultat' : 'Aucun document indexé'}
+                      {search ? t('docs.no_results') : t('docs.no_documents')}
                     </div>
                   ) : filtered.map((f, i) => (
                     <div key={i} style={{
@@ -256,13 +261,13 @@ export default function DocsPage({ user, onLogout }) {
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                       </div>
                       <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-                        <span className="rb-dot" />indexé
+                        <span className="rb-dot" />{t('docs.status_indexed')}
                       </span>
                       <button
                         className="rb-btn rb-btn--ghost"
                         style={{ width: 28, height: 28, padding: 0, color: viewerFile === f.name ? 'var(--accent)' : 'var(--fg-muted)' }}
                         onClick={() => setViewerFile(viewerFile === f.name ? null : f.name)}
-                        title="Aperçu"
+                        title={t('docs.preview')}
                       >
                         <Icon name="eye" size={13} />
                       </button>
@@ -270,7 +275,7 @@ export default function DocsPage({ user, onLogout }) {
                         className="rb-btn rb-btn--ghost"
                         style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
                         onClick={() => handleDelete(f.name)}
-                        title="Supprimer"
+                        title={t('docs.delete')}
                       >
                         <Icon name="trash" size={13} />
                       </button>
@@ -295,7 +300,7 @@ export default function DocsPage({ user, onLogout }) {
   );
 }
 
-function DropZone({ dragging, onDragOver, onDragLeave, onDrop, onBrowse }) {
+function DropZone({ t, dragging, onDragOver, onDragLeave, onDrop, onBrowse }) {
   return (
     <div
       onDragOver={onDragOver}
@@ -319,34 +324,34 @@ function DropZone({ dragging, onDragOver, onDragLeave, onDrop, onBrowse }) {
         <Icon name="cloud_up" size={26} />
       </div>
       <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 6px' }}>
-        Déposez vos documents ici
+        {t('docs.dropzone_heading')}
       </h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 18px' }}>
-        ou parcourez votre poste pour les sélectionner
+        {t('docs.dropzone_subtitle')}
       </p>
       <button className="rb-btn rb-btn--primary" onClick={onBrowse}>
-        Parcourir les fichiers
+        {t('docs.browse')}
       </button>
       <div style={{ marginTop: 24, fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-        PDF · DOCX · TXT · MD · CSV · JSON · XML — 50 Mo par fichier
+        {t('docs.file_formats')}
       </div>
     </div>
   );
 }
 
-const STAGES = [
-  { min: 0,  max: 20, label: 'Lecture du fichier',   icon: 'doc' },
-  { min: 20, max: 45, label: 'Découpage en chunks',  icon: 'scissors' },
-  { min: 45, max: 75, label: 'Vectorisation',         icon: 'cpu' },
-  { min: 75, max: 100, label: 'Indexation Qdrant',   icon: 'database' },
+const STAGE_KEYS = [
+  { min: 0,  max: 20, key: 'docs.stage_reading',     icon: 'doc' },
+  { min: 20, max: 45, key: 'docs.stage_chunking',    icon: 'scissors' },
+  { min: 45, max: 75, key: 'docs.stage_vectorizing', icon: 'cpu' },
+  { min: 75, max: 100, key: 'docs.stage_indexing',   icon: 'database' },
 ];
 
-function getStageLabel(pct, state) {
-  if (state === 'queued') return 'En attente';
-  if (state === 'done') return 'Indexé';
-  if (state === 'error') return 'Erreur';
-  const s = STAGES.find(s => pct >= s.min && pct < s.max);
-  return s ? s.label + '…' : 'Indexation Qdrant…';
+function getStageLabel(t, pct, state) {
+  if (state === 'queued') return t('docs.status_waiting');
+  if (state === 'done') return t('docs.status_indexed_label');
+  if (state === 'error') return t('docs.status_error_label');
+  const s = STAGE_KEYS.find(s => pct >= s.min && pct < s.max);
+  return s ? t(s.key) + '…' : t('docs.stage_indexing_default');
 }
 
 function getEta(pct, startedAt, estimatedMs) {
@@ -357,7 +362,7 @@ function getEta(pct, startedAt, estimatedMs) {
   return `~${Math.round(remaining / 60000)} min`;
 }
 
-function ProgressView({ files }) {
+function ProgressView({ files, t }) {
   const done = files.filter(f => f.state === 'done').length;
   const totalPct = files.length === 0 ? 0 : Math.round(files.reduce((acc, f) => acc + f.pct, 0) / files.length);
   const active = files.find(f => f.state === 'indexing');
@@ -365,14 +370,13 @@ function ProgressView({ files }) {
 
   return (
     <div className="rb-card" style={{ overflow: 'hidden' }}>
-      {/* Header avec barre globale */}
       <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Indexation en cours</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{t('docs.indexing_heading')}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {overallEta && (
               <span style={{ fontSize: 11.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-                {overallEta} restantes
+                {t('docs.indexing_eta_remaining', { eta: overallEta })}
               </span>
             )}
             <span style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
@@ -380,7 +384,6 @@ function ProgressView({ files }) {
             </span>
           </div>
         </div>
-        {/* Barre de progression globale */}
         <div style={{ height: 6, background: 'var(--bg-muted)', borderRadius: 3, overflow: 'hidden' }}>
           <div style={{
             width: `${totalPct}%`, height: '100%',
@@ -390,14 +393,13 @@ function ProgressView({ files }) {
           }} />
         </div>
         <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--fg-muted)' }}>
-          {done} / {files.length} fichier{files.length > 1 ? 's' : ''} · Vous pouvez fermer cette page
+          {t('docs.indexing_helper', { done, total: files.length, plural: files.length > 1 ? 's' : '' })}
         </div>
       </div>
 
-      {/* Liste des fichiers */}
       <div style={{ padding: '12px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {files.map((f, i) => {
-          const stageLabel = getStageLabel(f.pct, f.state);
+          const stageLabel = getStageLabel(t, f.pct, f.state);
           const eta = getEta(f.pct, f.startedAt, f.estimatedMs);
           const barColor = f.state === 'done' ? 'var(--ok)' : f.state === 'error' ? 'var(--danger)' : 'var(--accent)';
           return (
@@ -426,7 +428,7 @@ function ProgressView({ files }) {
               {/* Étape courante + ETA */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {STAGES.map((s, si) => {
+                  {STAGE_KEYS.map((s, si) => {
                     const active = f.state === 'indexing' && f.pct >= s.min && f.pct < s.max;
                     const past = f.state === 'done' || (f.state === 'indexing' && f.pct >= s.max);
                     return (
@@ -437,7 +439,7 @@ function ProgressView({ files }) {
                           transition: 'background 200ms ease',
                           boxShadow: active ? '0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent)' : 'none',
                         }} />
-                        {si < STAGES.length - 1 && (
+                        {si < STAGE_KEYS.length - 1 && (
                           <div style={{ width: 16, height: 1, background: past ? 'var(--ok)' : 'var(--border-subtle)' }} />
                         )}
                       </div>
@@ -457,7 +459,7 @@ function ProgressView({ files }) {
   );
 }
 
-function DoneView({ files, onNewUpload, onGoToChat }) {
+function DoneView({ files, onNewUpload, onGoToChat, t }) {
   return (
     <div className="rb-card" style={{ padding: '40px 32px', textAlign: 'center' }}>
       <div style={{
@@ -467,16 +469,16 @@ function DoneView({ files, onNewUpload, onGoToChat }) {
       }}>
         <Icon name="check" size={22} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 6px' }}>Documents prêts</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 6px' }}>{t('docs.ready_heading')}</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px' }}>
-        {files.length} document{files.length > 1 ? 's' : ''} indexé{files.length > 1 ? 's' : ''} et interrogeable{files.length > 1 ? 's' : ''} depuis l'assistant.
+        {t('docs.ready', { count: files.length })}
       </p>
       <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-        <button className="rb-btn rb-btn--primary" onClick={onGoToChat}>Ouvrir l'assistant</button>
-        <button className="rb-btn rb-btn--secondary" onClick={onNewUpload}>Importer d'autres fichiers</button>
+        <button className="rb-btn rb-btn--primary" onClick={onGoToChat}>{t('docs.open_assistant')}</button>
+        <button className="rb-btn rb-btn--secondary" onClick={onNewUpload}>{t('docs.import_more')}</button>
       </div>
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-subtle)', textAlign: 'left' }}>
-        <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Récapitulatif</div>
+        <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>{t('docs.summary')}</div>
         {files.map((f, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center', gap: 10,
@@ -484,7 +486,7 @@ function DoneView({ files, onNewUpload, onGoToChat }) {
           }}>
             <Icon name="file_check" size={16} style={{ color: 'var(--ok)' }} />
             <span style={{ flex: 1 }}>{f.name}</span>
-            <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexé</span>
+            <span className="rb-pill rb-pill--ok"><span className="rb-dot" />{t('docs.status_indexed')}</span>
           </div>
         ))}
       </div>
@@ -498,7 +500,7 @@ function FileIcon({ name }) {
   return <Icon name="doc" size={15} style={{ color, flex: 'none' }} />;
 }
 
-function ErrorView({ files, onRetry, onContinue }) {
+function ErrorView({ files, onRetry, onContinue, t }) {
   const errors = files.filter(f => f.state === 'error');
   const ok = files.filter(f => f.state === 'done');
   return (
@@ -517,11 +519,11 @@ function ErrorView({ files, onRetry, onContinue }) {
         </div>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 4px', color: 'var(--danger)' }}>
-            {errors.length} fichier{errors.length > 1 ? 's' : ''} n'a pas pu être importé
+            {t('docs.error_heading', { count: errors.length })}
           </h2>
           <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.5 }}>
-            {ok.length > 0 ? `${ok.length} autre${ok.length > 1 ? 's' : ''} fichier${ok.length > 1 ? 's ont' : ' a'} été indexé normalement.` : ''}
-            {' '}Vérifiez le format ou la taille du fichier rejeté.
+            {ok.length > 0 ? t('docs.error_others', { count: ok.length }) : ''}
+            {' '}{t('docs.error_helper')}
           </p>
         </div>
       </div>
@@ -535,8 +537,8 @@ function ErrorView({ files, onRetry, onContinue }) {
               style={{ color: f.state === 'error' ? 'var(--danger)' : 'var(--ok)' }} />
             <div style={{ flex: 1, fontSize: 13 }}>{f.name}</div>
             {f.state === 'done'
-              ? <span className="rb-pill rb-pill--ok"><span className="rb-dot" />indexé</span>
-              : <span className="rb-pill rb-pill--danger">erreur</span>
+              ? <span className="rb-pill rb-pill--ok"><span className="rb-dot" />{t('docs.status_indexed')}</span>
+              : <span className="rb-pill rb-pill--danger">{t('docs.error_pill')}</span>
             }
           </div>
         ))}
@@ -545,8 +547,8 @@ function ErrorView({ files, onRetry, onContinue }) {
         padding: '14px 24px', borderTop: '1px solid var(--border-subtle)',
         background: 'var(--bg-sunken)', display: 'flex', justifyContent: 'flex-end', gap: 8,
       }}>
-        <button className="rb-btn rb-btn--secondary" onClick={onRetry}>Réessayer</button>
-        {ok.length > 0 && <button className="rb-btn rb-btn--primary" onClick={onContinue}>Continuer</button>}
+        <button className="rb-btn rb-btn--secondary" onClick={onRetry}>{t('docs.retry')}</button>
+        {ok.length > 0 && <button className="rb-btn rb-btn--primary" onClick={onContinue}>{t('docs.continue')}</button>}
       </div>
     </div>
   );

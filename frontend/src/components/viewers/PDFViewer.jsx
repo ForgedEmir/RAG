@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { getAuthHeader } from '../../auth.js';
@@ -14,6 +15,7 @@ function encodeFilePath(filename) {
 }
 
 export default function PDFViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [blobUrl, setBlobUrl]       = useState(null);
   const [error, setError]           = useState(false);
   const [numPages, setNumPages]     = useState(null);
@@ -140,12 +142,12 @@ export default function PDFViewer({ filename, passage }) {
   // ── UI ──────────────────────────────────────────────────────────────────────
   if (error) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Impossible de charger le PDF.
+      {t('viewer.error_load')}
     </div>
   );
   if (!blobUrl) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Chargement…
+      {t('viewer.loading')}
     </div>
   );
 
@@ -161,7 +163,7 @@ export default function PDFViewer({ filename, passage }) {
         loading={null}
         error={
           <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: '#f87171' }}>
-            Erreur de lecture PDF.
+            {t('viewer.error_load')}
           </div>
         }
       >

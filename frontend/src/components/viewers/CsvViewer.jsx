@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAuthHeader } from '../../auth.js';
 import { injectPassageMark } from '../../utils/highlight.js';
 
@@ -36,6 +37,7 @@ const TH = { padding: '6px 12px', textAlign: 'left', fontWeight: 600, borderBott
 const TD = { padding: '5px 12px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', whiteSpace: 'nowrap', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' };
 
 export default function CsvViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [rows, setRows]           = useState(null);
   const [error, setError]         = useState(false);
   const [markFound, setMarkFound] = useState(false);
@@ -66,9 +68,9 @@ export default function CsvViewer({ filename, passage }) {
     return () => clearTimeout(tid);
   }, [rows, passage]);
 
-  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de charger le fichier.</div>;
-  if (!rows)  return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-  if (!rows.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Fichier CSV vide.</div>;
+  if (error) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>{t('viewer.error_load')}</div>;
+  if (!rows)  return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>{t('viewer.loading')}</div>;
+  if (!rows.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>{t('viewer.csv_empty')}</div>;
 
   const [headers, ...dataRows] = rows;
 
@@ -92,7 +94,7 @@ export default function CsvViewer({ filename, passage }) {
           </tbody>
         </table>
         <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--fg-muted)', borderTop: '1px solid var(--border-subtle)' }}>
-          {dataRows.length} ligne{dataRows.length !== 1 ? 's' : ''} · {headers.length} colonne{headers.length !== 1 ? 's' : ''}
+          {t('viewer.rows', { count: dataRows.length })} · {t('viewer.cols', { count: headers.length })}
         </div>
       </div>
     </div>

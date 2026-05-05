@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -33,6 +34,7 @@ function stripMarkdown(s) {
 }
 
 export default function MarkdownViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [content, setContent] = useState(null);
   const [error, setError]     = useState(false);
   const containerRef = useRef(null);
@@ -73,12 +75,12 @@ export default function MarkdownViewer({ filename, passage }) {
 
   if (error) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Impossible de charger le fichier.
+      {t('viewer.error_load')}
     </div>
   );
   if (content === null) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      Chargement…
+      {t('viewer.loading')}
     </div>
   );
 

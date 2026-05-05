@@ -1,33 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useScopedLenis } from '../useLenis.js';
+import { useTranslation } from 'react-i18next';
 import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 
-const TABS = [
-  { id: 'overview', label: 'Vue d\'ensemble', icon: 'activity' },
-  { id: 'features', label: 'Fonctionnalités', icon: 'cpu' },
-  { id: 'logs', label: 'Journaux', icon: 'terminal' },
-  { id: 'sources', label: 'Sources', icon: 'database' },
-  { id: 'clients', label: 'Clients', icon: 'users' },
-];
-
-async function apiFetch(path, monitoringKey, options = {}) {
+async function apiFetch(path, monitoringKey, options = {}, t) {
   const res = await fetch(path, {
     ...options,
     headers: { 'X-Monitoring-Key': monitoringKey, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  if (res.status === 403) throw new Error('Clé invalide');
-  if (!res.ok) throw new Error(`Erreur HTTP: ${res.status}`);
+  if (res.status === 403) throw new Error(t ? t('monitoring.invalid_key') : 'Invalid key');
+  if (!res.ok) throw new Error(t ? t('monitoring.http_error', { status: res.status }) : `HTTP Error: ${res.status}`);
   return res.json();
 }
 
-// Fetch qui ne throw pas — retourne null en cas d'erreur non-403
-async function apiFetchSafe(path, monitoringKey, options = {}) {
+// Fetch that does not throw — returns null on non-403 errors
+async function apiFetchSafe(path, monitoringKey, options = {}, t) {
   try {
-    return await apiFetch(path, monitoringKey, options);
+    return await apiFetch(path, monitoringKey, options, t);
   } catch (e) {
-    if (e.message === 'Clé invalide') throw e; // propagate auth errors
+    const invalidMsg = t ? t('monitoring.invalid_key') : 'Invalid key';
+    if (e.message === invalidMsg) throw e;
     return null;
   }
 }
@@ -47,17 +40,18 @@ function fmtMs(ms) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-function timeAgo(iso) {
+function timeAgo(t, iso) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return 'À l\'instant';
-  if (m < 60) return `Il y a ${m} min`;
+  if (m < 1) return t('monitoring.just_now');
+  if (m < 60) return t('monitoring.min_ago', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `Il y a ${h}h`;
-  return `Il y a ${Math.floor(h / 24)}j`;
+  if (h < 24) return t('monitoring.h_ago', { n: h });
+  return t('monitoring.d_ago', { n: Math.floor(h / 24) });
 }
 
 export default function MonitoringPage({ user, onLogout }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('overview');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('monitoringKey') || '');
   const [keyInput, setKeyInput] = useState('');
@@ -65,15 +59,23 @@ export default function MonitoringPage({ user, onLogout }) {
   const navigate = useNavigate();
   const userInitials = user?.email ? user.email.slice(0, 2).toUpperCase() : 'G';
 
+  const TABS = [
+    { id: 'overview', label: t('monitoring.tab_overview'), icon: 'activity' },
+    { id: 'features', label: t('monitoring.tab_features'), icon: 'cpu' },
+    { id: 'logs', label: t('monitoring.tab_logs'), icon: 'terminal' },
+    { id: 'sources', label: t('monitoring.tab_sources'), icon: 'database' },
+    { id: 'clients', label: t('monitoring.tab_clients'), icon: 'users' },
+  ];
+
   const handleKeySubmit = async (e) => {
     e.preventDefault();
     setKeyError('');
     try {
-      await apiFetch('/api/monitoring/stats', keyInput.trim());
+      await apiFetch('/api/monitoring/stats', keyInput.trim(), {}, t);
       sessionStorage.setItem('monitoringKey', keyInput.trim());
       setApiKey(keyInput.trim());
     } catch (err) {
-      setKeyError(err.message || 'Clé invalide');
+      setKeyError(err.message || t('monitoring.invalid_key'));
     }
   };
 
@@ -86,10 +88,10 @@ export default function MonitoringPage({ user, onLogout }) {
         </div>
         <nav style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {[
-            { label: 'Conversations', icon: 'chat', path: '/chat' },
-            { label: 'Documents', icon: 'folder', path: '/docs' },
-            { label: 'Paramètres', icon: 'settings', path: '/settings' },
-            { label: 'Monitoring', icon: 'activity', path: '/monitoring', active: true },
+            { label: t('monitoring.nav_conversations'), icon: 'chat', path: '/chat' },
+            { label: t('monitoring.nav_documents'), icon: 'folder', path: '/docs' },
+            { label: t('monitoring.nav_settings'), icon: 'settings', path: '/settings' },
+            { label: t('monitoring.nav_monitoring'), icon: 'activity', path: '/monitoring', active: true },
           ].map(item => (
             <div
               key={item.path}
@@ -105,16 +107,16 @@ export default function MonitoringPage({ user, onLogout }) {
         {apiKey && (
           <div style={{ padding: '8px 12px' }}>
             <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 8 }} />
-            <div className="rb-section-label" style={{ padding: 0, marginBottom: 6 }}>Sections</div>
-            {TABS.map(t => (
+            <div className="rb-section-label" style={{ padding: 0, marginBottom: 6 }}>{t('monitoring.sections_label')}</div>
+            {TABS.map(tt => (
               <div
-                key={t.id}
-                className={'rb-listitem' + (tab === t.id ? ' rb-listitem--active' : '')}
-                onClick={() => setTab(t.id)}
+                key={tt.id}
+                className={'rb-listitem' + (tab === tt.id ? ' rb-listitem--active' : '')}
+                onClick={() => setTab(tt.id)}
                 style={{ height: 30, padding: '0 8px', gap: 8 }}
               >
-                <Icon name={t.icon} size={14} style={{ color: tab === t.id ? 'var(--accent)' : 'var(--fg-secondary)' }} />
-                <span className="rb-listitem__name" style={{ fontSize: 12.5 }}>{t.label}</span>
+                <Icon name={tt.icon} size={14} style={{ color: tab === tt.id ? 'var(--accent)' : 'var(--fg-secondary)' }} />
+                <span className="rb-listitem__name" style={{ fontSize: 12.5 }}>{tt.label}</span>
               </div>
             ))}
           </div>
@@ -124,10 +126,10 @@ export default function MonitoringPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || t('docs.user_guest')}
             </div>
           </div>
-          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title="Déconnexion">
+          <button className="rb-btn rb-btn--ghost" style={{ width: 28, height: 28, padding: 0 }} onClick={onLogout} title={t('docs.logout')}>
             <Icon name="logout" size={14} />
           </button>
         </div>
@@ -141,16 +143,16 @@ export default function MonitoringPage({ user, onLogout }) {
           borderBottom: '1px solid var(--border-default)',
           background: 'var(--bg-surface)',
         }}>
-          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Monitoring système</h1>
+          <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{t('monitoring.page_heading')}</h1>
           {apiKey && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />Connecté</span>
+              <span className="rb-pill rb-pill--ok"><span className="rb-dot" />{t('monitoring.status_connected')}</span>
               <button
                 className="rb-btn rb-btn--ghost"
                 style={{ fontSize: 12 }}
                 onClick={() => { sessionStorage.removeItem('monitoringKey'); setApiKey(''); setKeyInput(''); }}
               >
-                Changer la clé
+                {t('monitoring.change_key')}
               </button>
             </div>
           )}
@@ -159,6 +161,7 @@ export default function MonitoringPage({ user, onLogout }) {
         <div className="rb-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
           {!apiKey ? (
             <KeyGate
+              t={t}
               keyInput={keyInput}
               setKeyInput={setKeyInput}
               keyError={keyError}
@@ -166,11 +169,11 @@ export default function MonitoringPage({ user, onLogout }) {
             />
           ) : (
             <>
-              {tab === 'overview' && <OverviewTab apiKey={apiKey} />}
-              {tab === 'features' && <FeaturesTab apiKey={apiKey} />}
-              {tab === 'logs' && <LogsTab apiKey={apiKey} />}
-              {tab === 'sources' && <SourcesTab apiKey={apiKey} />}
-              {tab === 'clients' && <ClientsTab apiKey={apiKey} />}
+              {tab === 'overview' && <OverviewTab apiKey={apiKey} t={t} />}
+              {tab === 'features' && <FeaturesTab apiKey={apiKey} t={t} />}
+              {tab === 'logs' && <LogsTab apiKey={apiKey} t={t} />}
+              {tab === 'sources' && <SourcesTab apiKey={apiKey} t={t} />}
+              {tab === 'clients' && <ClientsTab apiKey={apiKey} t={t} />}
             </>
           )}
         </div>
@@ -179,7 +182,7 @@ export default function MonitoringPage({ user, onLogout }) {
   );
 }
 
-function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
+function KeyGate({ keyInput, setKeyInput, keyError, onSubmit, t }) {
   return (
     <div style={{ maxWidth: 420, margin: '60px auto', textAlign: 'center' }}>
       <div style={{
@@ -189,9 +192,9 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
       }}>
         <Icon name="lock" size={22} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Accès monitoring</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{t('monitoring.keygate_heading')}</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: '0 0 24px', lineHeight: 1.55 }}>
-        Saisissez votre clé de monitoring pour accéder aux métriques système.
+        {t('monitoring.keygate_desc')}
       </p>
       {keyError && (
         <div style={{ marginBottom: 12, padding: '8px 12px', background: 'var(--danger-soft)', border: '1px solid var(--danger)', borderRadius: 6, fontSize: 12, color: 'var(--danger)', textAlign: 'left' }}>
@@ -199,18 +202,18 @@ function KeyGate({ keyInput, setKeyInput, keyError, onSubmit }) {
         </div>
       )}
       <form onSubmit={onSubmit} style={{ textAlign: 'left' }}>
-        <label className="rb-label">Clé de monitoring</label>
+        <label className="rb-label">{t('monitoring.keygate_label')}</label>
         <input
           className="rb-input rb-input--lg"
           type="password"
           value={keyInput}
           onChange={e => setKeyInput(e.target.value)}
-          placeholder="mk_••••••••"
+          placeholder={t('monitoring.keygate_placeholder')}
           autoComplete="off"
           style={{ marginBottom: 12 }}
         />
         <button className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block" type="submit">
-          Accéder au tableau de bord
+          {t('monitoring.keygate_btn')}
         </button>
       </form>
     </div>
@@ -232,17 +235,17 @@ function StatCard({ title, value, icon, sub }) {
   );
 }
 
-function OverviewTab({ apiKey }) {
+function OverviewTab({ apiKey, t }) {
   const [data, setData] = useState({ health: null, stats: null, cache: null, feedbacks: [] });
   const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       const [health, stats, cache, fbResp] = await Promise.all([
-        apiFetchSafe('/health', apiKey),
-        apiFetchSafe('/api/monitoring/stats', apiKey),
-        apiFetchSafe('/api/cache/stats', apiKey),
-        apiFetchSafe('/api/monitoring/feedbacks?limit=20', apiKey),
+        apiFetchSafe('/health', apiKey, {}, t),
+        apiFetchSafe('/api/monitoring/stats', apiKey, {}, t),
+        apiFetchSafe('/api/cache/stats', apiKey, {}, t),
+        apiFetchSafe('/api/monitoring/feedbacks?limit=20', apiKey, {}, t),
       ]);
       setData({
         health: health || null,
@@ -252,7 +255,7 @@ function OverviewTab({ apiKey }) {
       });
       setError(null);
     } catch (e) { setError(e.message); }
-  }, [apiKey]);
+  }, [apiKey, t]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useInterval(fetchData, 30000);
@@ -277,16 +280,16 @@ function OverviewTab({ apiKey }) {
             background: data.health?.status === 'ok' ? 'var(--ok)' : 'var(--warn)',
           }} />
           <span style={{ fontSize: 15, fontWeight: 600 }}>
-            {data.health?.status === 'ok' ? 'Système opérationnel' : 'Performances dégradées'}
+            {data.health?.status === 'ok' ? t('monitoring.health_operational') : t('monitoring.health_degraded')}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {[
-            { label: 'LLM API', ok: h.llm_key },
-            { label: 'Corpus BM25', ok: h.bm25_corpus },
-            { label: 'Qdrant', ok: h.qdrant },
-            { label: 'Supabase', ok: h.supabase },
-            { label: 'Redis', ok: h.redis },
+            { label: t('monitoring.health_llm'), ok: h.llm_key },
+            { label: t('monitoring.health_bm25'), ok: h.bm25_corpus },
+            { label: t('monitoring.health_qdrant_short'), ok: h.qdrant },
+            { label: t('monitoring.health_supabase'), ok: h.supabase },
+            { label: t('monitoring.health_redis'), ok: h.redis },
           ].map((check, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-secondary)' }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: check.ok == null ? 'var(--fg-muted)' : check.ok ? 'var(--ok)' : 'var(--danger)' }} />
@@ -296,15 +299,15 @@ function OverviewTab({ apiKey }) {
         </div>
       </div>
 
-      {/* Services connectés */}
+      {/* Connected services */}
       <div className="rb-card" style={{ padding: '16px 20px' }}>
-        <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 14px' }}>Services connectés</h3>
+        <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 14px' }}>{t('monitoring.services_heading')}</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {[
-            { label: 'Qdrant Vector DB', icon: 'database', key: 'qdrant', desc: 'Moteur de recherche vectorielle' },
-            { label: 'Supabase', icon: 'server', key: 'supabase', desc: 'Auth & stockage' },
-            { label: 'Redis Cache', icon: 'zap', key: 'redis', desc: 'Cache sémantique' },
-            { label: 'LLM API', icon: 'cpu', key: 'llm_key', desc: 'Génération de réponses' },
+            { label: t('monitoring.service_qdrant'), icon: 'database', key: 'qdrant', desc: t('monitoring.service_qdrant_desc') },
+            { label: t('monitoring.service_supabase'), icon: 'server', key: 'supabase', desc: t('monitoring.service_supabase_desc') },
+            { label: t('monitoring.service_redis'), icon: 'zap', key: 'redis', desc: t('monitoring.service_redis_desc') },
+            { label: t('monitoring.service_llm'), icon: 'cpu', key: 'llm_key', desc: t('monitoring.service_llm_desc') },
           ].map(svc => {
             const ok = h[svc.key];
             return (
@@ -327,27 +330,27 @@ function OverviewTab({ apiKey }) {
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <StatCard title="Total requêtes" value={s?.total_questions?.toLocaleString()} icon="message" />
-        <StatCard title="Latence médiane" value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? `P95: ${s.latency_p95}ms` : null} />
-        <StatCard title="Injections bloquées" value={s?.injections_blocked} icon="shield" />
-        <StatCard title="Taux d'erreur" value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? `${s.questions_last_24h} req. / 24h` : null} />
+        <StatCard title={t('monitoring.stat_requests')} value={s?.total_questions?.toLocaleString()} icon="message" />
+        <StatCard title={t('monitoring.stat_latency')} value={s ? `${s.latency_p50}ms` : null} icon="zap" sub={s ? t('monitoring.stat_p95', { ms: s.latency_p95 }) : null} />
+        <StatCard title={t('monitoring.stat_blocked')} value={s?.injections_blocked} icon="shield" />
+        <StatCard title={t('monitoring.stat_errors')} value={s ? `${s.error_rate_pct}%` : null} icon="alert" sub={s ? t('monitoring.stat_req_24h', { count: s.questions_last_24h }) : null} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
         {/* Events */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>
-            Derniers événements
+            {t('monitoring.recent_events')}
           </h3>
           <div className="rb-scroll" style={{ maxHeight: 320, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ color: 'var(--fg-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Heure</th>
-                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>Type</th>
-                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>Détail</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>Latence</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_date')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_time')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 8px 8px 0', fontWeight: 600 }}>{t('monitoring.col_type')}</th>
+                  <th style={{ textAlign: 'left', padding: '0 0 8px', fontWeight: 600 }}>{t('monitoring.col_detail')}</th>
+                  <th style={{ textAlign: 'right', padding: '0 0 8px', fontWeight: 600 }}>{t('monitoring.col_latency')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -378,7 +381,7 @@ function OverviewTab({ apiKey }) {
                     </tr>
                   );
                 })}
-                {!s && <tr><td colSpan={4} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>Chargement…</td></tr>}
+                {!s && <tr><td colSpan={5} style={{ padding: '20px 0', textAlign: 'center', color: 'var(--fg-muted)' }}>{t('monitoring.loading')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -387,13 +390,13 @@ function OverviewTab({ apiKey }) {
         {/* Cache */}
         <div className="rb-card" style={{ padding: '18px 20px' }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 16px' }}>
-            Cache sémantique
+            {t('monitoring.cache_section')}
           </h3>
           {c ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--fg-secondary)' }}>Occupation</span>
+                  <span style={{ color: 'var(--fg-secondary)' }}>{t('monitoring.cache_usage')}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ok)', fontSize: 11 }}>{c.entries} / {c.max}</span>
                 </div>
                 <div style={{ height: 6, background: 'var(--bg-muted)', borderRadius: 3, overflow: 'hidden' }}>
@@ -402,16 +405,16 @@ function OverviewTab({ apiKey }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Seuil</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{t('monitoring.cache_threshold')}</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{c.threshold * 100}%</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>TTL</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{t('monitoring.cache_ttl')}</div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{c.ttl / 3600}h</div>
                 </div>
               </div>
             </div>
-          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>}
+          ) : <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.loading')}</div>}
         </div>
       </div>
 
@@ -419,15 +422,15 @@ function OverviewTab({ apiKey }) {
       <div className="rb-card" style={{ padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-            Derniers feedbacks
+            {t('monitoring.feedbacks_section')}
           </h3>
           <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>
-            {data.feedbacks.length} évènement(s)
+            {t('monitoring.events', { count: data.feedbacks.length })}
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {data.feedbacks.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>Aucun feedback récent.</div>
+            <div style={{ fontSize: 13, color: 'var(--fg-muted)', padding: '12px 0' }}>{t('monitoring.no_feedback')}</div>
           )}
           {data.feedbacks.slice(0, 8).map((fb, i) => {
             const good = Number(fb.value) > 0;
@@ -439,14 +442,14 @@ function OverviewTab({ apiKey }) {
               }}>
                 <div style={{ minWidth: 0, paddingRight: 12 }}>
                   <div style={{ fontSize: 12, color: 'var(--fg-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {fb.question || 'Sans contexte question'}
+                    {fb.question || t('monitoring.no_question_ctx')}
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--fg-muted)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
-                    {timeAgo(fb.created_at)} · {fb.trace_id || '—'}
+                    {timeAgo(t, fb.created_at)} · {fb.trace_id || '—'}
                   </div>
                 </div>
                 <span className={'rb-pill ' + (good ? 'rb-pill--ok' : 'rb-pill--danger')}>
-                  {good ? '👍 Utile' : '👎 Pas utile'}
+                  {good ? t('monitoring.feedback_positive') : t('monitoring.feedback_negative')}
                 </span>
               </div>
             );
@@ -457,11 +460,11 @@ function OverviewTab({ apiKey }) {
   );
 }
 
-const FEATURE_TITLES = {
-  vector: 'Recherche vectorielle', bm25: 'BM25 Lexical', reranker: 'Reranker ONNX',
-  contextual: 'Contextual Retrieval', reformulation: 'Reformulation LLM', pii: 'Masquage PII',
-  judge: 'LLM-as-Judge', feedback: 'Feedback', confidence: 'Scores confiance',
-  watchdog: 'Watchdog fichiers', tts: 'Text-to-Speech', fallback: 'Fallback LLM',
+const FEATURE_KEYS = {
+  vector: 'feature_vector', bm25: 'feature_bm25', reranker: 'feature_reranker',
+  contextual: 'feature_contextual', reformulation: 'feature_reformulation', pii: 'feature_pii',
+  judge: 'feature_judge', feedback: 'feature_feedback', confidence: 'feature_confidence',
+  watchdog: 'feature_watchdog', tts: 'feature_tts', fallback: 'feature_fallback',
 };
 const FEATURE_ICONS = {
   vector: 'database', bm25: 'doc', reranker: 'bar_chart', contextual: 'brain',
@@ -469,36 +472,35 @@ const FEATURE_ICONS = {
   confidence: 'bar_chart', watchdog: 'eye', tts: 'volume', fallback: 'git_branch',
 };
 
-function FeaturesTab({ apiKey }) {
+function FeaturesTab({ apiKey, t }) {
   const [data, setData] = useState(null);
   const [ctx, setCtx] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       const [feat, ctxData] = await Promise.all([
-        apiFetchSafe('/api/monitoring/features', apiKey),
-        apiFetchSafe('/api/monitoring/contextual-retrieval', apiKey),
+        apiFetchSafe('/api/monitoring/features', apiKey, {}, t),
+        apiFetchSafe('/api/monitoring/contextual-retrieval', apiKey, {}, t),
       ]);
       setData(feat);
       setCtx(ctxData);
     } catch (_) {}
-  }, [apiKey]);
+  }, [apiKey, t]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useInterval(fetchData, 30000);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Contextual retrieval focus */}
       {ctx && (
         <div className="rb-card" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 32 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              Contextual Retrieval
+              {t('monitoring.contextual_heading')}
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>Amélioration du contexte</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>{t('monitoring.context_improvement')}</h2>
             <p style={{ fontSize: 13, color: 'var(--fg-secondary)', margin: 0, lineHeight: 1.55 }}>
-              Technique ajoutant un résumé global à chaque chunk pour préserver le sens lors de la recherche vectorielle.
+              {t('monitoring.contextual_desc')}
             </p>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
@@ -515,7 +517,7 @@ function FeaturesTab({ apiKey }) {
                 {ctx.coverage_pct}%
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Couverture</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{t('monitoring.coverage')}</div>
             <div style={{ fontSize: 11, color: 'var(--fg-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
               {ctx.with_contextual_summary} / {ctx.sample_size}
             </div>
@@ -523,7 +525,6 @@ function FeaturesTab({ apiKey }) {
         </div>
       )}
 
-      {/* Feature grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {data ? Object.entries(data).filter(([k]) => k !== 'memory').map(([key, val]) => (
           <div key={key} className="rb-card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -537,7 +538,7 @@ function FeaturesTab({ apiKey }) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{FEATURE_TITLES[key] || key}</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{FEATURE_KEYS[key] ? t('monitoring.' + FEATURE_KEYS[key]) : key}</span>
                 <span className={'rb-dot'} style={{ background: val.ok ? 'var(--ok)' : 'var(--danger)' }} />
               </div>
               <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{val.detail}</div>
@@ -555,17 +556,17 @@ function FeaturesTab({ apiKey }) {
 
 const LOG_COLORS = { INFO: 'var(--fg-secondary)', WARNING: 'var(--warn)', ERROR: 'var(--danger)', DEBUG: 'var(--fg-muted)' };
 
-function LogsTab({ apiKey }) {
+function LogsTab({ apiKey, t }) {
   const [logs, setLogs] = useState([]);
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
 
   const fetchLogs = useCallback(async () => {
     try {
-      const { logs: l } = await apiFetch('/api/monitoring/logs', apiKey);
+      const { logs: l } = await apiFetch('/api/monitoring/logs', apiKey, {}, t);
       setLogs(l || []);
     } catch (_) {}
-  }, [apiKey]);
+  }, [apiKey, t]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
   useInterval(fetchLogs, 15000);
@@ -582,7 +583,7 @@ function LogsTab({ apiKey }) {
           <Icon name="search" size={13} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--fg-muted)' }} />
           <input
             className="rb-input"
-            placeholder="Filtrer les logs…"
+            placeholder={t('monitoring.filter_logs')}
             value={filter}
             onChange={e => setFilter(e.target.value)}
             style={{ paddingLeft: 30 }}
@@ -598,7 +599,7 @@ function LogsTab({ apiKey }) {
             {l}
           </button>
         ))}
-        <button className="rb-btn rb-btn--ghost" style={{ padding: '0 10px' }} onClick={fetchLogs} title="Rafraîchir">
+        <button className="rb-btn rb-btn--ghost" style={{ padding: '0 10px' }} onClick={fetchLogs} title={t('monitoring.refresh')}>
           <Icon name="refresh" size={14} />
         </button>
       </div>
@@ -611,7 +612,7 @@ function LogsTab({ apiKey }) {
         }} className="rb-scroll">
           {filtered.length === 0 && (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>
-              Aucun log correspondant
+              {t('monitoring.no_log')}
             </div>
           )}
           {filtered.map((log, i) => (
@@ -638,7 +639,7 @@ function LogsTab({ apiKey }) {
   );
 }
 
-function ClientsTab({ apiKey }) {
+function ClientsTab({ apiKey, t }) {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -648,22 +649,22 @@ function ClientsTab({ apiKey }) {
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/admin/clients', apiKey);
+      const res = await apiFetch('/api/admin/clients', apiKey, {}, t);
       setClients(res.clients || []);
     } catch (_) {}
     finally { setLoading(false); }
-  }, [apiKey]);
+  }, [apiKey, t]);
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
   const handleDelete = async (client) => {
-    if (!confirm(`Supprimer le compte de ${client.email} ? Cette action est irréversible.`)) return;
+    if (!confirm(t('monitoring.client_delete_confirm', { email: client.email }))) return;
     try {
-      await apiFetch(`/api/admin/clients/${client.id}`, apiKey, { method: 'DELETE' });
-      setMsg({ ok: true, text: `${client.email} supprimé.` });
+      await apiFetch(`/api/admin/clients/${client.id}`, apiKey, { method: 'DELETE' }, t);
+      setMsg({ ok: true, text: t('monitoring.client_deleted', { email: client.email }) });
       fetchClients();
     } catch (err) {
-      setMsg({ ok: false, text: err.message || 'Échec de la suppression.' });
+      setMsg({ ok: false, text: err.message || t('monitoring.client_delete_failed') });
     } finally {
       setTimeout(() => setMsg(null), 4000);
     }
@@ -678,12 +679,12 @@ function ClientsTab({ apiKey }) {
       await apiFetch('/api/admin/invite', apiKey, {
         method: 'POST',
         body: JSON.stringify({ email: email.trim() }),
-      });
-      setMsg({ ok: true, text: `Invitation envoyée à ${email.trim()}.` });
+      }, t);
+      setMsg({ ok: true, text: t('monitoring.client_invite_sent', { email: email.trim() }) });
       setEmail('');
       fetchClients();
     } catch (err) {
-      setMsg({ ok: false, text: err.message || 'Échec de l\'invitation.' });
+      setMsg({ ok: false, text: err.message || t('monitoring.client_invite_failed') });
     } finally {
       setInviting(false);
       setTimeout(() => setMsg(null), 5000);
@@ -693,21 +694,21 @@ function ClientsTab({ apiKey }) {
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Clients</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{t('monitoring.clients_heading')}</h2>
         <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-          {clients.length} compte{clients.length !== 1 ? 's' : ''} enregistré{clients.length !== 1 ? 's' : ''}
+          {t('monitoring.clients_count', { count: clients.length })}
         </p>
       </div>
 
       <div className="rb-card" style={{ padding: '16px', marginBottom: 20 }}>
         <h3 style={{ fontSize: 12, fontWeight: 600, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)' }}>
-          Inviter un client
+          {t('monitoring.client_invite_heading')}
         </h3>
         <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
           <input
             className="rb-input"
             type="email"
-            placeholder="client@entreprise.com"
+            placeholder={t('monitoring.client_invite_placeholder')}
             value={email}
             onChange={e => setEmail(e.target.value)}
             required
@@ -720,7 +721,7 @@ function ClientsTab({ apiKey }) {
             style={{ gap: 6, whiteSpace: 'nowrap' }}
           >
             <Icon name="mail" size={13} />
-            {inviting ? 'Envoi…' : 'Envoyer l\'invitation'}
+            {inviting ? t('monitoring.client_invite_sending') : t('monitoring.client_invite_btn')}
           </button>
         </form>
         {msg && (
@@ -744,15 +745,15 @@ function ClientsTab({ apiKey }) {
           fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
           textTransform: 'uppercase', color: 'var(--fg-muted)',
         }}>
-          <span>Email</span>
-          <span>Statut</span>
-          <span>Dernière connexion</span>
+          <span>{t('monitoring.col_email')}</span>
+          <span>{t('docs.col_status')}</span>
+          <span>{t('monitoring.col_last_login')}</span>
           <span />
         </div>
         {loading ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.loading')}</div>
         ) : clients.length === 0 ? (
-          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Aucun client</div>
+          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.no_clients')}</div>
         ) : clients.map((c, i) => (
           <div key={c.id} style={{
             display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 140px 36px',
@@ -772,16 +773,16 @@ function ClientsTab({ apiKey }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</span>
             </div>
             <span className={`rb-pill ${c.confirmed ? 'rb-pill--ok' : 'rb-pill--warn'}`} style={{ width: 'fit-content' }}>
-              <span className="rb-dot" />{c.confirmed ? 'actif' : 'en attente'}
+              <span className="rb-dot" />{c.confirmed ? t('monitoring.client_active') : t('monitoring.client_pending')}
             </span>
             <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-              {c.last_sign_in_at ? timeAgo(c.last_sign_in_at) : '—'}
+              {c.last_sign_in_at ? timeAgo(t, c.last_sign_in_at) : '—'}
             </span>
             <button
               className="rb-btn rb-btn--ghost"
               style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
               onClick={() => handleDelete(c)}
-              title="Supprimer ce client"
+              title={t('monitoring.delete_client')}
             >
               <Icon name="trash" size={13} />
             </button>
@@ -792,7 +793,7 @@ function ClientsTab({ apiKey }) {
   );
 }
 
-function SourcesTab({ apiKey }) {
+function SourcesTab({ apiKey, t }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
@@ -801,21 +802,21 @@ function SourcesTab({ apiKey }) {
 
   const fetchFiles = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/admin/sources', apiKey);
+      const res = await apiFetch('/api/admin/sources', apiKey, {}, t);
       setFiles(res.files || []);
     } catch (_) {}
     finally { setLoading(false); }
-  }, [apiKey]);
+  }, [apiKey, t]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   const handleDelete = async (filename) => {
-    if (!confirm(`Supprimer "${filename}" ?`)) return;
+    if (!confirm(t('monitoring.delete_confirm', { filename }))) return;
     try {
       await apiFetch('/api/admin/delete', apiKey, {
         method: 'DELETE',
         body: JSON.stringify({ filename }),
-      });
+      }, t);
       fetchFiles();
     } catch (_) {}
   };
@@ -831,20 +832,20 @@ function SourcesTab({ apiKey }) {
         headers: { 'X-Monitoring-Key': apiKey },
         body: formData,
       });
-      if (res.ok) { fetchFiles(); setReindexMsg({ ok: true, text: `${file.name} importé et indexé.` }); }
-      else { setReindexMsg({ ok: false, text: 'Échec de l\'import.' }); }
+      if (res.ok) { fetchFiles(); setReindexMsg({ ok: true, text: t('monitoring.import_success', { name: file.name }) }); }
+      else { setReindexMsg({ ok: false, text: t('monitoring.import_failed') }); }
     } catch (_) {
-      setReindexMsg({ ok: false, text: 'Erreur réseau.' });
+      setReindexMsg({ ok: false, text: t('monitoring.network_error') });
     }
     setTimeout(() => setReindexMsg(null), 4000);
   };
 
   const handleReindex = async () => {
-    if (!confirm('Lancer une réindexation complète ?')) return;
+    if (!confirm(t('monitoring.reindex_confirm'))) return;
     setReindexing(true);
     try {
-      await apiFetch('/api/reindex', apiKey, { method: 'POST' });
-      setReindexMsg({ ok: true, text: 'Réindexation lancée en arrière-plan.' });
+      await apiFetch('/api/reindex', apiKey, { method: 'POST' }, t);
+      setReindexMsg({ ok: true, text: t('monitoring.reindex_started') });
       setTimeout(() => fetchFiles(), 5000);
     } catch (e) {
       setReindexMsg({ ok: false, text: e.message });
@@ -858,9 +859,9 @@ function SourcesTab({ apiKey }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Sources indexées</h2>
+          <h2 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{t('monitoring.sources_heading')}</h2>
           <p style={{ fontSize: 12.5, color: 'var(--fg-secondary)', margin: 0 }}>
-            {files.length} fichier{files.length !== 1 ? 's' : ''} dans la base
+            {t('monitoring.sources_count', { count: files.length })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -871,7 +872,7 @@ function SourcesTab({ apiKey }) {
             disabled={reindexing}
           >
             <Icon name="refresh" size={13} />
-            {reindexing ? 'Indexation…' : 'Réindexer tout'}
+            {reindexing ? t('monitoring.reindexing_btn') : t('monitoring.reindex_btn')}
           </button>
           <button
             className="rb-btn rb-btn--primary"
@@ -879,7 +880,7 @@ function SourcesTab({ apiKey }) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Icon name="upload" size={13} />
-            Importer
+            {t('monitoring.import')}
           </button>
           <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
         </div>
@@ -905,14 +906,14 @@ function SourcesTab({ apiKey }) {
           fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
           textTransform: 'uppercase', color: 'var(--fg-muted)',
         }}>
-          <span>Fichier</span>
-          <span>Statut</span>
+          <span>{t('monitoring.col_file')}</span>
+          <span>{t('docs.col_status')}</span>
           <span />
         </div>
         {loading ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Chargement…</div>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.loading')}</div>
         ) : files.length === 0 ? (
-          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>Aucun fichier indexé</div>
+          <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 13 }}>{t('monitoring.no_sources')}</div>
         ) : files.map((f, i) => (
           <div key={i} style={{
             display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 80px 36px',
@@ -925,13 +926,13 @@ function SourcesTab({ apiKey }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
             </div>
             <span className="rb-pill rb-pill--ok" style={{ width: 'fit-content' }}>
-              <span className="rb-dot" />indexé
+              <span className="rb-dot" />{t('monitoring.status_indexed')}
             </span>
             <button
               className="rb-btn rb-btn--ghost"
               style={{ width: 28, height: 28, padding: 0, color: 'var(--fg-muted)' }}
               onClick={() => handleDelete(f)}
-              title="Supprimer"
+              title={t('docs.delete')}
             >
               <Icon name="trash" size={13} />
             </button>

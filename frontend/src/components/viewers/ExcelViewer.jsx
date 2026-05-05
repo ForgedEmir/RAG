@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAuthHeader } from '../../auth.js';
 
 function encodeFilePath(filename) {
@@ -27,6 +28,7 @@ function cellMatchesPassage(cell, normPassage) {
 }
 
 export default function ExcelViewer({ filename, passage }) {
+  const { t } = useTranslation();
   const [sheets, setSheets] = useState(null);
   const [activeSheet, setActiveSheet] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -59,8 +61,8 @@ export default function ExcelViewer({ filename, passage }) {
     firstMatchRef.current = null;
   }, [normPassage, activeSheet]);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Chargement…</div>;
-  if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>Impossible de lire le fichier Excel.</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>{t('viewer.loading')}</div>;
+  if (!sheets?.length) return <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>{t('viewer.error_load')}</div>;
 
   const current = sheets[activeSheet];
   let firstMatchSeen = false;

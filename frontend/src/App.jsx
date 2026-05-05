@@ -1,5 +1,6 @@
 import { useState, useEffect, Component } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { withTranslation, useTranslation } from 'react-i18next';
 import { onAuthStateChange, logout, getAuthHeader } from './auth.js';
 import { useGlobalLenis } from './useLenis.js';
 import LoginPage from './pages/LoginPage.jsx';
@@ -8,41 +9,45 @@ import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 
-class ErrorBoundary extends Component {
+class ErrorBoundaryRaw extends Component {
   state = { error: null };
   static getDerivedStateFromError(error) { return { error }; }
   render() {
+    const { t } = this.props;
     if (this.state.error) return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'var(--bg-app)' }}>
-        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Une erreur inattendue s'est produite.</div>
+        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>{t('app.error_unexpected')}</div>
         <button
           onClick={() => window.location.reload()}
           style={{ padding: '8px 18px', borderRadius: 6, background: 'var(--accent)', color: '#000', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
         >
-          Recharger
+          {t('app.reload')}
         </button>
       </div>
     );
     return this.props.children;
   }
 }
+const ErrorBoundary = withTranslation()(ErrorBoundaryRaw);
 
 function AuthCallback() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   useEffect(() => {
-    // Supabase JS détecte automatiquement le code PKCE dans l'URL et crée la session.
-    // onAuthStateChange dans App() va mettre à jour user → navigate vers /chat.
-    const t = setTimeout(() => navigate('/login', { replace: true }), 5000);
-    return () => clearTimeout(t);
+    // Supabase JS auto-detects the PKCE code in the URL and creates the session.
+    // onAuthStateChange in App() will update user -> navigate to /chat.
+    const tid = setTimeout(() => navigate('/login', { replace: true }), 5000);
+    return () => clearTimeout(tid);
   }, [navigate]);
   return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
-      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Connexion en cours…</div>
+      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>{t('app.connecting')}</div>
     </div>
   );
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [user, setUser] = useState(() => {
     const id = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
     return id ? { id, isGuest: true } : null;
@@ -70,9 +75,9 @@ export default function App() {
       }
       setLoading(false);
     });
-    // timeout fallback si Supabase non configuré
-    const t = setTimeout(() => setLoading(false), 3000);
-    return () => { unsub(); clearTimeout(t); };
+    // timeout fallback if Supabase is not configured
+    const tid = setTimeout(() => setLoading(false), 3000);
+    return () => { unsub(); clearTimeout(tid); };
   }, []);
 
   const handleLogout = async () => {
@@ -84,7 +89,7 @@ export default function App() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
-        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Chargement…</div>
+        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>{t('app.loading')}</div>
       </div>
     );
   }

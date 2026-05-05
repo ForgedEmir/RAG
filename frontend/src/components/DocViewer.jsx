@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import PDFViewer      from './viewers/PDFViewer.jsx';
 import MarkdownViewer from './viewers/MarkdownViewer.jsx';
 import DocxViewer     from './viewers/DocxViewer.jsx';
@@ -36,6 +37,7 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH = 900;
 
 export default function DocViewer({ filename, passage, onClose, resizable = false, defaultWidth = 480 }) {
+  const { t } = useTranslation();
   const [width, setWidth]       = useState(defaultWidth);
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef(null);
@@ -108,12 +110,12 @@ export default function DocViewer({ filename, passage, onClose, resizable = fals
           target="_blank"
           rel="noreferrer"
           style={{ fontSize: 11, color: 'var(--fg-muted)', textDecoration: 'none', flexShrink: 0 }}
-          title="Ouvrir dans un nouvel onglet"
+          title={t('docviewer.open_tab')}
         >↗</a>
         <button
           onClick={onClose}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
-          title="Fermer"
+          title={t('docviewer.close')}
         >×</button>
       </div>
 

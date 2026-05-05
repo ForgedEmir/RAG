@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useChat } from '../useChat.js';
 import { useScopedLenis } from '../useLenis.js';
 import { getAuthHeader } from '../auth.js';
@@ -8,6 +9,7 @@ import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import DocViewer from '../components/DocViewer.jsx';
 
 export default function ChatPage({ user, onLogout }) {
+  const { t } = useTranslation();
   const { sessions, activeSession, activeId, streaming, loadingHistory, newSession, selectSession, deleteSession, send, abort } = useChat();
   const [input, setInput] = useState('');
   const [activeSource, setActiveSource] = useState(null);
@@ -95,16 +97,16 @@ export default function ChatPage({ user, onLogout }) {
             onClick={newSession}
           >
             <Icon name="plus" size={14} />
-            <span>Nouvelle conversation</span>
+            <span>{t('chat.new_conversation')}</span>
           </button>
         </div>
 
         <div className="rb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 8px 12px' }}>
           <div style={{ marginBottom: 8 }}>
             {[
-              { label: 'Documents', icon: 'folder', path: '/docs' },
-              { label: 'Paramètres', icon: 'settings', path: '/settings' },
-              { label: 'Monitoring', icon: 'activity', path: '/monitoring' },
+              { label: t('chat.documents'), icon: 'folder', path: '/docs' },
+              { label: t('chat.settings'), icon: 'settings', path: '/settings' },
+              { label: t('chat.monitoring'), icon: 'activity', path: '/monitoring' },
             ].map((item) => (
               <div
                 key={item.path}
@@ -121,14 +123,14 @@ export default function ChatPage({ user, onLogout }) {
           <div style={{ height: 1, background: 'var(--border-subtle)', margin: '8px 0' }} />
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 8px 6px' }}>
-            <span className="rb-section-label" style={{ padding: 0 }}>Conversations</span>
+            <span className="rb-section-label" style={{ padding: 0 }}>{t('chat.conversations')}</span>
             {loadingHistory && (
               <span style={{ fontSize: 10.5, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>…</span>
             )}
           </div>
           {sessions.length === 0 && !loadingHistory && (
             <div style={{ padding: '8px 8px', fontSize: 12, color: 'var(--fg-muted)' }}>
-              Aucune conversation
+              {t('chat.no_conversation')}
             </div>
           )}
           {sessions.map((s) => (
@@ -146,7 +148,7 @@ export default function ChatPage({ user, onLogout }) {
                   className="rb-btn rb-btn--ghost"
                   style={{ width: 20, height: 20, padding: 0, marginLeft: 'auto', flex: 'none', opacity: 0.5 }}
                   onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                  title="Supprimer"
+                  title={t('chat.delete')}
                 >
                   <Icon name="x" size={11} />
                 </button>
@@ -158,14 +160,14 @@ export default function ChatPage({ user, onLogout }) {
             <>
               <div style={{ height: 1, background: 'var(--border-subtle)', margin: '10px 0 8px' }} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 6px' }}>
-                <span className="rb-section-label" style={{ padding: 0 }}>Documents</span>
+                <span className="rb-section-label" style={{ padding: 0 }}>{t('chat.documents')}</span>
                 <button
                   className="rb-btn rb-btn--ghost"
                   style={{ height: 20, padding: '0 6px', fontSize: 10.5, gap: 4 }}
                   onClick={() => navigate('/docs')}
                 >
                   <Icon name="plus" size={10} />
-                  Gérer
+                  {t('chat.manage')}
                 </button>
               </div>
               {indexedDocs.map((doc) => {
@@ -200,17 +202,17 @@ export default function ChatPage({ user, onLogout }) {
           <div className="rb-mono rb-mono--user">{userInitials}</div>
           <div style={{ flex: 1, minWidth: 0, lineHeight: 1.2 }}>
             <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.email || 'Invité'}
+              {user?.email || t('chat.user_guest')}
             </div>
             <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-              {user ? 'Connecté' : 'Mode invité'}
+              {user ? t('chat.user_connected') : t('chat.user_guest_mode')}
             </div>
           </div>
           <button
             className="rb-btn rb-btn--ghost"
             style={{ width: 28, height: 28, padding: 0 }}
             onClick={onLogout}
-            title="Déconnexion"
+            title={t('chat.logout')}
           >
             <Icon name="logout" size={14} />
           </button>
@@ -230,23 +232,23 @@ export default function ChatPage({ user, onLogout }) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <h1 style={{ fontSize: 15, fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>
-                Assistant documentaire
+                {t('chat.assistant_heading')}
               </h1>
               {sessionDocs.length > 0 && (
                 <span className="rb-pill rb-pill--ok">
                   <span className="rb-dot" />
-                  {sessionDocs.length} source{sessionDocs.length > 1 ? 's' : ''}
+                  {t('chat.source', { count: sessionDocs.length })}
                 </span>
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button className="rb-btn rb-btn--ghost" style={{ gap: 6 }} onClick={() => navigate('/docs')}>
                 <Icon name="upload" size={14} />
-                <span>Importer</span>
+                <span>{t('chat.import')}</span>
               </button>
               <button className="rb-btn rb-btn--ghost" style={{ gap: 6 }} onClick={() => navigate('/monitoring')}>
                 <Icon name="activity" size={14} />
-                <span>Monitoring</span>
+                <span>{t('chat.monitoring')}</span>
               </button>
             </div>
           </header>
@@ -254,13 +256,13 @@ export default function ChatPage({ user, onLogout }) {
           {/* Messages */}
           <div className="rb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '32px 0' }}>
             {!activeSession?.messages?.length ? (
-              <EmptyState onSuggestion={handleSuggestion} />
+              <EmptyState onSuggestion={handleSuggestion} t={t} />
             ) : (
               <div style={{ maxWidth: 760, margin: '0 auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 28 }}>
                 {activeSession.messages.map(msg => (
                   msg.role === 'user'
                     ? <UserMsg key={msg.id} text={msg.content} />
-                    : <AIMsg key={msg.id} msg={msg} activeSource={activeSource} onCiteClick={handleCiteClick} />
+                    : <AIMsg key={msg.id} msg={msg} activeSource={activeSource} onCiteClick={handleCiteClick} t={t} />
                 ))}
                 <div ref={messagesEndRef} style={{ height: 8 }} />
               </div>
@@ -291,7 +293,7 @@ export default function ChatPage({ user, onLogout }) {
                     border: 'none', outline: 'none', resize: 'none',
                     fontFamily: 'var(--font-sans)', lineHeight: 1.5, overflowY: 'hidden',
                   }}
-                  placeholder="Posez votre question sur les documents indexés…"
+                  placeholder={t('chat.placeholder')}
                   value={input}
                   onChange={handleTextareaChange}
                   onKeyDown={handleKey}
@@ -302,7 +304,7 @@ export default function ChatPage({ user, onLogout }) {
                     className="rb-btn rb-btn--ghost"
                     style={{ width: 32, height: 32, padding: 0, color: 'var(--danger)' }}
                     onClick={abort}
-                    title="Arrêter"
+                    title={t('chat.stop')}
                   >
                     <Icon name="stop" size={14} />
                   </button>
@@ -312,7 +314,7 @@ export default function ChatPage({ user, onLogout }) {
                     style={{ width: 32, height: 32, padding: 0 }}
                     onClick={handleSend}
                     disabled={!input.trim()}
-                    title="Envoyer"
+                    title={t('chat.send')}
                   >
                     <Icon name="send" size={14} />
                   </button>
@@ -322,8 +324,8 @@ export default function ChatPage({ user, onLogout }) {
                 marginTop: 8, fontSize: 11, color: 'var(--fg-muted)',
                 display: 'flex', justifyContent: 'space-between',
               }}>
-                <span>Les réponses citent les passages des documents indexés.</span>
-                <span style={{ fontFamily: 'var(--font-mono)' }}>↵ envoyer · ⇧↵ saut de ligne</span>
+                <span>{t('chat.helper')}</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{t('chat.shortcuts')}</span>
               </div>
             </div>
           </div>
@@ -407,12 +409,12 @@ function MarkdownText({ text }) {
 
 // ── Message components ─────────────────────────────────────────────────────────
 
-function EmptyState({ onSuggestion }) {
+function EmptyState({ onSuggestion, t }) {
   const suggestions = [
-    'Quelles sont les clauses de non-concurrence dans ce contrat ?',
-    'Résume les points clés de ce document en 5 points.',
-    'Quels documents traitent de la cession de parts sociales ?',
-    'Quels sont les délais de préavis mentionnés ?',
+    t('chat.suggestion_1'),
+    t('chat.suggestion_2'),
+    t('chat.suggestion_3'),
+    t('chat.suggestion_4'),
   ];
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '60px 24px', textAlign: 'left' }}>
@@ -425,12 +427,12 @@ function EmptyState({ onSuggestion }) {
         <Icon name="sparkle" size={20} />
       </div>
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 8px', letterSpacing: '-0.015em' }}>
-        Comment puis-je vous aider ?
+        {t('chat.empty_heading')}
       </h2>
       <p style={{ fontSize: 14, color: 'var(--fg-secondary)', margin: '0 0 28px', maxWidth: 540, lineHeight: 1.55 }}>
-        Posez une question en langage naturel — chaque réponse renvoie aux passages sources cités.
+        {t('chat.empty_desc')}
       </p>
-      <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>Suggestions</div>
+      <div className="rb-section-label" style={{ padding: 0, marginBottom: 10 }}>{t('chat.suggestions')}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {suggestions.map((s, i) => (
           <button
@@ -469,7 +471,7 @@ function UserMsg({ text }) {
   );
 }
 
-function AIMsg({ msg, activeSource, onCiteClick }) {
+function AIMsg({ msg, activeSource, onCiteClick, t }) {
   const sourcePassages = {};
   if (msg.context_chunks) {
     for (const chunk of msg.context_chunks) {
@@ -491,7 +493,7 @@ function AIMsg({ msg, activeSource, onCiteClick }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginBottom: 6, letterSpacing: '0.02em' }}>
-          Assistant{docCount > 0 ? ` · ${docCount} document${docCount > 1 ? 's' : ''}` : ''}
+          {t('chat.assistant_label')}{docCount > 0 ? ' ' + t('chat.doc_count', { count: docCount }) : ''}
         </div>
         <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--fg-primary)' }}>
           <MarkdownText text={msg.content} />
@@ -514,12 +516,12 @@ function AIMsg({ msg, activeSource, onCiteClick }) {
                     color: isActive ? 'var(--accent)' : undefined,
                   }}
                   onClick={() => onCiteClick(src, firstPassage)}
-                  title={firstPassage ? `Voir le passage cité dans ${src}` : `Voir ${src}`}
+                  title={firstPassage ? t('chat.view_passage', { src }) : t('chat.view_src', { src })}
                 >
                   <Icon name="doc" size={11} style={{ color: 'inherit' }} />
                   <span className="rb-cite__doc" style={{ color: 'inherit' }}>{src}</span>
                   {passages.length > 1 && (
-                    <span className="rb-cite__loc">{passages.length} extraits</span>
+                    <span className="rb-cite__loc">{t('chat.excerpts', { count: passages.length })}</span>
                   )}
                 </button>
               );

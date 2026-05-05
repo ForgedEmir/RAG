@@ -29,7 +29,7 @@ export async function signupWithEmail(email, password) {
 
 export async function sendMagicLink(email) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { error } = await sb.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: window.location.origin + '/auth/callback' },
@@ -105,7 +105,7 @@ export async function getMfaLevel() {
 
 export async function enrollMfa() {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp' });
   if (error) throw error;
   return data; // { id, type, totp: { qr_code, secret, uri } }
@@ -113,7 +113,7 @@ export async function enrollMfa() {
 
 export async function challengeMfa(factorId) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { data, error } = await sb.auth.mfa.challenge({ factorId });
   if (error) throw error;
   return data; // { id (challengeId) }
@@ -121,7 +121,7 @@ export async function challengeMfa(factorId) {
 
 export async function verifyMfa(factorId, challengeId, code) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { data, error } = await sb.auth.mfa.verify({ factorId, challengeId, code });
   if (error) throw error;
   return data;
@@ -129,7 +129,7 @@ export async function verifyMfa(factorId, challengeId, code) {
 
 export async function unenrollMfa(factorId) {
   const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase non configuré');
+  if (!sb) throw new Error('Supabase not configured');
   const { data, error } = await sb.auth.mfa.unenroll({ factorId });
   if (error) throw error;
   return data;

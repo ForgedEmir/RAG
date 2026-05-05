@@ -76,7 +76,7 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
         dest = os.path.join(target_dir, safe)
         # Zip-slip guard: resolved destination must stay inside target_dir
         if not os.path.realpath(dest).startswith(real_target + os.sep):
-            logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", basename)
+            logger.warning("[ARCHIVE] Zip-slip blocked: '%s'", basename)
             return None
         with open(dest, "wb") as f:
             f.write(data)
@@ -88,14 +88,14 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
             total = sum(i.file_size for i in infos)
             if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                 raise ValueError(
-                    f"Archive trop volumineuse décompressée "
-                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                    f"Archive uncompressed size too large "
+                    f"({total // 1024 // 1024} MB > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} MB max)"
                 )
             if len(infos) > MAX_ARCHIVE_FILES:
-                raise ValueError(f"Trop de fichiers dans l'archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
+                raise ValueError(f"Too many files in archive ({len(infos)} > {MAX_ARCHIVE_FILES} max)")
             for info in infos:
                 if os.path.isabs(info.filename) or ".." in info.filename.replace("\\", "/").split("/"):
-                    logger.warning("[ARCHIVE] Zip-slip bloqué : '%s'", info.filename)
+                    logger.warning("[ARCHIVE] Zip-slip blocked: '%s'", info.filename)
                     continue
                 with zf.open(info) as src:
                     saved = _safe_write(src.read(), os.path.basename(info.filename))
@@ -113,11 +113,11 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
             total = sum(m.size for m in members)
             if total > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                 raise ValueError(
-                    f"Archive trop volumineuse décompressée "
-                    f"({total // 1024 // 1024} Mo > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} Mo max)"
+                    f"Archive uncompressed size too large "
+                    f"({total // 1024 // 1024} MB > {MAX_ARCHIVE_UNCOMPRESSED_BYTES // 1024 // 1024} MB max)"
                 )
             if len(members) > MAX_ARCHIVE_FILES:
-                raise ValueError(f"Trop de fichiers dans l'archive ({len(members)} > {MAX_ARCHIVE_FILES} max)")
+                raise ValueError(f"Too many files in archive ({len(members)} > {MAX_ARCHIVE_FILES} max)")
             for member in members:
                 fobj = tf.extractfile(member)
                 if fobj:
@@ -142,12 +142,12 @@ def _count_points_for_filename(filename: str) -> int | None:
         )
         return int(getattr(result, "count", 0))
     except Exception as e:
-        logger.warning(f"Vérification Qdrant impossible pour '{filename}': {e}")
+        logger.warning(f"Qdrant verification impossible for '{filename}': {e}")
         return None
 
 
 def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
-    """Extrait un échantillon de texte pour la validation sécurité."""
+    """Extract a text sample for security validation."""
     text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
     lines = text.splitlines()
     if len(lines) > 40:
@@ -158,7 +158,7 @@ def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
     return text
 
 
-# ── Endpoint /api/upload — accessible à tous les users authentifiés ───────────
+# ── Endpoint /api/upload — accessible to all authenticated users ──────────────
 
 @admin_router.post("/api/upload")
 @limiter.limit("100/hour")
@@ -167,31 +167,31 @@ async def tenant_upload(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
 ):
-    """Upload multi-tenant : valide → Supabase Storage → ingestion Qdrant avec tenant_id."""
+    """Multi-tenant upload: validate -> Supabase Storage -> Qdrant ingestion with tenant_id."""
     tenant_id = await get_tenant_id(user_id)
 
     safe_name = _sanitize_filename(file.filename or "")
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
     if not is_arch and ext not in ALLOWED_EXTENSIONS:
         all_formats = sorted(ALLOWED_EXTENSIONS | ARCHIVE_EXTENSIONS)
         return JSONResponse(
-            {"error": f"Extension non supportée. Formats : {', '.join(all_formats)}"},
+            {"error": f"Unsupported extension. Formats: {', '.join(all_formats)}"},
             status_code=400,
         )
 
     content = await file.read()
     if not content:
-        return JSONResponse({"error": "Fichier vide."}, status_code=400)
+        return JSONResponse({"error": "Empty file."}, status_code=400)
 
     size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
     if len(content) > size_limit:
         size_kb = len(content) // 1024
         return JSONResponse(
-            {"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {size_limit // 1024} Ko."},
+            {"error": f"File too large ({size_kb} KB). Max: {size_limit // 1024} KB."},
             status_code=400,
         )
 
@@ -207,7 +207,7 @@ async def tenant_upload(
 
         if not extracted_names:
             return JSONResponse(
-                {"error": "Aucun fichier valide trouvé dans l'archive (formats acceptés : "
+                {"error": "No valid file found in archive (accepted formats: "
                           f"{', '.join(sorted(ALLOWED_EXTENSIONS))})."},
                 status_code=400,
             )
@@ -230,19 +230,19 @@ async def tenant_upload(
                         )
                         storage_ok_count += 1
                     except Exception as e:
-                        logger.warning("[UPLOAD] Supabase Storage échoué pour '%s/%s': %s", tenant_id, fname, e)
+                        logger.warning("[UPLOAD] Supabase Storage failed for '%s/%s': %s", tenant_id, fname, e)
         except Exception as e:
-            logger.warning("[UPLOAD] Supabase Storage archive échoué: %s", e)
+            logger.warning("[UPLOAD] Supabase Storage archive failed: %s", e)
 
         try:
             from src.ingestion.run import index_data as _index
             await asyncio.to_thread(_index, False, tenant_id)
-            logger.info("[UPLOAD] Ingestion archive OK — tenant=%s fichiers=%s", tenant_id, extracted_names)
+            logger.info("[UPLOAD] Archive ingestion OK — tenant=%s files=%s", tenant_id, extracted_names)
         except Exception as e:
-            logger.error("[UPLOAD] Ingestion archive échouée — tenant=%s : %s", tenant_id, e)
-        await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} fichiers")
+            logger.error("[UPLOAD] Archive ingestion failed — tenant=%s: %s", tenant_id, e)
+        await track("upload", detail=f"tenant={tenant_id} | archive={safe_name} | {len(extracted_names)} files")
         return {
-            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}'. Ingestion en cours.",
+            "message": f"{len(extracted_names)} file(s) extracted from '{safe_name}'. Ingestion in progress.",
             "files": extracted_names,
             "count": len(extracted_names),
             "tenant_id": tenant_id,
@@ -253,9 +253,9 @@ async def tenant_upload(
     sample = _read_sample(content, ext, safe_name)
     validation = await valider_entree(sample)
     if not validation["valid"]:
-        logger.warning(f"[UPLOAD] Bloqué [{validation['type']}] tenant={tenant_id} fichier='{safe_name}'")
+        logger.warning(f"[UPLOAD] Blocked [{validation['type']}] tenant={tenant_id} file='{safe_name}'")
         await track("upload_blocked", detail=f"tenant={tenant_id} | {safe_name} | {validation['type']}")
-        return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
+        return JSONResponse({"error": "Suspicious content. Upload refused."}, status_code=400)
 
     # ── Supabase Storage (bucket "tenant-docs", path "tenant_id/filename") ──
     storage_path = f"{tenant_id}/{safe_name}"
@@ -275,26 +275,26 @@ async def tenant_upload(
             storage_ok = True
             logger.info(f"[UPLOAD] Supabase Storage OK : {storage_path}")
     except Exception as e:
-        logger.warning(f"[UPLOAD] Supabase Storage échoué pour '{storage_path}': {e}")
+        logger.warning(f"[UPLOAD] Supabase Storage failed for '{storage_path}': {e}")
 
-    # ── Écriture locale dans data/sample/<tenant_id>/ pour le pipeline ──────
+    # ── Local write to data/sample/<tenant_id>/ for the pipeline ────────────
     destination = os.path.join(tenant_data_dir, safe_name)
     existed_before = os.path.exists(destination)
     with open(destination, "wb") as f:
         f.write(content)
 
-    # ── Ingestion synchrone — le 200 est renvoyé après indexation ───────────
+    # ── Synchronous ingestion — the 200 is returned after indexing ──────────
     try:
         from src.ingestion.run import index_data as _index
         await asyncio.to_thread(_index, False, tenant_id)
-        logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} fichier={safe_name}")
+        logger.info(f"[UPLOAD] Ingestion OK — tenant={tenant_id} file={safe_name}")
     except Exception as e:
-        logger.error(f"[UPLOAD] Ingestion échouée — tenant={tenant_id} : {e}")
+        logger.error(f"[UPLOAD] Ingestion failed — tenant={tenant_id}: {e}")
 
     action = "replace" if existed_before else "upload"
-    await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} Ko")
+    await track(action, detail=f"tenant={tenant_id} | {safe_name} | {len(content) // 1024} KB")
     return {
-        "message": f"'{safe_name}' {'remplacé' if existed_before else 'uploadé'}. Ingestion en cours.",
+        "message": f"'{safe_name}' {'replaced' if existed_before else 'uploaded'}. Ingestion in progress.",
         "filename": safe_name,
         "tenant_id": tenant_id,
         "storage_path": storage_path,
@@ -357,21 +357,21 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
 
     safe_name = _sanitize_filename(file.filename or "")
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     is_arch = _is_archive(safe_name)
     ext = os.path.splitext(safe_name)[1].lower()
     if not is_arch and ext not in ALLOWED_EXTENSIONS:
-        return JSONResponse({"error": f"Extension non supportée. Formats : {', '.join(ALLOWED_EXTENSIONS)}"}, status_code=400)
+        return JSONResponse({"error": f"Unsupported extension. Formats: {', '.join(ALLOWED_EXTENSIONS)}"}, status_code=400)
 
     content = await file.read()
     if not content:
-        return JSONResponse({"error": "Fichier vide."}, status_code=400)
+        return JSONResponse({"error": "Empty file."}, status_code=400)
 
     size_limit = MAX_ARCHIVE_SIZE if is_arch else MAX_UPLOAD_SIZE
     if len(content) > size_limit:
         size_kb, limit_kb = len(content) // 1024, size_limit // 1024
-        return JSONResponse({"error": f"Fichier trop volumineux ({size_kb} Ko). Max : {limit_kb} Ko."}, status_code=400)
+        return JSONResponse({"error": f"File too large ({size_kb} KB). Max: {limit_kb} KB."}, status_code=400)
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -384,7 +384,7 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
 
         if not extracted_names:
             return JSONResponse(
-                {"error": f"Aucun fichier valide trouvé dans l'archive (formats acceptés : {', '.join(sorted(ALLOWED_EXTENSIONS))})."},
+                {"error": f"No valid file found in archive (accepted formats: {', '.join(sorted(ALLOWED_EXTENSIONS))})."},
                 status_code=400,
             )
 
@@ -394,24 +394,24 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
             changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
         except Exception as e:
             reindex_warning = str(e)
-            logger.warning("Admin archive réindexation échouée: %s", e)
+            logger.warning("Admin archive reindex failed: %s", e)
 
-        await track("upload", detail=f"archive={safe_name} | {len(extracted_names)} fichiers")
+        await track("upload", detail=f"archive={safe_name} | {len(extracted_names)} files")
         payload = {
-            "message": f"{len(extracted_names)} fichier(s) extrait(s) depuis '{safe_name}' et indexé(s).",
+            "message": f"{len(extracted_names)} file(s) extracted from '{safe_name}' and indexed.",
             "files": extracted_names,
             "count": len(extracted_names),
             "ingestion": {"changed": changed},
         }
         if reindex_warning:
-            payload["warning"] = "Fichiers extraits, mais la réindexation automatique a échoué."
+            payload["warning"] = "Files extracted, but automatic reindex failed."
         return payload
 
     # ── Regular file path (unchanged) ────────────────────────────────────────
     try:
         text = content.decode("utf-8", errors="ignore") if ext in {".txt", ".md", ".csv", ".json", ".xml"} else ""
     except Exception:
-        return JSONResponse({"error": "Encodage invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid encoding."}, status_code=400)
 
     # Security check on a representative sample to avoid high latency on large files
     lines = text.splitlines()
@@ -429,7 +429,7 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     if not validation["valid"]:
         logger.warning(f"Upload blocked [{validation['type']}] — '{safe_name}'")
         await track("upload_blocked", detail=f"{safe_name} | {validation['type']}")
-        return JSONResponse({"error": "Contenu suspect. Upload refusé."}, status_code=400)
+        return JSONResponse({"error": "Suspicious content. Upload refused."}, status_code=400)
 
     destination = os.path.join(DATA_DIR, safe_name)
     existed_before = os.path.exists(destination)
@@ -440,53 +440,53 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     reindex_warning = None
     changed = None
     try:
-        # index_data est synchrone
+        # index_data is synchronous
         changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
     except Exception as e:
         reindex_warning = str(e)
-        logger.warning(f"Upload réindexation automatique échouée: {e}")
+        logger.warning(f"Upload automatic reindex failed: {e}")
 
     qdrant_points = _count_points_for_filename(safe_name)
 
     if existed_before:
-        await track("replace", detail=f"{safe_name} | {len(content)//1024} Ko (upsert)")
-        logger.info(f"Fichier remplacé (upsert upload) : {safe_name}")
-        payload = {"message": f"'{safe_name}' remplacé et indexé.", "filename": safe_name}
+        await track("replace", detail=f"{safe_name} | {len(content)//1024} KB (upsert)")
+        logger.info(f"File replaced (upsert upload): {safe_name}")
+        payload = {"message": f"'{safe_name}' replaced and indexed.", "filename": safe_name}
     else:
-        await track("upload", detail=f"{safe_name} | {len(content)//1024} Ko")
-        logger.info(f"Fichier uploadé : {safe_name}")
-        payload = {"message": f"'{safe_name}' uploadé et indexé.", "filename": safe_name}
+        await track("upload", detail=f"{safe_name} | {len(content)//1024} KB")
+        logger.info(f"File uploaded: {safe_name}")
+        payload = {"message": f"'{safe_name}' uploaded and indexed.", "filename": safe_name}
 
     payload["ingestion"] = {
         "changed": changed,
         "qdrant_points": qdrant_points,
         "verified": (qdrant_points is not None and qdrant_points > 0),
         "summary": (
-            f"Ingestion {'mise à jour' if changed else 'sans changement détecté'}; "
-            + (f"Qdrant={qdrant_points} chunk(s)." if qdrant_points is not None else "Qdrant non vérifiable.")
+            f"Ingestion {'updated' if changed else 'no changes detected'}; "
+            + (f"Qdrant={qdrant_points} chunk(s)." if qdrant_points is not None else "Qdrant not verifiable.")
         ),
     }
     if reindex_warning:
-        payload["warning"] = "Fichier uploadé, mais la réindexation automatique a échoué."
+        payload["warning"] = "File uploaded, but automatic reindex failed."
     return payload
 
 
 @admin_router.post("/api/admin/invite")
 @limiter.limit("20/hour")
 async def invite_client(request: Request):
-    """Invite un client par email via Supabase Admin API (magic link automatique)."""
+    """Invite a client by email via Supabase Admin API (automatic magic link)."""
     require_monitoring(request)
     body = await request.json()
     email = (body or {}).get("email", "").strip().lower()
 
     if not email or "@" not in email or "." not in email.split("@")[-1]:
-        return JSONResponse({"error": "Adresse email invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid email address."}, status_code=400)
 
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         app_url = os.getenv("APP_URL", "http://localhost:8000")
         redirect_url = f"{app_url}/auth/callback"
         try:
@@ -495,32 +495,32 @@ async def invite_client(request: Request):
                 options={"redirect_to": redirect_url},
             )
         except TypeError:
-            # Certaines versions gotrue-py n'acceptent pas options= comme kwarg
+            # Some gotrue-py versions don't accept options= as a kwarg
             res = await supa.auth.admin.invite_user_by_email(email)
         user = getattr(res, "user", None)
         user_id = str(user.id) if user and hasattr(user, "id") else None
-        logger.info(f"[INVITE] Client invité : {email} (user_id={user_id})")
+        logger.info(f"[INVITE] Client invited: {email} (user_id={user_id})")
         await track("invite", detail=f"email={email}")
-        return {"message": f"Invitation envoyée à {email}.", "user_id": user_id}
+        return {"message": f"Invitation sent to {email}.", "user_id": user_id}
     except Exception as e:
         err = str(e)
         if "already registered" in err.lower() or "already been registered" in err.lower():
-            return JSONResponse({"error": "Cet email est déjà enregistré."}, status_code=409)
-        logger.error(f"[INVITE] Échec invitation {email}: {e}")
-        return JSONResponse({"error": f"Échec de l'invitation : {err}"}, status_code=500)
+            return JSONResponse({"error": "This email is already registered."}, status_code=409)
+        logger.error(f"[INVITE] Invitation failed for {email}: {e}")
+        return JSONResponse({"error": f"Invitation failed: {err}"}, status_code=500)
 
 
 @admin_router.get("/api/admin/clients")
 async def list_clients(request: Request):
-    """Liste les utilisateurs Supabase (clients)."""
+    """List Supabase users (clients)."""
     require_monitoring(request)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         res = await supa.auth.admin.list_users()
-        # list_users() peut retourner une liste ou un objet paginé selon la version gotrue-py
+        # list_users() may return a list or a paginated object depending on gotrue-py version
         if isinstance(res, list):
             raw = res
         elif hasattr(res, "users"):
@@ -558,18 +558,18 @@ async def delete_client(user_id: str, request: Request):
     """Supprime un client Supabase par son user_id."""
     require_monitoring(request)
     if not user_id or len(user_id) != 36:
-        return JSONResponse({"error": "user_id invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid user_id."}, status_code=400)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         await supa.auth.admin.delete_user(user_id)
-        logger.info(f"[CLIENTS] Utilisateur supprimé : {user_id}")
+        logger.info(f"[CLIENTS] User deleted: {user_id}")
         await track("client_delete", detail=f"user_id={user_id}")
-        return {"message": "Utilisateur supprimé.", "user_id": user_id}
+        return {"message": "User deleted.", "user_id": user_id}
     except Exception as e:
-        logger.error(f"[CLIENTS] Erreur suppression {user_id}: {e}")
+        logger.error(f"[CLIENTS] Deletion error {user_id}: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -582,9 +582,9 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
     role  = (body or {}).get("role", "member").strip().lower()
 
     if not email or "@" not in email or "." not in email.split("@")[-1]:
-        return JSONResponse({"error": "Adresse email invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid email address."}, status_code=400)
     if role not in ("admin", "member", "viewer"):
-        return JSONResponse({"error": "Rôle invalide (admin, member, viewer)."}, status_code=400)
+        return JSONResponse({"error": "Invalid role (admin, member, viewer)."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
 
@@ -592,7 +592,7 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
 
         # Check if already a member
         existing = await supa.table("user_roles").select("id, user_id").eq("tenant_id", tenant_id).execute()
@@ -608,12 +608,12 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
                 except Exception:
                     pass
         if email in member_emails:
-            return JSONResponse({"error": "Cet utilisateur est déjà membre."}, status_code=409)
+            return JSONResponse({"error": "This user is already a member."}, status_code=409)
 
         # Check pending invitation
         pending = await supa.table("invitations").select("id").eq("tenant_id", tenant_id).eq("email", email).is_("accepted_at", "null").execute()
         if pending.data:
-            return JSONResponse({"error": "Une invitation est déjà en attente pour cet email."}, status_code=409)
+            return JSONResponse({"error": "An invitation is already pending for this email."}, status_code=409)
 
         app_url = os.getenv("APP_URL", "http://localhost:8000")
         redirect_url = f"{app_url}/auth/callback"
@@ -632,7 +632,7 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
         }).execute()
 
         await track("team_invite", detail=f"tenant={tenant_id} email={email} role={role}")
-        return {"message": f"Invitation envoyée à {email}.", "email": email, "role": role}
+        return {"message": f"Invitation sent to {email}.", "email": email, "role": role}
     except Exception as e:
         err = str(e)
         if "already registered" in err.lower() or "already been registered" in err.lower():
@@ -645,16 +645,16 @@ async def team_invite(request: Request, user_id: str = Depends(get_current_user)
                         "email": email, "role": role,
                         "tenant_id": tenant_id, "invited_by": user_id,
                     }).execute()
-                return {"message": f"Invitation enregistrée pour {email}.", "email": email, "role": role}
+                return {"message": f"Invitation recorded for {email}.", "email": email, "role": role}
             except Exception:
                 pass
-        logger.error(f"[TEAM_INVITE] Erreur: {e}")
-        return JSONResponse({"error": f"Échec : {err}"}, status_code=500)
+        logger.error(f"[TEAM_INVITE] Error: {e}")
+        return JSONResponse({"error": f"Failed: {err}"}, status_code=500)
 
 
 @admin_router.post("/api/team/join")
 async def team_join(user_id: str = Depends(get_current_user)):
-    """Auto-accepte les invitations en attente pour l'email du user connecté."""
+    """Auto-accept pending invitations for the connected user's email."""
     try:
         from src.monitoring.tracker import _get_client
         from datetime import datetime, timezone
@@ -662,7 +662,7 @@ async def team_join(user_id: str = Depends(get_current_user)):
         if not supa:
             return {"joined": False}
 
-        # Récupère l'email du user depuis Supabase Auth
+        # Fetch the user's email from Supabase Auth
         u = await supa.auth.admin.get_user_by_id(user_id)
         email = (u.user.email or "").lower() if u and u.user else ""
         if not email:
@@ -677,7 +677,7 @@ async def team_join(user_id: str = Depends(get_current_user)):
         now_iso = datetime.now(timezone.utc).isoformat()
         for inv in inv_res.data:
             tenant = inv["tenant_id"]
-            # Vérifie si déjà membre
+            # Check if already a member
             existing = await supa.table("user_roles").select("id").eq("user_id", user_id).eq("tenant_id", tenant).execute()
             if not existing.data:
                 await supa.table("user_roles").insert({
@@ -686,14 +686,14 @@ async def team_join(user_id: str = Depends(get_current_user)):
                     "role": inv["role"],
                     "invited_by": inv["invited_by"],
                 }).execute()
-            # Marque l'invitation comme acceptée
+            # Mark the invitation as accepted
             await supa.table("invitations").update({"accepted_at": now_iso}).eq("id", inv["id"]).execute()
             joined.append({"tenant_id": tenant, "role": inv["role"]})
 
         await track("team_join", detail=f"user={user_id} tenants={[j['tenant_id'] for j in joined]}")
         return {"joined": bool(joined), "tenants": joined}
     except Exception as e:
-        logger.error(f"[TEAM_JOIN] Erreur: {e}")
+        logger.error(f"[TEAM_JOIN] Error: {e}")
         return {"joined": False}
 
 
@@ -705,9 +705,9 @@ async def team_members(user_id: str = Depends(get_current_user)):
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
 
-        # S'assure que le propriétaire du tenant a bien une entrée owner
+        # Ensure the tenant owner has an owner entry
         owner_check = await supa.table("user_roles").select("id").eq("tenant_id", tenant_id).eq("user_id", tenant_id).execute()
         if not owner_check.data:
             await supa.table("user_roles").insert({
@@ -747,20 +747,20 @@ async def team_members(user_id: str = Depends(get_current_user)):
 async def team_remove_member(member_id: str, user_id: str = Depends(get_current_user)):
     """Remove a member from the caller's tenant."""
     if not member_id or len(member_id) > 64:
-        return JSONResponse({"error": "member_id invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid member_id."}, status_code=400)
     tenant_id = await get_tenant_id(user_id)
     if member_id == user_id:
-        return JSONResponse({"error": "Vous ne pouvez pas vous retirer vous-même."}, status_code=400)
+        return JSONResponse({"error": "You cannot remove yourself."}, status_code=400)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         await supa.table("user_roles").delete().eq("tenant_id", tenant_id).eq("user_id", member_id).execute()
         await track("team_remove", detail=f"tenant={tenant_id} removed={member_id}")
         return {"ok": True}
     except Exception as e:
-        logger.error(f"[TEAM_REMOVE] Erreur: {e}")
+        logger.error(f"[TEAM_REMOVE] Error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -772,7 +772,7 @@ async def team_cancel_invitation(email: str, user_id: str = Depends(get_current_
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         await supa.table("invitations").delete().eq("tenant_id", tenant_id).eq("email", email).is_("accepted_at", "null").execute()
         return {"ok": True}
     except Exception as e:
@@ -781,17 +781,17 @@ async def team_cancel_invitation(email: str, user_id: str = Depends(get_current_
 
 async def _resolve_file(tenant_id: str, safe_name: str) -> str | None:
     """
-    Retourne le chemin local du fichier, en le téléchargeant depuis Supabase
-    Storage si absent du disque (VPS stateless — Supabase est la source de vérité).
+    Return the local file path, downloading from Supabase Storage if missing
+    from disk (stateless VPS — Supabase is the source of truth).
     """
     local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
     if os.path.isfile(local_path):
         return local_path
-    # Fallback legacy (admin upload sans tenant)
+    # Legacy fallback (admin upload without tenant)
     legacy = os.path.join(DATA_DIR, safe_name)
     if os.path.isfile(legacy):
         return legacy
-    # Supabase Storage — source primaire sur VPS
+    # Supabase Storage — primary source on VPS
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
@@ -803,7 +803,7 @@ async def _resolve_file(tenant_id: str, safe_name: str) -> str | None:
                     fh.write(data)
                 return local_path
     except Exception as e:
-        logger.warning("[FILE] Supabase download échoué pour '%s/%s': %s", tenant_id, safe_name, e)
+        logger.warning("[FILE] Supabase download failed for '%s/%s': %s", tenant_id, safe_name, e)
     return None
 
 
@@ -812,12 +812,12 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
     """Serve a file from tenant storage for in-browser preview."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
     path = await _resolve_file(tenant_id, safe_name)
     if not path:
-        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+        return JSONResponse({"error": "File not found."}, status_code=404)
 
     mime, _ = mimetypes.guess_type(safe_name)
     mime = mime or "application/octet-stream"
@@ -830,12 +830,12 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
     """Return the extracted plain text of a file (PDF → pypdf, others → raw read)."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name:
-        return JSONResponse({"error": "Nom de fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
 
     tenant_id = await get_tenant_id(user_id)
     path = await _resolve_file(tenant_id, safe_name)
     if not path:
-        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+        return JSONResponse({"error": "File not found."}, status_code=404)
 
     try:
         ext = os.path.splitext(safe_name)[1].lower()
@@ -855,7 +855,7 @@ async def serve_file_text(filename: str, request: Request, user_id: str = Depend
         return PlainTextResponse(text)
     except Exception as e:
         logger.error(f"file-text error for {safe_name}: {e}")
-        return JSONResponse({"error": "Impossible d'extraire le texte."}, status_code=500)
+        return JSONResponse({"error": "Could not extract text."}, status_code=500)
 
 
 @admin_router.get("/api/file-xlsx/{filename:path}")
@@ -863,11 +863,11 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
     """Return Excel file as structured JSON: [{sheet, headers, rows}]."""
     safe_name = _sanitize_filename(os.path.basename(filename))
     if not safe_name or not safe_name.lower().endswith(".xlsx"):
-        return JSONResponse({"error": "Fichier invalide."}, status_code=400)
+        return JSONResponse({"error": "Invalid file."}, status_code=400)
     tenant_id = await get_tenant_id(user_id)
     path = await _resolve_file(tenant_id, safe_name)
     if not path:
-        return JSONResponse({"error": "Fichier introuvable."}, status_code=404)
+        return JSONResponse({"error": "File not found."}, status_code=404)
 
     try:
         import openpyxl
@@ -883,7 +883,7 @@ async def serve_file_xlsx(filename: str, request: Request, user_id: str = Depend
         return JSONResponse(sheets)
     except Exception as e:
         logger.error(f"file-xlsx error for {safe_name}: {e}")
-        return JSONResponse({"error": "Impossible de lire le fichier Excel."}, status_code=500)
+        return JSONResponse({"error": "Could not read Excel file."}, status_code=500)
 
 
 @admin_router.delete("/api/admin/delete")
@@ -894,22 +894,22 @@ async def admin_delete(request: Request):
 
     # Path traversal protection
     if not filename or any(s in filename for s in ("/", "\\", "..")):
-        return JSONResponse({"error": "Nom de fichier invalide"}, status_code=400)
+        return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
     path = os.path.join(DATA_DIR, filename)
     if not os.path.exists(path):
-        return JSONResponse({"error": "Fichier introuvable"}, status_code=404)
+        return JSONResponse({"error": "File not found"}, status_code=404)
 
     os.remove(path)
 
-    # Suppression immédiate des chunks Qdrant liés au fichier pour garantir la cohérence.
+    # Immediate removal of Qdrant chunks tied to this file to ensure consistency.
     try:
         from src.ingestion.vector_store import get_store, remove_files
-        # get_store et remove_files sont synchrones
+        # get_store and remove_files are synchronous
         store = get_store(force_reindex=False)
         await asyncio.to_thread(remove_files, store, {filename})
     except Exception as e:
-        logger.warning(f"Delete Qdrant immédiat échoué: {e}")
+        logger.warning(f"Immediate Qdrant delete failed: {e}")
 
     reindex_warning = None
     changed = None
@@ -917,24 +917,24 @@ async def admin_delete(request: Request):
         changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
     except Exception as e:
         reindex_warning = str(e)
-        logger.warning(f"Delete réindexation automatique échouée: {e}")
+        logger.warning(f"Delete automatic reindex failed: {e}")
 
     qdrant_points = _count_points_for_filename(filename)
 
-    await track("reindex", detail=f"suppression : {filename}")
-    logger.info(f"Fichier supprimé : {filename}")
-    payload = {"message": f"'{filename}' supprimé et index mis à jour."}
+    await track("reindex", detail=f"delete: {filename}")
+    logger.info(f"File deleted: {filename}")
+    payload = {"message": f"'{filename}' deleted and index updated."}
     payload["ingestion"] = {
         "changed": changed,
         "qdrant_points": qdrant_points,
         "verified": (qdrant_points == 0) if qdrant_points is not None else False,
         "summary": (
-            f"Ingestion {'mise à jour' if changed else 'sans changement détecté'}; "
-            + (f"Qdrant={qdrant_points} chunk(s) restant(s)." if qdrant_points is not None else "Qdrant non vérifiable.")
+            f"Ingestion {'updated' if changed else 'no changes detected'}; "
+            + (f"Qdrant={qdrant_points} chunk(s) remaining." if qdrant_points is not None else "Qdrant not verifiable.")
         ),
     }
     if reindex_warning:
-        payload["warning"] = "Fichier supprimé, mais la réindexation automatique a échoué."
+        payload["warning"] = "File deleted, but automatic reindex failed."
     return payload
 
 
@@ -948,7 +948,7 @@ from datetime import datetime, timezone
 
 
 async def _ensure_tenants_table():
-    """Crée les tables B2B si elles n'existent pas (idempotent)."""
+    """Create B2B tables if they don't exist (idempotent)."""
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
@@ -970,7 +970,7 @@ async def _ensure_tenants_table():
 
 
 async def _get_tenant_for_user(user_id: str) -> dict | None:
-    """Récupère le tenant associé à un utilisateur."""
+    """Fetch the tenant associated with a user."""
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
@@ -987,13 +987,13 @@ async def _get_tenant_for_user(user_id: str) -> dict | None:
 
 @admin_router.get("/api/admin/tenants")
 async def list_tenants(request: Request):
-    """Liste tous les tenants (admin)."""
+    """List all tenants (admin)."""
     require_monitoring(request)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         res = await supa.table("tenants").select("*").order("created_at", desc=True).execute()
         tenants = []
         for t in (res.data or []):
@@ -1013,13 +1013,13 @@ async def list_tenants(request: Request):
             })
         return {"tenants": tenants, "total": len(tenants)}
     except Exception as e:
-        logger.error(f"[TENANTS] Erreur liste: {e}")
+        logger.error(f"[TENANTS] List error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @admin_router.post("/api/admin/tenants")
 async def create_tenant(request: Request):
-    """Crée un nouveau tenant B2B."""
+    """Create a new B2B tenant."""
     require_monitoring(request)
     body = await request.json()
     name = (body or {}).get("name", "").strip()
@@ -1027,15 +1027,15 @@ async def create_tenant(request: Request):
     owner_email = (body or {}).get("owner_email", "").strip().lower()
     plan = (body or {}).get("plan", "free").strip().lower()
     if not name or not slug or not owner_email:
-        return JSONResponse({"error": "name, slug, et owner_email requis."}, status_code=400)
+        return JSONResponse({"error": "name, slug, and owner_email required."}, status_code=400)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         existing = await supa.table("tenants").select("id").eq("slug", slug).execute()
         if existing.data:
-            return JSONResponse({"error": f"Slug '{slug}' déjà utilisé."}, status_code=409)
+            return JSONResponse({"error": f"Slug '{slug}' already in use."}, status_code=409)
         owner_id = None
         try:
             res = await supa.auth.admin.invite_user_by_email(owner_email)
@@ -1049,33 +1049,33 @@ async def create_tenant(request: Request):
                         owner_id = str(u.id)
                         break
         if not owner_id:
-            return JSONResponse({"error": "Impossible de créer/trouver l'utilisateur."}, status_code=500)
+            return JSONResponse({"error": "Could not create/find user."}, status_code=500)
         tenant_res = await supa.table("tenants").insert({
             "name": name, "slug": slug, "owner_id": owner_id, "plan": plan,
             "max_users": 10 if plan == "pro" else (50 if plan == "enterprise" else 5),
         }).execute()
         tenant = tenant_res.data[0] if tenant_res.data else None
         if not tenant:
-            return JSONResponse({"error": "Échec création."}, status_code=500)
+            return JSONResponse({"error": "Creation failed."}, status_code=500)
         await supa.table("user_roles").insert({
             "user_id": owner_id, "tenant_id": tenant["id"], "role": "owner",
         }).execute()
         await track("tenant_create", detail=f"slug={slug} name={name}")
-        return {"message": f"Tenant '{name}' créé.", "tenant": {"id": tenant["id"], "name": name, "slug": slug, "plan": plan}}
+        return {"message": f"Tenant '{name}' created.", "tenant": {"id": tenant["id"], "name": name, "slug": slug, "plan": plan}}
     except Exception as e:
-        logger.error(f"[TENANTS] Erreur création: {e}")
+        logger.error(f"[TENANTS] Creation error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @admin_router.delete("/api/admin/tenants/{tenant_id}")
 async def delete_tenant(tenant_id: str, request: Request):
-    """Supprime un tenant et ses données."""
+    """Delete a tenant and its data."""
     require_monitoring(request)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         try:
             from src.ingestion.vector_store import _get_client as _qdrant, _COLLECTION_NAME
             from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -1090,21 +1090,21 @@ async def delete_tenant(tenant_id: str, request: Request):
             shutil.rmtree(tenant_dir, ignore_errors=True)
         await supa.table("tenants").delete().eq("id", tenant_id).execute()
         await track("tenant_delete", detail=f"tenant_id={tenant_id}")
-        return {"message": "Tenant supprimé.", "tenant_id": tenant_id}
+        return {"message": "Tenant deleted.", "tenant_id": tenant_id}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @admin_router.get("/api/admin/metrics")
 async def admin_metrics(request: Request):
-    """Métriques globales + par tenant (admin)."""
+    """Global + per-tenant metrics (admin)."""
     require_monitoring(request)
     try:
         from src.monitoring.tracker import _get_client
         from datetime import timedelta
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         total_reqs = await supa.table("usage_metrics").select("requests", "tokens_input", "tokens_output").execute()
         total_requests = sum(r.get("requests", 0) for r in (total_reqs.data or []))
         total_tokens_in = sum(r.get("tokens_input", 0) for r in (total_reqs.data or []))
@@ -1133,12 +1133,12 @@ def _generate_api_key() -> tuple[str, str, str]:
 async def tenant_api_keys(user_id: str = Depends(get_current_user)):
     tenant = await _get_tenant_for_user(user_id)
     if not tenant:
-        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+        return JSONResponse({"error": "No tenant associated."}, status_code=404)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         res = await supa.table("api_keys").select("id, name, key_prefix, is_active, last_used, created_at").eq("tenant_id", tenant["id"]).execute()
         return {"keys": res.data or [], "tenant_id": tenant["id"]}
     except Exception as e:
@@ -1149,18 +1149,18 @@ async def tenant_api_keys(user_id: str = Depends(get_current_user)):
 async def create_api_key(request: Request, user_id: str = Depends(get_current_user)):
     tenant = await _get_tenant_for_user(user_id)
     if not tenant:
-        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+        return JSONResponse({"error": "No tenant associated."}, status_code=404)
     body = await request.json()
     name = (body or {}).get("name", "Default").strip() or "Default"
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         raw_key, key_hash, prefix = _generate_api_key()
         await supa.table("api_keys").insert({"tenant_id": tenant["id"], "name": name, "key_hash": key_hash, "key_prefix": prefix}).execute()
         await track("api_key_create", detail=f"tenant={tenant['id']}")
-        return {"message": "Clé API créée. Conservez-la — plus jamais affichée.", "api_key": raw_key, "prefix": prefix, "name": name}
+        return {"message": "API key created. Save it now — it will never be shown again.", "api_key": raw_key, "prefix": prefix, "name": name}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -1169,15 +1169,15 @@ async def create_api_key(request: Request, user_id: str = Depends(get_current_us
 async def revoke_api_key(key_id: str, user_id: str = Depends(get_current_user)):
     tenant = await _get_tenant_for_user(user_id)
     if not tenant:
-        return JSONResponse({"error": "Aucun tenant associé."}, status_code=404)
+        return JSONResponse({"error": "No tenant associated."}, status_code=404)
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
         if not supa:
-            return JSONResponse({"error": "Supabase non configuré."}, status_code=503)
+            return JSONResponse({"error": "Supabase not configured."}, status_code=503)
         existing = await supa.table("api_keys").select("id").eq("id", key_id).eq("tenant_id", tenant["id"]).execute()
         if not existing.data:
-            return JSONResponse({"error": "Clé introuvable."}, status_code=404)
+            return JSONResponse({"error": "Key not found."}, status_code=404)
         await supa.table("api_keys").update({"is_active": False}).eq("id", key_id).execute()
         return {"ok": True}
     except Exception as e:
@@ -1188,14 +1188,14 @@ async def revoke_api_key(key_id: str, user_id: str = Depends(get_current_user)):
 async def tenant_me(user_id: str = Depends(get_current_user)):
     tenant = await _get_tenant_for_user(user_id)
     if not tenant:
-        return {"tenant": None, "mode": "solo", "message": "Pas de tenant B2B. Mode individuel."}
+        return {"tenant": None, "mode": "solo", "message": "No B2B tenant. Individual mode."}
     return {"tenant": tenant, "mode": "b2b"}
 
 
-# ── Usage tracking (appelé depuis routes.py) ──────────────────────────────────
+# ── Usage tracking (called from routes.py) ────────────────────────────────────
 
 async def _increment_usage(user_id: str, tokens_in: int = 0, tokens_out: int = 0):
-    """Incrémente les métriques d'usage pour le tenant de l'utilisateur (background)."""
+    """Increment usage metrics for the user's tenant (background)."""
     try:
         from src.monitoring.tracker import _get_client
         from datetime import date
@@ -1224,4 +1224,4 @@ async def _increment_usage(user_id: str, tokens_in: int = 0, tokens_out: int = 0
                 "tokens_output": tokens_out,
             }).execute()
     except Exception:
-        pass  # Fail-open — ne bloque jamais la réponse
+        pass  # Fail-open — never blocks the response
