@@ -356,10 +356,12 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
                 # page_content is still used by the reranker.
                 text_for_llm = doc.metadata.get("original_text", doc.page_content)
                 vector_results.append({
-                    "id": doc_id, 
+                    "id": doc_id,
                     "text": text_for_llm,
                     "raw_content": doc.page_content,
-                    "filename": doc.metadata.get("filename", "unknown"),
+                    # Read both keys: "fichier" is the legacy/current ingestion key,
+                    # "filename" is the EN-translated alias from features/misc.
+                    "filename": doc.metadata.get("filename") or doc.metadata.get("fichier", "unknown"),
                     "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
                 })
 
@@ -373,7 +375,14 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
         if query_tokens:
             bm25_scores = _bm25_index.get_scores(query_tokens)
             top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:plan.k_candidates]
-            bm25_results = [_bm25_corpus[i] for i in top_indices if bm25_scores[i] > 0]
+            # Normalize each corpus entry so downstream code can read `filename`
+            # regardless of whether the corpus was written with "fichier" (FR) or "filename" (EN).
+            bm25_results = []
+            for i in top_indices:
+                if bm25_scores[i] > 0:
+                    entry = dict(_bm25_corpus[i])
+                    entry["filename"] = entry.get("filename") or entry.get("fichier", "unknown")
+                    bm25_results.append(entry)
 
     # Step 3: RRF fusion
     if bm25_results:
@@ -409,7 +418,7 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
             combined = [{
                 "id": d.metadata.get("chunk_id", d.page_content[:80]),
                 "text": d.metadata.get("original_text", d.page_content),
-                "filename": d.metadata.get("filename", "unknown"),
+                "filename": d.metadata.get("filename") or d.metadata.get("fichier", "unknown"),
                 "indexed_at": float(d.metadata.get("indexed_at", 0.0) or 0.0)
             } for d in hyde_docs]
             rrf_scores = {d["id"]: 0.5 for d in combined}
