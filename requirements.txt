@@ -23,14 +23,22 @@ fastembed>=0.2.0
 rank-bm25>=0.2.2
 
 # === Data Parsing ===
-# Unstructured est optionnel — les parsers custom (pypdf, openpyxl, python-docx)
-# gèrent déjà tous les formats. Installer Unstructured uniquement si besoin PDF complexes.
+# Unstructured est optionnel — les parsers custom couvrent tous les formats.
+# Installer Unstructured pour un meilleur support PDF complexes / tables.
 # unstructured[md,csv,xlsx]>=0.12.0  # décommenter si nécessaire
 openpyxl>=3.1.0
 python-docx>=1.1.0
+python-pptx>=0.6.21
+extract-msg>=0.48.0
+xlrd>=2.0.1
+charset-normalizer>=3.0.0
 msoffcrypto-tool>=5.0.0
 python-magic-bin; sys_platform == "win32"
 llama-parse>=0.5.0
+
+# === OCR (optionnel — requiert Tesseract + Poppler système) ===
+# pdf2image>=1.16.0
+# pytesseract>=0.3.10
 
 # === MCP ===
 mcp>=1.26.0,<2

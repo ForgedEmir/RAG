@@ -19,7 +19,7 @@ admin_router = APIRouter()
 
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_KB", "500")) * 1024
 MAX_ARCHIVE_SIZE = int(os.getenv("MAX_ARCHIVE_SIZE_MB", "50")) * 1024 * 1024
-ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx", ".pdf", ".docx", ".doc"}
+ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".xlsx", ".xls", ".pdf", ".docx", ".doc", ".pptx", ".eml", ".msg"}
 ARCHIVE_EXTENSIONS = {".zip", ".tar.gz", ".tar.bz2", ".tar.xz"}
 MAX_ARCHIVE_FILES = 50
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024  # 100 MB
@@ -34,8 +34,12 @@ _EXT_TO_MIME: dict[str, str] = {
     ".json": "application/json",
     ".xml":  "application/xml",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls":  "application/vnd.ms-excel",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".doc":  "application/msword",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".eml":  "message/rfc822",
+    ".msg":  "application/vnd.ms-outlook",
 }
 
 
