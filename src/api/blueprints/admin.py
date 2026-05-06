@@ -157,7 +157,7 @@ def _read_sample(content: bytes, ext: str, safe_name: str) -> str:
     if len(lines) > 40:
         mid = len(lines) // 2
         return "\n".join(lines[:20] + lines[max(0, mid - 5):mid + 5] + lines[-20:])
-    if not text and ext in {".pdf", ".xlsx", ".docx", ".doc"}:
+    if not text and ext in {".pdf", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".eml", ".msg"}:
         return f"BINARY_FILE:{ext}:{safe_name}:{len(content)}"
     return text
 
