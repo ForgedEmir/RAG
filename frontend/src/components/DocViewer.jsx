@@ -6,6 +6,7 @@ import DocxViewer     from './viewers/DocxViewer.jsx';
 import ExcelViewer    from './viewers/ExcelViewer.jsx';
 import CsvViewer      from './viewers/CsvViewer.jsx';
 import TextViewer     from './viewers/TextViewer.jsx';
+import PptxViewer     from './viewers/PptxViewer.jsx';
 
 export function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
@@ -17,6 +18,7 @@ const DOCX_EXTS  = new Set(['docx', 'doc']);
 const EXCEL_EXTS = new Set(['xlsx', 'xls']);
 const CSV_EXTS   = new Set(['csv']);
 const TEXT_EXTS  = new Set(['txt', 'json', 'xml']);
+const PPTX_EXTS  = new Set(['pptx']);
 
 function getExt(filename) {
   return filename.split('.').pop()?.toLowerCase() ?? '';
@@ -29,6 +31,7 @@ function ViewerBody({ filename, passage }) {
   if (DOCX_EXTS.has(ext))  return <DocxViewer filename={filename} passage={passage} />;
   if (EXCEL_EXTS.has(ext)) return <ExcelViewer filename={filename} passage={passage} />;
   if (CSV_EXTS.has(ext))   return <CsvViewer filename={filename} passage={passage} />;
+  if (PPTX_EXTS.has(ext))  return <PptxViewer filename={filename} passage={passage} />;
   if (TEXT_EXTS.has(ext))  return <TextViewer filename={filename} passage={passage} />;
   return <TextViewer filename={filename} passage={passage} />;
 }
