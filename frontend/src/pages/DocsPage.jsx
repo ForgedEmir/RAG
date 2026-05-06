@@ -190,7 +190,7 @@ export default function DocsPage({ user, onLogout }) {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.xml"
+                accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.xml,.xlsx,.xls,.pptx,.eml,.msg"
                 style={{ display: 'none' }}
                 onChange={e => handleFileSelect(e.target.files)}
               />
