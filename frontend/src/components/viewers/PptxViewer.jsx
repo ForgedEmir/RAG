@@ -41,27 +41,33 @@ export default function PptxViewer({ filename }) {
         canvas.width  = 1280;
         canvas.height = 720;
 
-        const viewer = new PPTXViewer({ canvas, debug: false });
+        const viewer = new PPTXViewer({
+          canvas,
+          debug: true,
+          slideSizeMode: 'fit',
+          backgroundColor: '#ffffff',
+        });
         viewerRef.current = viewer;
 
-        viewer.on('loadError', (err) => {
+        viewer.on('loadStart',      ()    => console.log('[PptxViewer] loadStart'));
+        viewer.on('loadComplete',   (d)   => console.log('[PptxViewer] loadComplete', d));
+        viewer.on('loadError',      (err) => {
           console.error('[PptxViewer] loadError', err);
-          if (!cancelled) {
-            setError(String(err?.message || err));
-            setLoading(false);
-          }
+          if (!cancelled) { setError(String(err?.message || err)); setLoading(false); }
         });
-        viewer.on('renderError', (err) => {
-          console.error('[PptxViewer] renderError', err);
-        });
-        viewer.on('slideChanged', (i) => {
+        viewer.on('renderStart',    (i)   => console.log('[PptxViewer] renderStart slide=', i));
+        viewer.on('renderComplete', (i)   => console.log('[PptxViewer] renderComplete slide=', i));
+        viewer.on('renderError',    (err) => console.error('[PptxViewer] renderError', err));
+        viewer.on('slideChanged',   (i)   => {
           if (!cancelled && typeof i === 'number') setCurrentSlide(i);
         });
 
+        console.log('[PptxViewer] loading file, bytes=', buf.byteLength);
         await viewer.loadFile(buf);
         if (cancelled) return;
 
         const n = viewer.getSlideCount?.() ?? 0;
+        console.log('[PptxViewer] slideCount=', n);
         setSlideCount(n);
         if (n > 0) {
           await viewer.renderSlide(0, canvas);
