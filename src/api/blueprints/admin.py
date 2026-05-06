@@ -553,7 +553,7 @@ async def list_clients(request: Request):
         ]
         return {"clients": users, "total": len(users)}
     except Exception as e:
-        logger.error(f"[CLIENTS] Erreur liste clients: {e}", exc_info=True)
+        logger.error(f"[CLIENTS] Error listing clients: {e}", exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -743,7 +743,7 @@ async def team_members(user_id: str = Depends(get_current_user)):
         ]
         return {"members": members, "pending_invitations": pending, "tenant_id": tenant_id}
     except Exception as e:
-        logger.error(f"[TEAM_MEMBERS] Erreur: {e}")
+        logger.error(f"[TEAM_MEMBERS] Error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
