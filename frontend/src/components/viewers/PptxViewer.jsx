@@ -10,52 +10,69 @@ export default function PptxViewer({ filename }) {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
-  const containerRef = useRef(null);
 
-  const [error, setError]           = useState(false);
-  const [loading, setLoading]       = useState(true);
-  const [slideCount, setSlideCount] = useState(0);
+  const [error, setError]               = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [slideCount, setSlideCount]     = useState(0);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(false);
+    setError(null);
     setSlideCount(0);
     setCurrentSlide(0);
 
     (async () => {
       try {
-        const { PPTXViewer } = await import('pptxviewjs');
+        const mod = await import('pptxviewjs');
+        const PPTXViewer = mod.PPTXViewer || (mod.default && mod.default.PPTXViewer);
+        if (!PPTXViewer) throw new Error('PPTXViewer export not found');
 
         const headers = await getAuthHeader();
         const res = await fetch(`/api/file/${encodeFilePath(filename)}`, { headers });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status} fetching file`);
         const buf = await res.arrayBuffer();
         if (cancelled) return;
 
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) throw new Error('Canvas element missing');
 
-        const viewer = new PPTXViewer({ canvas });
+        canvas.width  = 1280;
+        canvas.height = 720;
+
+        const viewer = new PPTXViewer({ canvas, debug: false });
         viewerRef.current = viewer;
 
-        viewer.on('loadComplete', ({ slideCount: n }) => {
-          if (cancelled) return;
-          setSlideCount(n);
-          setCurrentSlide(0);
-          viewer.renderSlide(0, canvas);
-          setLoading(false);
+        viewer.on('loadError', (err) => {
+          console.error('[PptxViewer] loadError', err);
+          if (!cancelled) {
+            setError(String(err?.message || err));
+            setLoading(false);
+          }
         });
-
+        viewer.on('renderError', (err) => {
+          console.error('[PptxViewer] renderError', err);
+        });
         viewer.on('slideChanged', (i) => {
-          if (!cancelled) setCurrentSlide(i);
+          if (!cancelled && typeof i === 'number') setCurrentSlide(i);
         });
 
-        await viewer.loadFile(new Blob([buf]));
+        await viewer.loadFile(buf);
+        if (cancelled) return;
+
+        const n = viewer.getSlideCount?.() ?? 0;
+        setSlideCount(n);
+        if (n > 0) {
+          await viewer.renderSlide(0, canvas);
+          if (cancelled) return;
+          setCurrentSlide(0);
+        }
+        setLoading(false);
       } catch (e) {
+        console.error('[PptxViewer] error', e);
         if (!cancelled) {
-          setError(true);
+          setError(String(e?.message || e));
           setLoading(false);
         }
       }
@@ -63,6 +80,7 @@ export default function PptxViewer({ filename }) {
 
     return () => {
       cancelled = true;
+      try { viewerRef.current?.destroy?.(); } catch (_) {}
       viewerRef.current = null;
     };
   }, [filename]);
@@ -71,45 +89,50 @@ export default function PptxViewer({ filename }) {
     const v = viewerRef.current;
     const c = canvasRef.current;
     if (!v || !c || currentSlide <= 0) return;
-    await v.renderSlide(currentSlide - 1, c);
-    setCurrentSlide(currentSlide - 1);
+    try {
+      await v.renderSlide(currentSlide - 1, c);
+      setCurrentSlide(currentSlide - 1);
+    } catch (e) { console.error('[PptxViewer] prev', e); }
   };
 
   const goNext = async () => {
     const v = viewerRef.current;
     const c = canvasRef.current;
     if (!v || !c || currentSlide >= slideCount - 1) return;
-    await v.renderSlide(currentSlide + 1, c);
-    setCurrentSlide(currentSlide + 1);
+    try {
+      await v.renderSlide(currentSlide + 1, c);
+      setCurrentSlide(currentSlide + 1);
+    } catch (e) { console.error('[PptxViewer] next', e); }
   };
 
-  if (error) return (
-    <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--fg-muted)' }}>
-      {t('viewer.error_load')}
-    </div>
-  );
-
   return (
-    <div ref={containerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#525659', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#525659', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'auto', padding: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
         <canvas
           ref={canvasRef}
+          width={1280}
+          height={720}
           style={{
             maxWidth: '100%',
             height: 'auto',
             background: '#fff',
             boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-            display: loading ? 'none' : 'block',
           }}
         />
         {loading && (
-          <div style={{ alignSelf: 'center', fontSize: 12, color: '#ccc', marginTop: 40 }}>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: 12, color: '#ccc' }}>
             {t('viewer.loading')}
+          </div>
+        )}
+        {error && !loading && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: 12, color: '#f87171', maxWidth: 360, textAlign: 'center' }}>
+            {t('viewer.error_load')}
+            <div style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}>{error}</div>
           </div>
         )}
       </div>
 
-      {slideCount > 0 && (
+      {slideCount > 0 && !error && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           padding: '8px 14px', borderTop: '1px solid var(--border-subtle)',
