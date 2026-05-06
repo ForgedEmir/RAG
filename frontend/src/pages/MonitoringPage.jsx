@@ -50,7 +50,7 @@ function timeAgo(t, iso) {
   return t('monitoring.d_ago', { n: Math.floor(h / 24) });
 }
 
-export default function MonitoringPage({ user, onLogout }) {
+export default function MonitoringPage({ user, onLogout, isAdmin }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState('overview');
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('monitoringKey') || '');
@@ -92,6 +92,7 @@ export default function MonitoringPage({ user, onLogout }) {
             { label: t('monitoring.nav_documents'), icon: 'folder', path: '/docs' },
             { label: t('monitoring.nav_settings'), icon: 'settings', path: '/settings' },
             { label: t('monitoring.nav_monitoring'), icon: 'activity', path: '/monitoring', active: true },
+            ...(isAdmin ? [{ label: t('nav.admin'), icon: 'shield', path: '/admin' }] : []),
           ].map(item => (
             <div
               key={item.path}

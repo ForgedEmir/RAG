@@ -48,7 +48,11 @@
     "btn_github": "GitHub",
     "btn_google": "Google",
     "btn_guest": "Continuer sans compte (mode invité)",
-    "footer": "Accès réservé aux collaborateurs autorisés."
+    "footer": "Accès réservé aux collaborateurs autorisés.",
+    "btn_microsoft": "Microsoft",
+    "tab_signup": "S'inscrire",
+    "signup_btn": "Créer un compte",
+    "signup_confirm": "Vérifiez votre email pour confirmer votre compte."
   },
   "chat": {
     "new_conversation": "Nouvelle conversation",
@@ -340,6 +344,24 @@
     "client_pending": "en attente",
     "no_clients": "Aucun client",
     "delete_client": "Supprimer ce client"
+  },
+  "admin": {
+    "heading": "Gestion des utilisateurs",
+    "invite_heading": "Inviter un utilisateur",
+    "invite_placeholder": "email@entreprise.com",
+    "invite_btn": "Envoyer l'invitation",
+    "invite_success": "Invitation envoyée.",
+    "users_heading": "Utilisateurs actifs",
+    "col_email": "Email",
+    "col_joined": "Inscrit le",
+    "col_last_active": "Dernière activité",
+    "delete_btn": "Supprimer",
+    "delete_confirm": "Retirer {{email}} de cette instance ?",
+    "back": "Retour au chat",
+    "never": "Jamais"
+  },
+  "nav": {
+    "admin": "Admin"
   },
   "docviewer": {
     "open_tab": "Ouvrir dans un nouvel onglet",

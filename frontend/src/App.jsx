@@ -8,6 +8,7 @@ import ChatPage from './pages/ChatPage.jsx';
 import DocsPage from './pages/DocsPage.jsx';
 import MonitoringPage from './pages/MonitoringPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 
 class ErrorBoundaryRaw extends Component {
   state = { error: null };
@@ -52,6 +53,7 @@ export default function App() {
     const id = localStorage.getItem('rabeliaGuestId') || localStorage.getItem('oracleGuestId');
     return id ? { id, isGuest: true } : null;
   });
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -65,13 +67,17 @@ export default function App() {
         setUser(u);
         // Auto-accept pending team invitations silently
         if (!u.isGuest) {
-          getAuthHeader().then(headers =>
-            fetch('/api/team/join', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } })
-          ).catch(() => {});
+          getAuthHeader().then(headers => {
+            fetch('/api/team/join', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } }).catch(() => {});
+            fetch('/api/auth/me', { headers }).then(r => r.ok ? r.json() : null).then(d => {
+              if (d?.is_admin) setIsAdmin(true);
+            }).catch(() => {});
+          }).catch(() => {});
         }
       } else {
         // SIGNED_OUT from Supabase must not clear an active guest session
         setUser(prev => (prev?.isGuest ? prev : null));
+        setIsAdmin(false);
       }
       setLoading(false);
     });
@@ -83,6 +89,7 @@ export default function App() {
   const handleLogout = async () => {
     await logout();
     setUser(null);
+    setIsAdmin(false);
     navigate('/login');
   };
 
@@ -102,16 +109,19 @@ export default function App() {
       } />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/chat" element={
-        user ? <ChatPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
+        user ? <ChatPage user={user} onLogout={handleLogout} isAdmin={isAdmin} /> : <Navigate to="/login" replace />
       } />
       <Route path="/docs" element={
-        user ? <DocsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
+        user ? <DocsPage user={user} onLogout={handleLogout} isAdmin={isAdmin} /> : <Navigate to="/login" replace />
       } />
       <Route path="/monitoring" element={
-        <MonitoringPage user={user} onLogout={handleLogout} />
+        <MonitoringPage user={user} onLogout={handleLogout} isAdmin={isAdmin} />
       } />
       <Route path="/settings" element={
         user ? <SettingsPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
+      } />
+      <Route path="/admin" element={
+        user ? <AdminPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
       } />
       <Route path="*" element={<Navigate to={user ? '/chat' : '/login'} replace />} />
     </Routes>
