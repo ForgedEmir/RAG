@@ -7,7 +7,7 @@ import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import { getAuthHeader } from '../auth.js';
 import DocViewer from '../components/DocViewer.jsx';
 
-export default function DocsPage({ user, onLogout }) {
+export default function DocsPage({ user, onLogout, isAdmin }) {
   const { t } = useTranslation();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +114,7 @@ export default function DocsPage({ user, onLogout }) {
             { label: t('docs.nav_documents'), icon: 'folder', path: '/docs', active: true },
             { label: t('docs.nav_settings'), icon: 'settings', path: '/settings' },
             { label: t('docs.nav_monitoring'), icon: 'activity', path: '/monitoring' },
+            ...(isAdmin ? [{ label: t('nav.admin'), icon: 'shield', path: '/admin' }] : []),
           ].map(item => (
             <div
               key={item.path}

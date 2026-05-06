@@ -53,6 +53,16 @@ export async function loginWithGoogle() {
   if (error) throw error;
 }
 
+export async function loginWithMicrosoft() {
+  const sb = await getSupabase();
+  if (!sb) throw new Error('Supabase not configured');
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'azure',
+    options: { redirectTo: window.location.origin + '/chat' },
+  });
+  if (error) throw error;
+}
+
 export async function logout() {
   localStorage.removeItem('rabeliaGuestId');
   localStorage.removeItem('oracleGuestId');

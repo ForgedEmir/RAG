@@ -25,9 +25,15 @@ _ALLOW_LOCAL_GUEST_HEADER = os.getenv("ALLOW_LOCAL_GUEST_HEADER", "true").lower(
 _ALLOW_GUEST_MODE = os.getenv("ALLOW_GUEST_MODE", "false").lower() == "true"
 # Explicit safeguard to avoid accidental activation of guest mode in production.
 _ALLOW_GUEST_MODE_IN_PROD = os.getenv("ALLOW_GUEST_MODE_IN_PROD", "false").lower() == "true"
+_ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "").lower().strip()
 _security = HTTPBearer(auto_error=False)
 _jwt_cache: OrderedDict[str, tuple[float, Optional[str]]] = OrderedDict()
 _jwt_cache_lock = asyncio.Lock()
+
+
+async def _check_domain(email: str) -> None:
+    if _ALLOWED_EMAIL_DOMAIN and not email.lower().endswith(f"@{_ALLOWED_EMAIL_DOMAIN}"):
+        raise HTTPException(status_code=403, detail="Email domain not authorized for this instance.")
 
 
 # ── Monitoring key (dashboard) ────────────────────────────────────────────────
@@ -128,4 +134,17 @@ async def get_current_user(
     user_id = await _verify_supabase_jwt(credentials.credentials)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired token.")
+    if _ALLOWED_EMAIL_DOMAIN:
+        try:
+            from src.monitoring.tracker import _get_client
+            supa = await _get_client()
+            if supa:
+                res = await supa.auth.get_user(credentials.credentials)
+                email = res.user.email if res and res.user else ""
+                if email:
+                    await _check_domain(email)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     return user_id

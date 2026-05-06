@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import Icon from '../components/Icon.jsx';
-import { loginWithEmail, sendMagicLink, getMfaLevel, listMfaFactors, challengeMfa, verifyMfa } from '../auth.js';
+import { loginWithEmail, signupWithEmail, sendMagicLink, loginWithMicrosoft, getMfaLevel, listMfaFactors, challengeMfa, verifyMfa } from '../auth.js';
 
 export default function LoginPage({ onLogin }) {
   const { t } = useTranslation();
@@ -54,6 +54,21 @@ export default function LoginPage({ onLogin }) {
       navigate('/chat');
     } catch (err) {
       setError(err.message || t('login.error_invalid_code'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      await signupWithEmail(email, password);
+      setSuccess(t('login.signup_confirm'));
+    } catch (err) {
+      setError(err.message || t('login.error_login'));
     } finally {
       setLoading(false);
     }
@@ -114,34 +129,29 @@ export default function LoginPage({ onLogin }) {
           display: 'flex', gap: 4, marginBottom: 24,
           background: 'var(--bg-sunken)', borderRadius: 8, padding: 4,
         }}>
-          <button
-            type="button"
-            onClick={() => { setMode('magic'); setError(''); setSuccess(''); }}
-            style={{
-              flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: mode === 'magic' ? 'var(--bg-surface)' : 'transparent',
-              color: mode === 'magic' ? 'var(--fg-primary)' : 'var(--fg-muted)',
-              boxShadow: mode === 'magic' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
-              transition: 'all 0.15s',
-            }}
-          >
-            {t('login.tab_magic')}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('password'); setError(''); setSuccess(''); }}
-            style={{
-              flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
-              border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: mode === 'password' ? 'var(--bg-surface)' : 'transparent',
-              color: mode === 'password' ? 'var(--fg-primary)' : 'var(--fg-muted)',
-              boxShadow: mode === 'password' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
-              transition: 'all 0.15s',
-            }}
-          >
-            {t('login.tab_password')}
-          </button>
+          {[
+            { key: 'magic', label: t('login.tab_magic') },
+            { key: 'password', label: t('login.tab_password') },
+            ...(import.meta.env.VITE_ALLOW_SELF_REGISTER === 'true'
+              ? [{ key: 'signup', label: t('login.tab_signup') }]
+              : []),
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => { setMode(key); setError(''); setSuccess(''); }}
+              style={{
+                flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
+                border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: mode === key ? 'var(--bg-surface)' : 'transparent',
+                color: mode === key ? 'var(--fg-primary)' : 'var(--fg-muted)',
+                boxShadow: mode === key ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {error && (
@@ -200,6 +210,56 @@ export default function LoginPage({ onLogin }) {
               style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 0' }}
             >
               {t('login.back')}
+            </button>
+          </form>
+        ) : mode === 'signup' ? (
+          <form onSubmit={handleSignup} style={{ textAlign: 'left' }}>
+            <div style={{ marginBottom: 12 }}>
+              <label className="rb-label" htmlFor="email-signup">{t('login.email_label')}</label>
+              <input
+                id="email-signup"
+                className="rb-input rb-input--lg"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder={t('login.email_placeholder')}
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label className="rb-label" htmlFor="password-signup">{t('login.password_label')}</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="password-signup"
+                  className="rb-input rb-input--lg"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  required
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--fg-muted)', padding: 4,
+                  }}
+                >
+                  <Icon name={showPassword ? 'eye_off' : 'eye'} size={16} />
+                </button>
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="rb-btn rb-btn--primary rb-btn--lg rb-btn--block"
+              disabled={loading || !!success}
+            >
+              {loading ? t('login.logging_in') : t('login.signup_btn')}
             </button>
           </form>
         ) : mode === 'magic' ? (
@@ -278,6 +338,29 @@ export default function LoginPage({ onLogin }) {
               {loading ? t('login.logging_in') : t('login.btn_login')}
             </button>
           </form>
+        )}
+
+        {import.meta.env.VITE_MICROSOFT_AUTH_ENABLED === 'true' && !mfaStep && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+              <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{t('login.or')}</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+            </div>
+            <button
+              className="rb-btn rb-btn--secondary rb-btn--block"
+              style={{ gap: 8 }}
+              onClick={async () => { try { await loginWithMicrosoft(); } catch (err) { setError(err.message); } }}
+            >
+              <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
+                <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+              </svg>
+              {t('login.btn_microsoft')}
+            </button>
+          </div>
         )}
 
         <p style={{ fontSize: 11.5, color: 'var(--fg-muted)', margin: '24px 0 0', lineHeight: 1.5 }}>

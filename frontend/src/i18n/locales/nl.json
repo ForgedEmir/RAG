@@ -48,7 +48,11 @@
     "btn_github": "GitHub",
     "btn_google": "Google",
     "btn_guest": "Doorgaan zonder account (gastmodus)",
-    "footer": "Toegang voorbehouden aan geautoriseerde medewerkers."
+    "footer": "Toegang voorbehouden aan geautoriseerde medewerkers.",
+    "btn_microsoft": "Microsoft",
+    "tab_signup": "Registreren",
+    "signup_btn": "Account aanmaken",
+    "signup_confirm": "Controleer uw e-mail om uw account te bevestigen."
   },
   "chat": {
     "new_conversation": "Nieuw gesprek",
@@ -340,6 +344,24 @@
     "client_pending": "in behandeling",
     "no_clients": "Geen klant",
     "delete_client": "Deze klant verwijderen"
+  },
+  "admin": {
+    "heading": "Gebruikersbeheer",
+    "invite_heading": "Gebruiker uitnodigen",
+    "invite_placeholder": "email@bedrijf.com",
+    "invite_btn": "Uitnodiging versturen",
+    "invite_success": "Uitnodiging verzonden.",
+    "users_heading": "Actieve gebruikers",
+    "col_email": "E-mail",
+    "col_joined": "Lid sinds",
+    "col_last_active": "Laatste activiteit",
+    "delete_btn": "Verwijderen",
+    "delete_confirm": "{{email}} verwijderen van deze instantie?",
+    "back": "Terug naar chat",
+    "never": "Nooit"
+  },
+  "nav": {
+    "admin": "Admin"
   },
   "docviewer": {
     "open_tab": "Openen in nieuw tabblad",

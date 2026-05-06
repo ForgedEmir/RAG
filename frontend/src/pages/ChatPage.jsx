@@ -8,7 +8,7 @@ import Icon from '../components/Icon.jsx';
 import RabeliaLogo from '../components/RabeliaLogo.jsx';
 import DocViewer from '../components/DocViewer.jsx';
 
-export default function ChatPage({ user, onLogout }) {
+export default function ChatPage({ user, onLogout, isAdmin }) {
   const { t } = useTranslation();
   const { sessions, activeSession, activeId, streaming, loadingHistory, newSession, selectSession, deleteSession, send, abort } = useChat();
   const [input, setInput] = useState('');
@@ -107,6 +107,7 @@ export default function ChatPage({ user, onLogout }) {
               { label: t('chat.documents'), icon: 'folder', path: '/docs' },
               { label: t('chat.settings'), icon: 'settings', path: '/settings' },
               { label: t('chat.monitoring'), icon: 'activity', path: '/monitoring' },
+              ...(isAdmin ? [{ label: t('nav.admin'), icon: 'shield', path: '/admin' }] : []),
             ].map((item) => (
               <div
                 key={item.path}

@@ -28,6 +28,7 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
+from src.api.blueprints.user_mgmt import user_mgmt_router, ADMIN_EMAILS, _get_supabase_admin
 from src.generation.generator import generate_user_summary, reformulate_question, stream_response, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
@@ -204,7 +205,14 @@ async def get_auth_config(request: Request):
 
 @router.get("/api/auth/me")
 async def get_user_identity(user_id: str = Depends(get_current_user)):
-    return {"user_id": user_id}
+    email = ""
+    try:
+        supa = _get_supabase_admin()
+        res = supa.auth.admin.get_user_by_id(user_id)
+        email = res.user.email.lower() if res.user else ""
+    except Exception:
+        pass
+    return {"user_id": user_id, "email": email, "is_admin": email in ADMIN_EMAILS}
 
 
 @router.post("/api/ask")
@@ -594,3 +602,4 @@ def register_routes(app: FastAPI, log_buffer: deque = None) -> None:
     app.include_router(admin_router)
     app.include_router(media_router)
     app.include_router(monitoring_router)
+    app.include_router(user_mgmt_router)
