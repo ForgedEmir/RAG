@@ -829,6 +829,35 @@ async def serve_file(filename: str, request: Request, user_id: str = Depends(get
     return FileResponse(path, media_type=mime, headers={"Content-Disposition": f'{disp}; filename="{safe_name}"'})
 
 
+@admin_router.get("/api/file-preview/{filename:path}")
+async def serve_file_preview(filename: str, request: Request, user_id: str = Depends(get_current_user)):
+    """Serve a PDF preview of office documents (PPTX/DOCX/XLSX → PDF via LibreOffice)."""
+    safe_name = _sanitize_filename(os.path.basename(filename))
+    if not safe_name:
+        return JSONResponse({"error": "Invalid filename."}, status_code=400)
+
+    tenant_id = await get_tenant_id(user_id)
+    source_path = await _resolve_file(tenant_id, safe_name)
+    if not source_path:
+        return JSONResponse({"error": "File not found."}, status_code=404)
+
+    from src.api.file_preview import convert_to_pdf, CONVERTIBLE_EXTS
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext == ".pdf":
+        return FileResponse(source_path, media_type="application/pdf",
+                            headers={"Content-Disposition": f'inline; filename="{safe_name}"'})
+    if ext not in CONVERTIBLE_EXTS:
+        return JSONResponse({"error": f"No preview available for {ext}."}, status_code=415)
+
+    pdf_path = await convert_to_pdf(source_path)
+    if not pdf_path:
+        return JSONResponse({"error": "Preview generation failed."}, status_code=500)
+
+    pdf_name = os.path.splitext(safe_name)[0] + ".pdf"
+    return FileResponse(pdf_path, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="{pdf_name}"'})
+
+
 @admin_router.get("/api/file-text/{filename:path}")
 async def serve_file_text(filename: str, request: Request, user_id: str = Depends(get_current_user)):
     """Return the extracted plain text of a file (PDF → pypdf, others → raw read)."""
