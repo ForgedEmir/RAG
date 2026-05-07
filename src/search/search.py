@@ -122,8 +122,28 @@ _reranker = None
 _reranker_lock = threading.Lock()
 
 
+def _strip_fr_suffix(token: str) -> str:
+    """Lightweight French plural/feminine stripping. No external deps.
+    Maps prospects→prospect, donnees→donnee, locaux→local, etc."""
+    if len(token) <= 4:
+        return token
+    if token.endswith("eaux"):
+        return token[:-1]                # bureaux -> bureau
+    if token.endswith("aux"):
+        return token[:-3] + "al"         # locaux -> local
+    if token.endswith("eux") and len(token) > 5:
+        return token[:-2]
+    if token.endswith("es") and len(token) > 4:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    if token.endswith("x") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
 def _tokenize_bm25(text: str) -> List[str]:
-    """Tokenisation optimized for French (normalization, accents, stopwords)."""
+    """Tokenisation optimized for French (normalization, accents, stopwords, light stemming)."""
     if not text:
         return []
     normalized = text.lower()
@@ -133,7 +153,33 @@ def _tokenize_bm25(text: str) -> List[str]:
     tokens = re.findall(r"[a-z0-9]+", normalized)
     if _BM25_FR_NORMALIZATION:
         tokens = [t for t in tokens if t not in _BM25_FR_STOPWORDS and len(t) > 1]
+        tokens = [_strip_fr_suffix(t) for t in tokens]
     return tokens
+
+
+def _filename_tokens(filename: str) -> Set[str]:
+    """Extract significant tokens from a filename basename (no path, no extension).
+    Splits on _, -, ., spaces. Applies same normalization as BM25 tokenizer."""
+    base = os.path.basename(filename or "")
+    base = os.path.splitext(base)[0]
+    base = re.sub(r"[_\-.]+", " ", base)
+    return set(_tokenize_bm25(base))
+
+
+def _filename_boost(query_tokens: Set[str], filename: str) -> float:
+    """Score boost for a candidate based on token overlap between query and filename.
+    Returns 0.0 if no significant overlap, up to ~0.05 (RRF range) for strong matches."""
+    if not query_tokens or not filename:
+        return 0.0
+    fname_tokens = _filename_tokens(filename)
+    if not fname_tokens:
+        return 0.0
+    overlap = query_tokens & fname_tokens
+    if not overlap:
+        return 0.0
+    # Each shared token = +0.02 boost (RRF scores typically 0.001-0.05).
+    # Normalize by query token count to favor specific matches over generic.
+    return min(0.05, 0.02 * len(overlap))
 
 
 def get_pipeline_stats() -> Dict[str, Any]:
@@ -424,13 +470,23 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
         combined = vector_results[:plan.k_candidates]
         rrf_scores = {d["id"]: 1 / (RRF_K + i) for i, d in enumerate(combined)}
 
+    # Step 3b: Filename-aware boost — push files whose name matches query tokens.
+    # Helps when chunks are short or table-heavy and don't repeat the filename in text.
+    query_fname_tokens = set(_tokenize_bm25(question))
+    if query_fname_tokens:
+        for doc in combined:
+            boost = _filename_boost(query_fname_tokens, doc.get("filename", ""))
+            if boost > 0:
+                rrf_scores[doc["id"]] = rrf_scores.get(doc["id"], 0.0) + boost
+        combined.sort(key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
+
     # Step 4: Deduplication and version resolution
     seen_files = {}
     for doc in combined:
         filename = doc.get("filename", "unknown")
         if filename not in seen_files or rrf_scores.get(doc["id"], 0.0) > rrf_scores.get(seen_files[filename]["id"], 0.0):
             seen_files[filename] = doc
-    
+
     combined, tie_subjects = _resolve_conflicts_by_recency(list(seen_files.values()))
 
     # Step 5: Intelligent reranking
