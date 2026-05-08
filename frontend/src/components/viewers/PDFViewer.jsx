@@ -14,7 +14,7 @@ function encodeFilePath(filename) {
   return filename.split('/').map(encodeURIComponent).join('/');
 }
 
-export default function PDFViewer({ filename, passage }) {
+export default function PDFViewer({ filename, passage, endpoint = '/api/file/' }) {
   const { t } = useTranslation();
   const [blobUrl, setBlobUrl]       = useState(null);
   const [error, setError]           = useState(false);
@@ -44,7 +44,7 @@ export default function PDFViewer({ filename, passage }) {
     (async () => {
       try {
         const headers = await getAuthHeader();
-        const res = await fetch(`/api/file/${encodeFilePath(filename)}`, { headers });
+        const res = await fetch(`${endpoint}${encodeFilePath(filename)}`, { headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();
         if (cancelled) return;
@@ -57,7 +57,7 @@ export default function PDFViewer({ filename, passage }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [filename]);
+  }, [filename, endpoint]);
 
   useEffect(() => () => {
     if (prevUrl.current) URL.revokeObjectURL(prevUrl.current);
