@@ -16,7 +16,6 @@ services:
     build:
       context: .
       args:
-        VITE_ALLOW_SELF_REGISTER: ${VITE_ALLOW_SELF_REGISTER:-false}
         VITE_MICROSOFT_AUTH_ENABLED: ${VITE_MICROSOFT_AUTH_ENABLED:-false}
     container_name: rabelia-api
     ports:

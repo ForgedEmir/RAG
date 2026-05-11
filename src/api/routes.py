@@ -28,7 +28,7 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
-from src.api.blueprints.user_mgmt import user_mgmt_router, ADMIN_EMAILS, _get_supabase_admin
+from src.api.blueprints.user_mgmt import user_mgmt_router, ADMIN_EMAILS, _get_supabase_admin, _user_exists, _EMAIL_RE
 from src.generation.generator import generate_user_summary, reformulate_question, stream_response, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
@@ -197,10 +197,75 @@ async def health_check():
 @router.get("/api/auth/config")
 @limiter.limit("20/minute")
 async def get_auth_config(request: Request):
+    allowed_domain = os.getenv("ALLOWED_EMAIL_DOMAIN", "").lower().strip()
+    allow_self_register = (
+        os.getenv("ALLOW_SELF_REGISTER", "false").lower() == "true"
+        and bool(allowed_domain)
+    )
     return {
-        "supabase_url":      os.getenv("SUPABASE_URL", ""),
-        "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
+        "supabase_url":        os.getenv("SUPABASE_URL", ""),
+        "supabase_anon_key":   os.getenv("SUPABASE_ANON_KEY", ""),
+        "allow_self_register": allow_self_register,
     }
+
+
+class MagicLinkBody(BaseModel):
+    email: str
+
+
+class SignupBody(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/api/auth/send-magic-link")
+@limiter.limit("10/minute")
+async def send_magic_link(request: Request, body: MagicLinkBody):
+    email = body.email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Invalid email.")
+    allowed_domain = os.getenv("ALLOWED_EMAIL_DOMAIN", "").lower().strip()
+    if allowed_domain:
+        if not email.endswith(f"@{allowed_domain}"):
+            raise HTTPException(status_code=403, detail="Email domain not authorized.")
+    else:
+        if not _user_exists(email):
+            raise HTTPException(status_code=403, detail="No account found for this email.")
+    from src.monitoring.tracker import _get_client
+    supa = await _get_client()
+    if not supa:
+        raise HTTPException(status_code=503, detail="Auth service unavailable.")
+    await supa.auth.sign_in_with_otp({
+        "email": email,
+        "options": {
+            "email_redirect_to": os.getenv("APP_URL", "") + "/auth/callback",
+            "should_create_user": bool(allowed_domain),
+        },
+    })
+    return {"message": "If eligible, a login link has been sent."}
+
+
+@router.post("/api/auth/signup")
+@limiter.limit("5/minute")
+async def signup(request: Request, body: SignupBody):
+    allowed_domain = os.getenv("ALLOWED_EMAIL_DOMAIN", "").lower().strip()
+    allow_self_register = os.getenv("ALLOW_SELF_REGISTER", "false").lower() == "true"
+    if not allow_self_register or not allowed_domain:
+        raise HTTPException(status_code=403, detail="Self-registration is not enabled.")
+    email = body.email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Invalid email.")
+    if not email.endswith(f"@{allowed_domain}"):
+        raise HTTPException(status_code=403, detail="Email domain not authorized.")
+    from src.monitoring.tracker import _get_client
+    supa = await _get_client()
+    if not supa:
+        raise HTTPException(status_code=503, detail="Auth service unavailable.")
+    try:
+        await supa.auth.sign_up({"email": email, "password": body.password})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"message": "Account created. Check your email to confirm."}
 
 
 @router.get("/api/auth/me")

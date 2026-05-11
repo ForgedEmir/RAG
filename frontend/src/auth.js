@@ -20,21 +20,27 @@ export async function loginWithEmail(email, password) {
 }
 
 export async function signupWithEmail(email, password) {
-  const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase not configured');
-  const { error } = await sb.auth.signUp({ email, password });
-  if (error) throw error;
-  return 'Account created. Check your email if confirmation is enabled.';
+  const res = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Signup failed.');
+  }
 }
 
 export async function sendMagicLink(email) {
-  const sb = await getSupabase();
-  if (!sb) throw new Error('Supabase not configured');
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.origin + '/auth/callback' },
+  const res = await fetch('/api/auth/send-magic-link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
   });
-  if (error) throw error;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Failed to send link.');
+  }
 }
 
 export async function loginWithGithub() {

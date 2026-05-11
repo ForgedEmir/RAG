@@ -7,7 +7,8 @@ import { loginWithEmail, signupWithEmail, sendMagicLink, loginWithMicrosoft, get
 
 export default function LoginPage({ onLogin }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState('magic'); // 'magic' | 'password'
+  const [mode, setMode] = useState('magic'); // 'magic' | 'password' | 'signup'
+  const [allowSignup, setAllowSignup] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -18,6 +19,13 @@ export default function LoginPage({ onLogin }) {
   const [mfaStep, setMfaStep] = useState(null); // null | { factorId, challengeId }
   const [totpCode, setTotpCode] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch('/api/auth/config')
+      .then(r => r.ok ? r.json() : null)
+      .then(cfg => { if (cfg?.allow_self_register) setAllowSignup(true); })
+      .catch(() => {});
+  }, []);
 
   const handlePassword = async (e) => {
     e.preventDefault();
@@ -132,9 +140,7 @@ export default function LoginPage({ onLogin }) {
           {[
             { key: 'magic', label: t('login.tab_magic') },
             { key: 'password', label: t('login.tab_password') },
-            ...(import.meta.env.VITE_ALLOW_SELF_REGISTER === 'true'
-              ? [{ key: 'signup', label: t('login.tab_signup') }]
-              : []),
+            ...(allowSignup ? [{ key: 'signup', label: t('login.tab_signup') }] : []),
           ].map(({ key, label }) => (
             <button
               key={key}

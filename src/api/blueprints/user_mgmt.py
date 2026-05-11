@@ -21,6 +21,15 @@ def _get_supabase_admin():
     return create_client(url, key)
 
 
+def _user_exists(email: str) -> bool:
+    try:
+        supa = _get_supabase_admin()
+        users = supa.auth.admin.list_users()
+        return any(u.email and u.email.lower() == email.lower() for u in (users or []))
+    except Exception:
+        return False
+
+
 async def get_admin_user(user_id: str = Depends(get_current_user)) -> str:
     supa = _get_supabase_admin()
     res = supa.auth.admin.get_user_by_id(user_id)
