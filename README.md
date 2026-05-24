@@ -240,13 +240,23 @@ Full reference → [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)
 
 ---
 
+## Community & Contributing
+
+| File | Purpose |
+|---|---|
+| [`LICENSE`](LICENSE) | MIT — free to use, modify, distribute |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute, PR guidelines, code style |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability |
+| [Bug report template](.github/ISSUE_TEMPLATE/bug_report.md) | For issues |
+| [Feature request template](.github/ISSUE_TEMPLATE/feature_request.md) | For suggestions |
+| [PR template](.github/PULL_REQUEST_TEMPLATE.md) | For pull requests |
+
 ## Repo Hygiene
 
 - `.env` and `.env.*` git-ignored
 - `.env.example` fully documented in version control
 - Zero hardcoded API keys or URLs in codebase
-
----
 
 ## Documentation
 
