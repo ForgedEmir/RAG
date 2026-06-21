@@ -2,7 +2,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: lorekeeper-redis
+    container_name: rabelia-redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -13,8 +13,12 @@ services:
       retries: 5
 
   app:
-    build: .
-    container_name: lorekeeper-app
+    build:
+      context: .
+      args:
+        VITE_ALLOW_SELF_REGISTER: ${VITE_ALLOW_SELF_REGISTER:-false}
+        VITE_MICROSOFT_AUTH_ENABLED: ${VITE_MICROSOFT_AUTH_ENABLED:-false}
+    container_name: rabelia-api
     ports:
       - "8000:8000"
     env_file:
@@ -31,8 +35,7 @@ services:
       FASTEMBED_CACHE_PATH: ${FASTEMBED_CACHE_PATH:-/app/fastembed_cache}
       HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ./data:/app/data
-      - lorekeeper_data:/app/data
+      - rabelia_data:/app/data
       - fastembed_cache:/app/fastembed_cache
     depends_on:
       redis:
@@ -41,5 +44,5 @@ services:
 
 volumes:
   redis_data:
-  lorekeeper_data:
+  rabelia_data:
   fastembed_cache:

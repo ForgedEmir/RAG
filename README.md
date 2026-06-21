@@ -85,32 +85,15 @@ Client → POST /api/ask
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+ and npm (required to build the frontend)
-- Docker (recommended for production-like local run)
+- Docker
 - API keys: Cerebras (LLM), Qdrant (vector DB), Supabase (auth/data)
 
-### 1. Clone & install
+### 1. Clone & configure
 
 ```bash
 git clone <repo-url>
 cd Oracle-LoreKeeper
 
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-source venv/bin/activate
-
-pip install -r requirements.txt
-
-# Build the frontend (requires Node.js 18+)
-cd src/frontend-react && npm install && npm run build && cd ../..
-```
-
-### 2. Configure
-
-```bash
 cp .env.example .env
 # Edit .env — minimum required keys:
 # LLM_API_KEY, QDRANT_URL, QDRANT_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -118,28 +101,20 @@ cp .env.example .env
 
 See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for full environment variable reference.
 
-### 3. Run
+### 2. Start
 
-**Development:**
-```bash
-python main.py
-# → API + frontend at http://localhost:8000
-```
-
-**Production (Docker):**
 ```bash
 docker compose up --build
-# → API at http://localhost:8000
+# → API + frontend at http://localhost:8000
 # → MCP server at http://localhost:8001
 ```
 
 **Makefile shortcuts:**
 ```bash
-make setup      # First-time setup (venv + .env + index)
-make run        # Dev server
-make docker-up  # Docker start
-make test       # Run unit tests
-make index      # Force reindex
+make docker-up   # Build and start (detached)
+make docker-down # Stop
+make index       # Force reindex (runs inside the container)
+make test        # Unit tests (runs inside the container)
 ```
 
 ---
@@ -176,6 +151,13 @@ make index      # Force reindex
 | `/api/cache/stats` | GET | monitoring key | Semantic cache statistics |
 | `/api/admin/sources` | GET | monitoring key | Indexed source files |
 | `/api/admin/delete` | DELETE | monitoring key | Remove a source file |
+| `/api/upload` | POST | JWT | Upload a document or archive for ingestion |
+| `/api/admin/upload` | POST | monitoring key | Admin upload (document or archive) |
+
+**Supported upload formats:**
+Documents: `.pdf` `.docx` `.doc` `.xlsx` `.csv` `.txt` `.md` `.json` `.xml`
+Archives: `.zip` `.tar.gz` `.tar.bz2` `.tar.xz` — contents are extracted and each valid document ingested individually.
+Limits: 500 KB per document (env: `MAX_UPLOAD_SIZE_KB`), 50 MB per archive (env: `MAX_ARCHIVE_SIZE_MB`), 100 MB uncompressed, 50 files per archive.
 
 **Request body for `/api/ask`:**
 ```json
@@ -199,22 +181,17 @@ data: {"type": "done", "trace_id": "...", "model": "llama3.1-8b"}
 
 **Unit suite:**
 ```bash
-python -m pytest src/test-unitaires -q
+docker compose exec app pytest src/test-unitaires -q
 ```
 
 **Targeted run after retrieval changes:**
 ```bash
-python -m pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q
+docker compose exec app pytest src/test-unitaires/test_search.py src/test-unitaires/test_routes.py -q
 ```
 
 **Load tests (opt-in):**
 ```bash
-# Windows:
-set RUN_LOAD_TESTS=true
-# Linux/macOS:
-export RUN_LOAD_TESTS=true
-
-python -m pytest src/test-unitaires/test_load.py -q
+docker compose exec -e RUN_LOAD_TESTS=true app pytest src/test-unitaires/test_load.py -q
 ```
 
 **Locust load testing:**

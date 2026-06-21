@@ -47,7 +47,7 @@ async def monitoring_pipeline(request: Request):
         return stats
     except Exception as e:
         logger.warning(f"monitoring_pipeline failed: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/reformulation")
@@ -92,7 +92,7 @@ async def monitoring_contextual_retrieval(request: Request):
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
         client = _get_client()
-        # Échantillon de 20 points pour vérifier combien ont un doc_summary
+        # Sample of 20 points to check how many have a doc_summary
         results = client.scroll(
             collection_name=_COLLECTION_NAME,
             limit=50,
@@ -113,13 +113,13 @@ async def monitoring_contextual_retrieval(request: Request):
             "sample_size": total,
             "with_contextual_summary": with_context,
             "coverage_pct": round(with_context / total * 100) if total else 0,
-            "status": "✅ Actif" if with_context > 0 else "⚠️ Aucun contexte trouvé — relance un reindex",
+            "status": "✅ Active" if with_context > 0 else "⚠️ No context found — trigger a reindex",
             "debug_payload_keys": sample_keys,
             "debug_metadata_keys": sample_meta_keys,
         }
     except Exception as e:
         logger.warning(f"monitoring_contextual_retrieval failed: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/features")
@@ -131,7 +131,7 @@ async def monitoring_features(request: Request):
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
         info = _get_client().get_collection(_COLLECTION_NAME)
-        features["vector"] = {"ok": True, "detail": f"{info.points_count or 0} vecteurs"}
+        features["vector"] = {"ok": True, "detail": f"{info.points_count or 0} vectors"}
     except Exception as e:
         features["vector"] = {"ok": False, "detail": str(e)[:60]}
 
@@ -141,7 +141,7 @@ async def monitoring_features(request: Request):
         stats = get_pipeline_stats()
         loaded = stats.get("bm25_loaded", False)
         chunks = stats.get("bm25_chunks", 0)
-        features["bm25"] = {"ok": bool(loaded and chunks), "detail": f"{chunks} chunks" if loaded else "Non chargé"}
+        features["bm25"] = {"ok": bool(loaded and chunks), "detail": f"{chunks} chunks" if loaded else "Not loaded"}
     except Exception as e:
         features["bm25"] = {"ok": False, "detail": str(e)[:60]}
 
@@ -152,8 +152,8 @@ async def monitoring_features(request: Request):
         hyde = bool(sw.get("hyde_enabled", False))
         rr = bool(sw.get("reranker_enabled", False))
         sr = bool(sw.get("smart_rerank_enabled", False))
-        features["reranker"] = {"ok": rr, "detail": "Actif" if rr else "Désactivé (runtime)", "smart": sr}
-        features["hyde"] = {"ok": hyde, "detail": "Actif" if hyde else "Désactivé (runtime)"}
+        features["reranker"] = {"ok": rr, "detail": "Active" if rr else "Disabled (runtime)", "smart": sr}
+        features["hyde"] = {"ok": hyde, "detail": "Active" if hyde else "Disabled (runtime)"}
     except Exception as e:
         features["reranker"] = {"ok": False, "detail": str(e)[:60]}
         features["hyde"] = {"ok": False, "detail": str(e)[:60]}
@@ -166,7 +166,7 @@ async def monitoring_features(request: Request):
         points = results[0]
         with_ctx = sum(1 for p in points if p.payload.get("metadata", {}).get("doc_summary") or p.payload.get("doc_summary"))
         pct = round(with_ctx / len(points) * 100) if points else 0
-        features["contextual"] = {"ok": with_ctx > 0, "detail": f"{pct}% des chunks enrichis ({with_ctx}/{len(points)})"}
+        features["contextual"] = {"ok": with_ctx > 0, "detail": f"{pct}% chunks enriched ({with_ctx}/{len(points)})"}
     except Exception as e:
         features["contextual"] = {"ok": False, "detail": str(e)[:60]}
 
@@ -174,27 +174,27 @@ async def monitoring_features(request: Request):
     try:
         from src.generation.generator import get_reformulation_enabled
         enabled = get_reformulation_enabled()
-        features["reformulation"] = {"ok": True, "detail": "Activée" if enabled else "Désactivée (toggle possible)"}
+        features["reformulation"] = {"ok": True, "detail": "Enabled" if enabled else "Disabled (toggle possible)"}
     except Exception as e:
         features["reformulation"] = {"ok": False, "detail": str(e)[:60]}
 
     # PII Masking
     try:
-        from src.security.pii_masker import masquer
-        test = masquer("email: test@test.com")
+        from src.security.pii_masker import mask
+        test = mask("email: test@test.com")
         ok = "test@test.com" not in test
-        features["pii"] = {"ok": ok, "detail": "Regex actif" if ok else "Masquage non fonctionnel"}
+        features["pii"] = {"ok": ok, "detail": "Regex active" if ok else "Masking non-functional"}
     except Exception as e:
         features["pii"] = {"ok": False, "detail": str(e)[:60]}
 
-    # LLM-as-Judge (géré par Langfuse)
-    features["judge"] = {"ok": True, "detail": "Délégué à Langfuse"}
+    # LLM-as-Judge (managed by Langfuse)
+    features["judge"] = {"ok": True, "detail": "Delegated to Langfuse"}
 
     # Feedback
     try:
         from src.monitoring.tracker import _get_client as get_supa
         client = get_supa()
-        features["feedback"] = {"ok": client is not None, "detail": "Supabase connecté" if client else "Supabase non configuré"}
+        features["feedback"] = {"ok": client is not None, "detail": "Supabase connected" if client else "Supabase not configured"}
     except Exception as e:
         features["feedback"] = {"ok": False, "detail": str(e)[:60]}
 
@@ -205,7 +205,7 @@ async def monitoring_features(request: Request):
     try:
         from src.ingestion.watcher import _watcher
         running = _watcher._observer is not None and _watcher._observer.is_alive()
-        features["watchdog"] = {"ok": running, "detail": "Observer actif" if running else "Non démarré"}
+        features["watchdog"] = {"ok": running, "detail": "Observer active" if running else "Not started"}
     except Exception as e:
         features["watchdog"] = {"ok": False, "detail": str(e)[:60]}
 
@@ -213,15 +213,15 @@ async def monitoring_features(request: Request):
     try:
         from src.memory.vector_memory import _get_client as get_mem_client
         cl = get_mem_client()
-        features["memory"] = {"ok": cl is not None, "detail": "Qdrant connecté"}
+        features["memory"] = {"ok": cl is not None, "detail": "Qdrant connected"}
     except Exception as e:
         features["memory"] = {"ok": False, "detail": str(e)[:60]}
 
     # TTS
     try:
-        features["tts"] = {"ok": True, "detail": "edge-tts chargé"}
+        features["tts"] = {"ok": True, "detail": "edge-tts loaded"}
     except Exception:
-        features["tts"] = {"ok": False, "detail": "edge-tts non installé"}
+        features["tts"] = {"ok": False, "detail": "edge-tts not installed"}
 
     # Multi-LLM Fallback
     try:
@@ -247,12 +247,12 @@ async def monitoring_user_memories(request: Request):
         from src.monitoring.tracker import _get_client
         client = await _get_client()
         if not client:
-            return {"memories": [], "error": "Supabase non configuré"}
+            return {"memories": [], "error": "Supabase not configured"}
         r = await client.table("user_memory").select("user_id, summary, updated_at").order("updated_at", desc=True).limit(20).execute()
         return {"memories": r.data or []}
     except Exception as e:
         logger.warning(f"monitoring_user_memories failed: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/feedbacks")
@@ -264,7 +264,7 @@ async def monitoring_feedbacks(request: Request, limit: int = 50):
         return {"feedbacks": await get_recent_feedback_events(limit=limit)}
     except Exception as e:
         logger.warning(f"monitoring_feedbacks failed: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @monitoring_router.get("/api/monitoring/pii")

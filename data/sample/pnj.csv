@@ -1,7 +1,0 @@
-NPC_ID;Dialogue_ID;Text_Raw;Condition
-CHAR_001;DIAL_ALA_01;"Bienvenue dans ma Capitale, %PLAYER_NAME%. Mais méfie-toi des traîtres elfiques.";Faction: Royaume
-CHAR_001;DIAL_ALA_02;"Ils nous ont abandonnés lors de la Nuit des Larmes. Je n'oublierai jamais.";Quest_Active: Nuit_des_Larmes
-CHAR_002;DIAL_ELA_01;"Les humains ne sont pas les bienvenus dans la Clairière d'Argent, <color=red>%PLAYER_NAME%</color>.";Faction: Elfes
-CHAR_002;DIAL_ELA_02;"Nous avons dû préserver nos forces pour le Vide. Alaric ne comprend pas.";Quest_Active: Conflit_Actuel
-CHAR_003;DIAL_GRD_01;"Les ombres murmurent... La magie devient instable.";Level >= 70
-CHAR_003;DIAL_GRD_02;"Je ne suis ni ami, ni ennemi. Je suis l'observateur.";Faction: Confrérie du Vide

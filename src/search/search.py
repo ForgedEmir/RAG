@@ -1,12 +1,13 @@
 """
-Moteur de recherche hybride pour le système RAG.
-Combine la recherche vectorielle (Qdrant) et lexicale (BM25) avec fusion RRF (Reciprocal Rank Fusion).
-Incorpore un reranking intelligent via cross-encoders ONNX et un fallback HyDE (Hypothetical Document Embeddings).
+Hybrid search engine for the RAG system.
+Combines vector search (Qdrant) and lexical search (BM25) with RRF (Reciprocal Rank Fusion).
+Includes intelligent reranking via ONNX cross-encoders and a HyDE (Hypothetical Document Embeddings) fallback.
 """
 import json
 import logging
 import os
 import re
+import tempfile
 import threading
 import time
 import unicodedata
@@ -19,7 +20,7 @@ from src.ingestion.vector_store import get_store, search
 
 logger = logging.getLogger(__name__)
 
-# Configuration des chemins et constantes de cache
+# Path and cache constants
 _BM25_CORPUS_FILE = os.path.join(os.path.dirname(__file__), "..", "ingestion", "qdrant_db", "bm25_corpus.json")
 _CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "300"))
 _CACHE_SIZE = int(os.getenv("SEARCH_CACHE_SIZE", "100"))
@@ -27,21 +28,20 @@ _BM25_BOOTSTRAP_LIMIT = max(100, int(os.getenv("BM25_BOOTSTRAP_LIMIT", "512")))
 _BM25_BOOTSTRAP_MAX_POINTS = max(500, int(os.getenv("BM25_BOOTSTRAP_MAX_POINTS", "50000")))
 _BM25_BOOTSTRAP_RETRY_SECONDS = max(5, int(os.getenv("BM25_BOOTSTRAP_RETRY_SECONDS", "30")))
 
-# Paramètres algorithmiques du pipeline de recherche
-RRF_K = 60    # Paramètre standard pour la fusion Reciprocal Rank
-CANDIDATES_COMPLEX = max(8, int(os.getenv("SEARCH_COMPLEX_CANDIDATES", "20")))
-CANDIDATES_SIMPLE = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "8")))
-RERANKER_TOP_N = max(3, int(os.getenv("RERANKER_TOP_N", "8")))
+# Search pipeline algorithmic parameters
+RRF_K = 60    # Standard parameter for Reciprocal Rank Fusion
+CANDIDATES_COMPLEX = max(8, int(os.getenv("SEARCH_COMPLEX_CANDIDATES", "14")))
+CANDIDATES_SIMPLE = max(3, int(os.getenv("SEARCH_SIMPLE_CANDIDATES", "5")))
+RERANKER_TOP_N = max(3, int(os.getenv("RERANKER_TOP_N", "6")))
 FINAL_TOP_N = max(1, int(os.getenv("SEARCH_FINAL_TOP_N", "6")))
-MAX_CHUNKS_PER_FILE = max(1, int(os.getenv("SEARCH_MAX_CHUNKS_PER_FILE", "5")))
-BM25_FALLBACK_MIN = 3  # Seuil vectoriel minimal avant d'activer BM25
+BM25_FALLBACK_MIN = 3  # Minimum vector results before activating BM25
 
-# Configuration du comportement dynamique
+# Dynamic behaviour configuration
 _HYDE_THRESHOLD = float(os.getenv("HYDE_SCORE_THRESHOLD", "0.005"))
 _HYDE_ENABLED = env_bool("HYDE_ENABLED", True)
 _RERANKER_ENABLED = env_bool("RERANKER_ENABLED", True)
-_QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", False)
-_RERANKER_MODEL = os.getenv("RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+_QUERY_EXPANSION_ENABLED = env_bool("QUERY_EXPANSION_ENABLED", True)
+_RERANKER_MODEL = os.getenv("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
 _RERANKER_MAX_INPUT = max(2, int(os.getenv("RERANKER_MAX_INPUT", "6")))
 _MIN_VECTOR_BEFORE_BM25 = max(1, int(os.getenv("MIN_VECTOR_BEFORE_BM25", str(BM25_FALLBACK_MIN))))
 _SMART_RERANK_ENABLED = env_bool("SMART_RERANK_ENABLED", True)
@@ -50,7 +50,7 @@ _SMART_RERANK_GAP_MIN = float(os.getenv("SMART_RERANK_GAP_MIN", "0.01"))
 _RERANK_SIMPLE_QUERIES = env_bool("RERANK_SIMPLE_QUERIES", False)
 _BM25_FR_NORMALIZATION = env_bool("BM25_FR_NORMALIZATION", True)
 
-# Stopwords français pour BM25
+# French stopwords for BM25
 _BM25_FR_STOPWORDS = {
     "a", "ai", "as", "au", "aux", "avec", "ce", "ces", "cet", "cette",
     "comme", "dans", "de", "des", "du", "elle", "en", "et", "est", "il",
@@ -60,19 +60,32 @@ _BM25_FR_STOPWORDS = {
     "ta", "te", "tes", "toi", "ton", "tu", "un", "une", "vos", "votre", "vous",
 }
 
-# Signaux linguistiques pour le routage des requêtes
+# Linguistic signals for query routing — covers both EN and FR
 _COMPLEX_SIGNALS = {
-    "comment", "pourquoi", "différence", "difference", "compare", "comparer",
-    "explique", "décris", "décrit", "liste", "relation", "lien", "entre",
-    "quelles", "quels", "quelles sont", "quels sont", "raconte",
+    # English
+    "how", "why", "difference", "compare",
+    "explain", "describe", "list", "relation", "link", "between",
+    "what", "tell",
+    # French
+    "pourquoi", "comment", "difference", "comparer", "compare",
+    "explique", "expliquer", "expliquez", "decrire", "decrivez",
+    "lister", "liste", "relation", "lien", "entre",
+    "quel", "quels", "quelle", "quelles",
+    # Accented FR (raw — the BM25 normalizer strips accents but signals match against lowered raw query)
+    "différence", "décrire", "décrivez",
 }
 
 _RERANK_REASONING_SIGNALS = {
-    "pourquoi", "comment", "compare", "comparer", "difference", "différence",
-    "relation", "lien", "entre", "vs", "versus", "explique", "expliquer",
+    # English
+    "why", "how", "compare", "difference",
+    "relation", "link", "between", "vs", "versus", "explain",
+    # French
+    "pourquoi", "comment", "comparer", "comparaison",
+    "lien", "entre", "expliquer", "explique",
+    "différence", "difference",
 }
 
-# Statistiques d'exécution du pipeline
+# Pipeline runtime statistics
 _pipeline_stats: Dict[str, Any] = {
     "total_queries": 0, "cache_hits": 0, "cache_misses": 0,
     "simple_queries": 0, "complex_queries": 0, "reranker_calls": 0,
@@ -82,7 +95,7 @@ _pipeline_stats: Dict[str, Any] = {
 
 
 def get_runtime_switches() -> Dict[str, Any]:
-    """Retourne l'état actuel des switches de configuration à l'exécution."""
+    """Returns the current state of runtime configuration switches."""
     return {
         "hyde_enabled": _HYDE_ENABLED,
         "reranker_enabled": _RERANKER_ENABLED,
@@ -96,7 +109,7 @@ def get_runtime_switches() -> Dict[str, Any]:
     }
 
 
-# États globaux (Singleton / Cache)
+# Global state (Singleton / Cache)
 _bm25_index: Optional[BM25Okapi] = None
 _bm25_corpus: List[Dict[str, Any]] = []
 _bm25_loaded: bool = False
@@ -109,8 +122,28 @@ _reranker = None
 _reranker_lock = threading.Lock()
 
 
+def _strip_fr_suffix(token: str) -> str:
+    """Lightweight French plural/feminine stripping. No external deps.
+    Maps prospects→prospect, donnees→donnee, locaux→local, etc."""
+    if len(token) <= 4:
+        return token
+    if token.endswith("eaux"):
+        return token[:-1]                # bureaux -> bureau
+    if token.endswith("aux"):
+        return token[:-3] + "al"         # locaux -> local
+    if token.endswith("eux") and len(token) > 5:
+        return token[:-2]
+    if token.endswith("es") and len(token) > 4:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    if token.endswith("x") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
 def _tokenize_bm25(text: str) -> List[str]:
-    """Tokenisation optimisée pour le français (normalisation, accents, stopwords)."""
+    """Tokenisation optimized for French (normalization, accents, stopwords, light stemming)."""
     if not text:
         return []
     normalized = text.lower()
@@ -120,11 +153,37 @@ def _tokenize_bm25(text: str) -> List[str]:
     tokens = re.findall(r"[a-z0-9]+", normalized)
     if _BM25_FR_NORMALIZATION:
         tokens = [t for t in tokens if t not in _BM25_FR_STOPWORDS and len(t) > 1]
+        tokens = [_strip_fr_suffix(t) for t in tokens]
     return tokens
 
 
+def _filename_tokens(filename: str) -> Set[str]:
+    """Extract significant tokens from a filename basename (no path, no extension).
+    Splits on _, -, ., spaces. Applies same normalization as BM25 tokenizer."""
+    base = os.path.basename(filename or "")
+    base = os.path.splitext(base)[0]
+    base = re.sub(r"[_\-.]+", " ", base)
+    return set(_tokenize_bm25(base))
+
+
+def _filename_boost(query_tokens: Set[str], filename: str) -> float:
+    """Score boost for a candidate based on token overlap between query and filename.
+    Returns 0.0 if no significant overlap, up to ~0.05 (RRF range) for strong matches."""
+    if not query_tokens or not filename:
+        return 0.0
+    fname_tokens = _filename_tokens(filename)
+    if not fname_tokens:
+        return 0.0
+    overlap = query_tokens & fname_tokens
+    if not overlap:
+        return 0.0
+    # Each shared token = +0.02 boost (RRF scores typically 0.001-0.05).
+    # Normalize by query token count to favor specific matches over generic.
+    return min(0.05, 0.02 * len(overlap))
+
+
 def get_pipeline_stats() -> Dict[str, Any]:
-    """Retourne les statistiques de performance du pipeline de recherche."""
+    """Returns the performance statistics of the search pipeline."""
     return {
         **_pipeline_stats,
         "bm25_chunks":      len(_bm25_corpus),
@@ -136,7 +195,7 @@ def get_pipeline_stats() -> Dict[str, Any]:
 
 @dataclass
 class _QueryPlan:
-    """Représente la stratégie de recherche décidée par le router."""
+    """Represents the search strategy decided by the router."""
     is_complex: bool
     use_expansion: bool
     use_reranker: bool
@@ -144,7 +203,7 @@ class _QueryPlan:
 
 
 def _route(question: str) -> _QueryPlan:
-    """Analyse la question pour déterminer la complexité et la stratégie de recherche."""
+    """Analyses the question to determine complexity and search strategy."""
     words = question.lower().split()
     is_complex = len(words) >= 6 or bool(set(words) & _COMPLEX_SIGNALS)
     return _QueryPlan(
@@ -156,13 +215,13 @@ def _route(question: str) -> _QueryPlan:
 
 
 def _needs_reasoning_rerank(question: str) -> bool:
-    """Détecte si la question demande un raisonnement complexe justifiant un reranking poussé."""
+    """Detects if the question requires complex reasoning that warrants deep reranking."""
     q = question.lower()
     return any(sig in q for sig in _RERANK_REASONING_SIGNALS)
 
 
 def _should_apply_reranker(plan: _QueryPlan, combined: List[Dict], rrf_scores: Dict[str, float], question: str) -> bool:
-    """Décide dynamiquement s'il faut appeler le reranker pour optimiser la latence."""
+    """Dynamically decides whether to call the reranker to optimise latency."""
     if not plan.use_reranker or not combined:
         return False
     if not plan.is_complex and not _RERANK_SIMPLE_QUERIES:
@@ -188,7 +247,7 @@ def _should_apply_reranker(plan: _QueryPlan, combined: List[Dict], rrf_scores: D
 
 
 def _get_reranker():
-    """Charge le cross-encoder ONNX (FastEmbed) de manière thread-safe."""
+    """Loads the ONNX cross-encoder (FastEmbed) in a thread-safe manner."""
     global _reranker
     if _reranker is not None or not _RERANKER_ENABLED:
         return _reranker
@@ -198,73 +257,80 @@ def _get_reranker():
         try:
             from fastembed.rerank.cross_encoder import TextCrossEncoder
             _reranker = TextCrossEncoder(model_name=_RERANKER_MODEL)
-            logger.info(f"Reranker ONNX chargé : {_RERANKER_MODEL}")
+            logger.info(f"ONNX reranker loaded: {_RERANKER_MODEL}")
         except Exception as e:
-            logger.warning(f"Impossible de charger le reranker ONNX : {e}. RRF seul sera utilisé.")
+            logger.warning(f"Failed to load ONNX reranker: {e}. Falling back to RRF only.")
     return _reranker
 
 
 def _rerank(query: str, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Applique un reranking sémantique sur les meilleurs candidats via un cross-encoder."""
+    """Applies semantic reranking on the top candidates via a cross-encoder."""
     reranker = _get_reranker()
     if not reranker or not docs:
         return docs
     try:
         docs_to_rerank = docs[:_RERANKER_MAX_INPUT]
         passages = [d["text"] for d in docs_to_rerank]
-        results = list(reranker.rerank(query, passages))
-        # WHY: FastEmbed TextCrossEncoder.rerank() retourne des objets RankingResult
-        # avec les attributs .score et .index. On trie par score décroissant.
-        # Certains modèles retournent des floats directement — on gère les deux cas.
-        ranked_pairs = []
-        for doc, result in zip(docs_to_rerank, results):
-            if hasattr(result, 'score'):
-                score = result.score
-            elif isinstance(result, (list, tuple)) and len(result) >= 2:
-                score = float(result[1])
-            else:
-                score = float(result)
-            ranked_pairs.append((doc, score))
-        ranked_pairs.sort(key=lambda x: x[1], reverse=True)
-        return [d for d, _ in ranked_pairs][:RERANKER_TOP_N]
+        scores = list(reranker.rerank(query, passages))
+        ranked = sorted(zip(docs_to_rerank, scores), key=lambda x: x[1], reverse=True)
+        return [d for d, _ in ranked][:RERANKER_TOP_N]
     except Exception as e:
-        logger.warning(f"Échec du reranking : {e}")
+        logger.warning(f"Reranking failed: {e}")
         return docs
 
 
 async def _expand_query(question: str) -> List[str]:
-    """Génère des variantes de la question via le LLM pour améliorer le rappel (recall)."""
+    """RAG-Fusion style query expansion: generate paraphrased + cross-lingual variants.
+
+    Why: improves recall on multilingual B2B corpora where the user phrasing
+    rarely matches indexed phrasing word-for-word, and where docs may be in
+    a different language than the query.
+    """
     try:
-        from src.generation.generator import _llm
+        from src.generation.generator import _llm, _llm_reformulation
         from langchain_core.messages import SystemMessage, HumanMessage
-        if not _llm:
+        # Prefer the faster reformulation LLM if available (cheaper, lower latency)
+        llm = _llm_reformulation or _llm
+        if not llm:
             return [question]
-        result = await _llm.ainvoke([
+        result = await llm.ainvoke([
             SystemMessage(content=(
-                "Génère exactement 2 reformulations de la question pour chercher dans une base de données. "
-                "Une par ligne, sans numérotation ni explication."
+                "You generate alternate phrasings of a user question to improve document "
+                "retrieval in a multilingual (French/English) business knowledge base. "
+                "Output exactly 3 lines, no numbering, no explanation:\n"
+                "  Line 1: a paraphrase using different words but same meaning.\n"
+                "  Line 2: an expanded version that spells out acronyms and adds synonyms.\n"
+                "  Line 3: a translation of the question into the OTHER language "
+                "(English if the input is French, French if the input is English)."
             )),
             HumanMessage(content=question),
         ])
         variants = [q.strip() for q in result.content.strip().splitlines() if q.strip()]
-        return [question] + variants[:2]
+        # Dedup against the original (case-insensitive)
+        seen = {question.lower().strip()}
+        unique_variants = []
+        for v in variants[:3]:
+            if v.lower().strip() not in seen:
+                seen.add(v.lower().strip())
+                unique_variants.append(v)
+        return [question] + unique_variants
     except Exception as e:
-        logger.warning(f"Échec de l'expansion de la requête : {e}")
+        logger.warning(f"Query expansion failed: {e}")
         return [question]
 
 
 def _load_bm25() -> None:
-    """Charge ou reconstruit l'index BM25 lexical à partir du corpus Qdrant."""
+    """Loads or rebuilds the BM25 lexical index from the Qdrant corpus."""
     global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
 
     path = os.path.normpath(_BM25_CORPUS_FILE)
     if not os.path.exists(path):
-        # Tentative de reconstruction dynamique si le fichier est absent
+        # Attempt dynamic rebuild if the corpus file is missing
         from src.ingestion.run import bootstrap_bm25_from_qdrant
         rebuilt = bootstrap_bm25_from_qdrant(path)
         if not rebuilt:
             if not _bm25_missing_warned:
-                logger.warning("Corpus BM25 absent. Mode vecteur seul.")
+                logger.warning("BM25 corpus missing. Vector-only mode.")
                 _bm25_missing_warned = True
             return
 
@@ -278,14 +344,24 @@ def _load_bm25() -> None:
             if _bm25_corpus:
                 tokenized_corpus = [_tokenize_bm25(d.get("text", "")) or ["_empty_"] for d in _bm25_corpus]
                 _bm25_index = BM25Okapi(tokenized_corpus)
-                logger.info(f"Index BM25 chargé ({len(_bm25_corpus)} fragments).")
+                logger.info(f"BM25 index loaded ({len(_bm25_corpus)} fragments).")
             _bm25_loaded = True
         except Exception as e:
-            logger.warning(f"Erreur lors du chargement de BM25 : {e}")
+            logger.warning(f"Error loading BM25 index: {e}")
+
+
+def invalidate_bm25_cache() -> None:
+    """Resets the BM25 index to force a reload on next call."""
+    global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
+    with _bm25_lock:
+        _bm25_index = None
+        _bm25_corpus = []
+        _bm25_loaded = False
+        _bm25_missing_warned = False
 
 
 def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dict], Dict[str, float]]:
-    """Combine les résultats vectoriels et lexicaux via Reciprocal Rank Fusion (RRF)."""
+    """Combines vector and lexical results via Reciprocal Rank Fusion (RRF)."""
     scores, doc_map = {}, {}
     for rank, doc in enumerate(vector):
         doc_id = doc["id"]
@@ -300,24 +376,21 @@ def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dic
     return [doc_map[i] for i in sorted_ids], {i: scores[i] for i in sorted_ids}
 
 
-def _subject_key(fichier: str) -> str:
-    """Extrait la clé de sujet d'un nom de fichier (ex: 'alaric_v1.md' -> 'alaric')."""
-    base = os.path.splitext(os.path.basename(fichier))[0].lower()
-    for sep in ("_", "-"):
-        if sep in base:
-            return base.split(sep, 1)[0]
-    return base
+def _subject_key(filename: str) -> str:
+    """Returns the subject prefix (before first _ or -) as a deduplication key."""
+    stem = os.path.splitext(os.path.basename(filename))[0].lower()
+    return re.split(r"[_\-]", stem)[0]
 
 
 def _resolve_conflicts_by_recency(docs: List[Dict]) -> Tuple[List[Dict], Set[str]]:
-    """Gère les conflits entre versions d'un même sujet en privilégiant le plus récent."""
+    """Resolves conflicts between versions of the same subject, keeping the most recent."""
     if len(docs) < 2:
         return docs, set()
 
     max_by_subject = {}
     count_at_max = {}
     for d in docs:
-        subject = _subject_key(d.get("fichier", "inconnu"))
+        subject = _subject_key(d.get("filename", "unknown"))
         ts = float(d.get("indexed_at", 0.0) or 0.0)
         if subject not in max_by_subject or ts > max_by_subject[subject]:
             max_by_subject[subject] = ts
@@ -326,68 +399,70 @@ def _resolve_conflicts_by_recency(docs: List[Dict]) -> Tuple[List[Dict], Set[str
             count_at_max[subject] = count_at_max.get(subject, 1) + 1
 
     tie_subjects = {s for s, cnt in count_at_max.items() if cnt > 1}
-    kept = [d for d in docs if float(d.get("indexed_at", 0.0) or 0.0) >= max_by_subject[_subject_key(d.get("fichier", "inconnu"))]]
+    kept = [d for d in docs if float(d.get("indexed_at", 0.0) or 0.0) >= max_by_subject[_subject_key(d.get("filename", "unknown"))]]
     return kept, tie_subjects
 
 
-def invalidate_bm25_cache() -> None:
-    """Force le rechargement de l'index BM25 au prochain accès."""
-    global _bm25_loaded
-    with _bm25_lock:
-        _bm25_loaded = False
-
-async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List[float], Set[str]]:
+async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str], List[str], List[float], Set[str]]:
     """
-    Pipeline principal de recherche hybride.
-    Exécute la recherche vectorielle, lexicale, la fusion RRF, le reranking et le fallback HyDE.
+    Main hybrid search pipeline.
+    Runs vector search, lexical search, RRF fusion, reranking, and HyDE fallback.
 
     Args:
-        question (str): La question de l'utilisateur.
+        question: The user's question.
+        tenant_id: Qdrant tenant filter for B2B multi-tenant isolation.
 
     Returns:
-        Tuple: (passages_texte, sources_fichiers, scores_confiance, sujets_en_conflit)
+        Tuple: (text_passages, source_files, confidence_scores, conflicting_subjects)
     """
     _pipeline_stats["total_queries"] += 1
     plan = _route(question)
     
-    # Étape 1 : Recherche vectorielle (multi-query si expansion active)
+    # Step 1: Vector search (multi-query if expansion is active)
     queries = await _expand_query(question) if plan.use_expansion else [question]
     store = get_store()
     seen_ids = set()
     vector_results = []
     
     for q in queries:
-        for doc in search(store, q, k=plan.k_candidates):
+        for doc in search(store, q, k=plan.k_candidates, tenant_id=tenant_id):
             doc_id = doc.metadata.get("chunk_id", doc.page_content[:80])
             if doc_id not in seen_ids:
                 seen_ids.add(doc_id)
-                # WHY: On utilise original_text si présent pour la génération LLM
-                # afin d'éviter de polluer le prompt avec le texte de "late chunking".
-                # page_content reste utile pour le reranker.
+                # WHY: Use original_text for LLM generation when present
+                # to avoid polluting the prompt with late-chunking context.
+                # page_content is still used by the reranker.
                 text_for_llm = doc.metadata.get("original_text", doc.page_content)
                 vector_results.append({
-                    "id": doc_id, 
+                    "id": doc_id,
                     "text": text_for_llm,
                     "raw_content": doc.page_content,
-                    "fichier": doc.metadata.get("fichier", "inconnu"),
+                    # Read both keys: "fichier" is the legacy/current ingestion key,
+                    # "filename" is the EN-translated alias from features/misc.
+                    "filename": doc.metadata.get("filename") or doc.metadata.get("fichier", "unknown"),
                     "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
                 })
 
-    # Étape 2 : Recherche lexicale BM25 (si nécessaire)
+    # Step 2: BM25 lexical search (if needed)
     if not _bm25_loaded:
         _load_bm25()
 
-    # WHY: BM25 est toujours utile pour les données tabulaires car les noms de
-    # colonnes et les valeurs exactes matchent bien en recherche lexicale.
     bm25_results = []
     if _bm25_index and _bm25_corpus:
         query_tokens = _tokenize_bm25(question)
         if query_tokens:
             bm25_scores = _bm25_index.get_scores(query_tokens)
-            top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:CANDIDATES_SIMPLE]
-            bm25_results = [_bm25_corpus[i] for i in top_indices if bm25_scores[i] > 0]
+            top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:plan.k_candidates]
+            # Normalize each corpus entry so downstream code can read `filename`
+            # regardless of whether the corpus was written with "fichier" (FR) or "filename" (EN).
+            bm25_results = []
+            for i in top_indices:
+                if bm25_scores[i] > 0:
+                    entry = dict(_bm25_corpus[i])
+                    entry["filename"] = entry.get("filename") or entry.get("fichier", "unknown")
+                    bm25_results.append(entry)
 
-    # Étape 3 : Fusion RRF
+    # Step 3: RRF fusion
     if bm25_results:
         combined, rrf_scores = _rrf(vector_results, bm25_results)
         combined = combined[:plan.k_candidates]
@@ -395,61 +470,55 @@ async def rechercher_passages(question: str) -> Tuple[List[str], List[str], List
         combined = vector_results[:plan.k_candidates]
         rrf_scores = {d["id"]: 1 / (RRF_K + i) for i, d in enumerate(combined)}
 
-    # Étape 4 : Déduplication intelligente par fichier
-    # WHY: L'ancienne dédup gardait 1 seul chunk par fichier, ce qui est catastrophique
-    # pour les données tabulaires (CSV/XLSX) où chaque ligne = info différente.
-    # Maintenant on garde jusqu'à MAX_CHUNKS_PER_FILE chunks par fichier, en
-    # privilégiant les meilleurs scores RRF.
-    file_chunks: Dict[str, List[Dict]] = {}
+    # Step 3b: Filename-aware boost — push files whose name matches query tokens.
+    # Helps when chunks are short or table-heavy and don't repeat the filename in text.
+    query_fname_tokens = set(_tokenize_bm25(question))
+    if query_fname_tokens:
+        for doc in combined:
+            boost = _filename_boost(query_fname_tokens, doc.get("filename", ""))
+            if boost > 0:
+                rrf_scores[doc["id"]] = rrf_scores.get(doc["id"], 0.0) + boost
+        combined.sort(key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
+
+    # Step 4: Deduplication and version resolution
+    seen_files = {}
     for doc in combined:
-        fichier = doc.get("fichier", "inconnu")
-        if fichier not in file_chunks:
-            file_chunks[fichier] = []
-        file_chunks[fichier].append(doc)
+        filename = doc.get("filename", "unknown")
+        if filename not in seen_files or rrf_scores.get(doc["id"], 0.0) > rrf_scores.get(seen_files[filename]["id"], 0.0):
+            seen_files[filename] = doc
 
-    deduped = []
-    for fichier, docs in file_chunks.items():
-        # Trier par score RRF décroissant, garder les MAX_CHUNKS_PER_FILE meilleurs
-        docs.sort(key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
-        deduped.extend(docs[:MAX_CHUNKS_PER_FILE])
+    combined, tie_subjects = _resolve_conflicts_by_recency(list(seen_files.values()))
 
-    # Re-trier par score RRF global
-    deduped.sort(key=lambda d: rrf_scores.get(d["id"], 0.0), reverse=True)
-    combined = deduped
-
-    combined, tie_subjects = _resolve_conflicts_by_recency(combined)
-
-    # Étape 5 : Reranking intelligent
+    # Step 5: Intelligent reranking
     should_rerank = _should_apply_reranker(plan, combined, rrf_scores, question)
     if should_rerank:
         _pipeline_stats["reranker_calls"] += 1
-        # Rerank utilise raw_content (qui contient le contexte de late chunking) pour plus de précision
-        # On doit adapter _rerank pour qu'il utilise raw_content si présent
+        # Rerank uses raw_content (which contains late-chunking context) for better precision
         combined = _rerank(query=question, docs=combined)
 
-    # Étape 6 : Fallback HyDE (si confiance trop faible)
+    # Step 6: HyDE fallback (if confidence is too low)
     max_rrf = max(rrf_scores.values()) if rrf_scores else 0.0
     if _HYDE_ENABLED and (not combined or max_rrf < _HYDE_THRESHOLD):
-        logger.info(f"Activation du fallback HyDE (score max {max_rrf:.4f})")
+        logger.info(f"HyDE fallback activated (max score {max_rrf:.4f})")
         try:
             from src.retrieval.hyde import hyde_search
             hyde_docs = await hyde_search(question, None, store._embeddings, store, top_k=FINAL_TOP_N)
             combined = [{
                 "id": d.metadata.get("chunk_id", d.page_content[:80]),
                 "text": d.metadata.get("original_text", d.page_content),
-                "fichier": d.metadata.get("fichier", "inconnu"),
+                "filename": d.metadata.get("filename") or d.metadata.get("fichier", "unknown"),
                 "indexed_at": float(d.metadata.get("indexed_at", 0.0) or 0.0)
             } for d in hyde_docs]
             rrf_scores = {d["id"]: 0.5 for d in combined}
         except Exception as e:
-            logger.warning(f"Échec du fallback HyDE : {e}")
+            logger.warning(f"HyDE fallback failed: {e}")
 
-    # Finalisation des résultats
+    # Finalize results
     combined = combined[:FINAL_TOP_N]
     passages = [d["text"] for d in combined]
-    sources = [d.get("fichier", "inconnu") for d in combined]
+    sources = [d.get("filename", "unknown") for d in combined]
     
-    # Normalisation des scores pour l'interface utilisateur
+    # Normalize scores for the UI
     max_score = max((rrf_scores.get(d["id"], 0.0) for d in combined), default=1.0) or 1.0
     conf_scores = [round(rrf_scores.get(d["id"], 0.0) / max_score, 3) for d in combined]
 

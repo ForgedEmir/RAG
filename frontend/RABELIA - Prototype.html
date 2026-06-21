@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>RABELIA — Prototype navigable</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #1b212c; font-family: "Inter", sans-serif; }
+    #stage {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #frame-wrap {
+      width: 1280px; height: 820px;
+      transform-origin: center center;
+      transition: transform 200ms ease;
+    }
+    .nav-bar {
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; align-items: center;
+      background: rgba(20, 26, 36, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      z-index: 100;
+      font-size: 12px;
+    }
+    .nav-bar button {
+      background: transparent; border: 0; color: #c0c8d4;
+      padding: 6px 12px; border-radius: 999px;
+      cursor: pointer; font-size: 12px;
+      font-family: "Inter", sans-serif;
+      transition: background 120ms ease, color 120ms ease;
+      white-space: nowrap;
+    }
+    .nav-bar button:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .nav-bar button.active { background: #fff; color: #1b212c; font-weight: 500; }
+    .nav-divider { width: 1px; height: 16px; background: rgba(255,255,255,0.12); margin: 0 4px; }
+    .badge {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; color: #8794a8; letter-spacing: 0.05em;
+      font-family: "IBM Plex Mono", monospace;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div class="nav-bar" id="nav"></div>
+  <div id="stage"><div id="frame-wrap"><div id="root"></div></div></div>
+  <div class="badge">RABELIA · Prototype · ←/→ pour naviguer</div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="primitives.jsx"></script>
+  <script type="text/babel" src="screen-chat.jsx"></script>
+  <script type="text/babel" src="screens-login-upload.jsx"></script>
+  <script type="text/babel" src="screen-settings.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const SCREENS = [
+      { id: "login", label: "Login", render: () => <window.LoginScreen /> },
+      { id: "chat-empty", label: "Chat (vide)", render: () => <window.ChatScreen empty /> },
+      { id: "chat", label: "Chat", render: () => <window.ChatScreen /> },
+      { id: "upload", label: "Upload", render: () => <window.UploadScreen state="drop" /> },
+      { id: "upload-progress", label: "Indexation", render: () => <window.UploadScreen state="progress" /> },
+      { id: "upload-done", label: "Prêt", render: () => <window.UploadScreen state="done" /> },
+      { id: "upload-error", label: "Erreur upload", render: () => <window.UploadScreen state="error" /> },
+      { id: "settings", label: "Espace", render: () => <window.SettingsScreen tab="workspace" /> },
+      { id: "settings-docs", label: "Documents", render: () => <window.SettingsScreen tab="documents" /> },
+      { id: "settings-members", label: "Membres", render: () => <window.SettingsScreen tab="members" /> },
+      { id: "invite", label: "Inviter", render: () => <window.SettingsScreen tab="members" showInviteModal /> },
+    ];
+
+    function fitScale() {
+      const wrap = document.getElementById("frame-wrap");
+      const w = window.innerWidth, h = window.innerHeight;
+      const sx = (w - 40) / 1280, sy = (h - 80) / 820;
+      const s = Math.min(sx, sy, 1);
+      wrap.style.transform = `scale(${s})`;
+    }
+
+    function App() {
+      const [idx, setIdx] = useState(() => {
+        const fromHash = parseInt(location.hash.replace("#", ""), 10);
+        return Number.isFinite(fromHash) ? Math.max(0, Math.min(SCREENS.length - 1, fromHash)) : 0;
+      });
+
+      useEffect(() => {
+        location.hash = String(idx);
+        const onKey = (e) => {
+          if (e.key === "ArrowRight") setIdx((i) => Math.min(SCREENS.length - 1, i + 1));
+          if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [idx]);
+
+      useEffect(() => {
+        fitScale();
+        window.addEventListener("resize", fitScale);
+        return () => window.removeEventListener("resize", fitScale);
+      }, []);
+
+      // Render nav into separate root
+      useEffect(() => {
+        const nav = document.getElementById("nav");
+        nav.innerHTML = "";
+        SCREENS.forEach((s, i) => {
+          const b = document.createElement("button");
+          b.textContent = s.label;
+          if (i === idx) b.className = "active";
+          b.onclick = () => setIdx(i);
+          nav.appendChild(b);
+          if (i === 0 || i === 6 || i === 9) {
+            // dividers after login, after upload-error, after invite
+          }
+        });
+      }, [idx]);
+
+      return SCREENS[idx].render();
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
-"""HyDE (Hypothetical Document Embeddings) - Fallback de rappel.
-Quand les scores RRF sont trop bas, génère une réponse hypothétique via LLM,
-l'embarque, puis cherche des documents similaires dans Qdrant.
+"""HyDE (Hypothetical Document Embeddings) - Recall fallback.
+When RRF scores are too low, generates a hypothetical answer via LLM,
+embeds it, then searches for similar documents in Qdrant.
 
 https://arxiv.org/abs/2212.10496
 """
@@ -17,8 +17,7 @@ _HYDE_ENABLED = os.getenv("HYDE_ENABLED", "true").lower() != "false"
 
 _HYDE_SYSTEM_PROMPT = (
     "Generate a hypothetical answer as if you knew the exact information "
-    "about this topic. Only output the answer, 2-4 sentences. "
-    "The answer should be factual and structured, as if extracted from a document."
+    "about this fantasy lore topic. Only output the answer, 2-4 sentences."
 )
 
 
@@ -27,7 +26,7 @@ def is_hyde_enabled() -> bool:
 
 
 async def _hypothetical_answer(query: str) -> str:
-    """Génère une réponse hypothétique via le LLM déjà instancié dans generator.py."""
+    """Generates a hypothetical answer via the LLM already instantiated in generator.py."""
     try:
         from src.generation.generator import _llm_reformulation, _llm_fallback, _llm
         llm = _llm_reformulation or _llm_fallback or _llm
@@ -44,8 +43,8 @@ async def _hypothetical_answer(query: str) -> str:
 
 
 async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List[Document]:
-    """HyDE fallback : génère une réponse hypothétique → l'embarque → cherche dans Qdrant.
-    Déclenché quand les scores RRF sont trop bas pour améliorer le rappel.
+    """HyDE fallback: generates a hypothetical answer → embeds it → searches Qdrant.
+    Triggered when RRF scores are too low to improve recall.
     """
     if not embedder or not qdrant:
         logger.warning("HyDE skipped: embedder or qdrant unavailable")
@@ -57,9 +56,9 @@ async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List
 
     logger.info(f"HyDE rewriting query. Hypothetical: {hypothetical[:100]}...")
     try:
-        # Note: embedder.embed_query est généralement synchrone (FastEmbed local),
-        # mais qdrant.similarity_search_by_vector peut être async si le store l'est.
-        # Ici on garde l'appel tel quel car get_store() retourne un wrapper synchrone.
+        # Note: embedder.embed_query is usually synchronous (local FastEmbed),
+        # but qdrant.similarity_search_by_vector can be async if the store is.
+        # Here we keep the call as is because get_store() returns a synchronous wrapper.
         emb = (list(embedder.embed([hypothetical]))[0]
                if hasattr(embedder, "embed")
                else embedder.embed_query(hypothetical))

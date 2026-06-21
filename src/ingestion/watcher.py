@@ -1,7 +1,7 @@
-"""Surveille data/sample/ et déclenche une réindexation en cas de changement.
+"""Watches data/sample/ and triggers a reindex on change.
 
-Debounce 2s pour éviter les réindexations en cascade lors d'un dépôt multi-fichiers.
-Fail-silent si watchdog n'est pas installé.
+Debounce 2s to avoid cascading reindexes during multi-file drop.
+Fail-silent if watchdog is not installed.
 """
 import logging
 import os
@@ -24,7 +24,7 @@ class _LoreWatcher:
 
     def start(self) -> None:
         if not WATCHDOG_ENABLED:
-            logger.info("[WATCHDOG] Désactivé (WATCHDOG_ENABLED=false).")
+            logger.info("[WATCHDOG] Disabled (WATCHDOG_ENABLED=false).")
             return
         try:
             from watchdog.observers import Observer
@@ -37,7 +37,7 @@ class _LoreWatcher:
                 def on_any_event(self, event):
                     if event.is_directory:
                         return
-                    # WHY: On ignore les fichiers temporaires créés par les éditeurs.
+                    # WHY: We ignore temporary files created by editors.
                     if any(event.src_path.endswith(ext) for ext in (".tmp", ".swp", "~")):
                         return
                     self._w._schedule_reindex()
@@ -46,11 +46,11 @@ class _LoreWatcher:
             self._observer = Observer()
             self._observer.schedule(_Handler(self), DATA_FOLDER, recursive=False)
             self._observer.start()
-            logger.info(f"[WATCHDOG] Surveillance active sur {DATA_FOLDER}")
+            logger.info(f"[WATCHDOG] Active monitoring on {DATA_FOLDER}")
         except ImportError:
-            logger.warning("[WATCHDOG] watchdog non installé — surveillance désactivée. Faire : pip install watchdog")
+            logger.warning("[WATCHDOG] watchdog not installed — monitoring disabled. Run: pip install watchdog")
         except Exception as e:
-            logger.warning(f"[WATCHDOG] Démarrage échoué : {e}")
+            logger.warning(f"[WATCHDOG] Startup failed: {e}")
 
     def stop(self) -> None:
         if self._observer:
@@ -76,13 +76,13 @@ class _LoreWatcher:
         if self._indexing:
             return
         self._indexing = True
-        logger.info("[WATCHDOG] Changement détecté — réindexation en cours...")
+        logger.info("[WATCHDOG] Change detected — reindexing...")
         try:
             from src.ingestion.run import index_data
             index_data(force_reindex=False)
-            logger.info("[WATCHDOG] Réindexation terminée.")
+            logger.info("[WATCHDOG] Reindexing complete.")
         except Exception as e:
-            logger.error(f"[WATCHDOG] Réindexation échouée : {e}")
+            logger.error(f"[WATCHDOG] Reindexing failed: {e}")
         finally:
             self._indexing = False
 

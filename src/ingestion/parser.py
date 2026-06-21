@@ -1,30 +1,49 @@
 """
-Module de parsing de documents pour le système RAG.
-Supporte les formats : .md, .txt, .json, .csv, .xlsx, .xml, .pdf.
-Utilise LlamaParse pour les PDF complexes et Unstructured en repli.
+Document parsing module for the RAG system.
+Supported formats: .md, .txt, .json, .csv, .xlsx, .xls, .xml, .pdf, .docx, .doc, .pptx, .eml, .msg.
+Uses LlamaParse for complex PDFs and Unstructured as fallback.
 """
+import io
 import os
 import re
 import csv
 import json
+import email as _email_mod
 import logging
-from typing import Optional, Any, Dict, List, Tuple
+import subprocess
+import xml.etree.ElementTree as ET
+from email import policy as _email_policy
+from typing import Optional, Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 _LLAMA_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
 
+# Formula error values to filter out in Excel cells
+_FORMULA_ERRORS = {"#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"}
+
+# Configurable Excel row limit (default 10 000)
+_MAX_XLSX_ROWS = int(os.getenv("MAX_XLSX_ROWS", "10000"))
+
+
+def _detect_and_read(filepath: str, fallback_encoding: str = "utf-8") -> str:
+    """Read a file with automatic encoding detection via charset-normalizer.
+    Falls back to the given encoding on detection failure.
+    Handles UTF-8 BOM transparently.
+    """
+    with open(filepath, "rb") as f:
+        raw = f.read()
+    try:
+        from charset_normalizer import from_bytes
+        result = from_bytes(raw).best()
+        if result is not None:
+            return str(result)
+    except ImportError:
+        pass
+    return raw.decode(fallback_encoding, errors="replace")
+
 
 def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
-    """
-    Tente d'extraire le texte d'un PDF en utilisant l'API LlamaParse.
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte extrait au format Markdown, ou None si l'API est indisponible ou en cas d'erreur.
-    """
     if not _LLAMA_API_KEY:
         return None
     try:
@@ -33,317 +52,481 @@ def _parse_pdf_llamaparse(filepath: str) -> Optional[str]:
         documents = parser.load_data(filepath)
         return "\n\n".join(doc.text for doc in documents if doc.text)
     except ImportError:
-        logger.warning("Bibliothèque 'llama-parse' non installée. Exécutez 'pip install llama-parse'.")
+        logger.warning("Library 'llama-parse' not installed. Run 'pip install llama-parse'.")
         return None
     except Exception as e:
-        logger.warning(f"LlamaParse a échoué pour {filepath}, passage au moteur Unstructured : {e}")
+        logger.warning(f"LlamaParse failed for {filepath}, falling back to Unstructured: {e}")
         return None
 
 
 def clean_text(raw_text: str) -> str:
-    """
-    Nettoie et normalise le texte brut extrait des documents.
-    Supprime le HTML, les en-têtes Markdown, normalise les variables template et les espaces.
-
-    Args:
-        raw_text (str): Le texte brut à nettoyer.
-
-    Returns:
-        str: Le texte nettoyé et formaté.
-    """
     if not raw_text:
         return ""
-
-    # Suppression des balises HTML
     text = re.sub(r'<[^>]+>', '', raw_text)
-    
-    # Suppression des symboles de titres Markdown (#)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    
-    # Normalisation des variables template (%VAR_NAME% → VAR_NAME)
+    text = text.replace('%PLAYER_NAME%', 'the player')
     text = re.sub(r'%[A-Z_0-9]+%', lambda m: m.group(0).replace('%', ''), text)
-
-    # Normalisation des espaces et gestion des paragraphes
     paragraphs = re.split(r'\n\s*\n', text)
     cleaned_paragraphs = [" ".join(p.split()) for p in paragraphs if p.strip()]
     return "\n\n".join(cleaned_paragraphs)
 
 
-def _parse_pdf_pymupdf(filepath: str) -> Optional[str]:
-    """
-    Moteur de parsing PDF utilisant PyMuPDF (fitz). Très fiable, rapide,
-    et ne nécessite aucune dépendance système (contrairement à poppler).
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte extrait, ou None en cas d'échec.
-    """
-    try:
-        import fitz  # PyMuPDF
-        doc = fitz.open(filepath)
-        pages = []
-        for page in doc:
-            text = page.get_text()
-            if text.strip():
-                pages.append(text)
-        doc.close()
-        if not pages:
-            logger.warning(f"PyMuPDF: aucune texte extrait de {filepath} (PDF possibly image-only).")
-            return None
-        return "\n".join(pages)
-    except ImportError:
-        logger.warning("Bibliothèque 'pymupdf' non installée. Exécutez 'pip install pymupdf'.")
-        return None
-    except Exception as e:
-        logger.warning(f"PyMuPDF a échoué pour {filepath} : {e}")
-        return None
-
-
 def _parse_pdf_unstructured(filepath: str) -> Optional[str]:
-    """
-    Moteur de secours pour le parsing PDF utilisant la bibliothèque Unstructured.
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte extrait, ou None en cas d'échec.
-    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("Bibliothèque 'unstructured' non installée. Exécutez 'pip install unstructured'.")
+        logger.warning("Library 'unstructured' not installed. Run 'pip install unstructured'.")
         return None
     except Exception as e:
-        logger.error(f"Échec de l'extraction Unstructured pour {filepath} : {e}")
+        logger.error(f"Unstructured extraction failed for {filepath}: {e}")
+        return None
+
+
+def _parse_pdf_pypdf(filepath: str) -> Optional[str]:
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(filepath)
+        text = ""
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n\n"
+        return text.strip() if text.strip() else None
+    except Exception as e:
+        logger.warning(f"pypdf failed for {filepath}: {e}")
+        return None
+
+
+def _parse_pdf_ocr(filepath: str) -> Optional[str]:
+    """Last-resort OCR via pdf2image + pytesseract for scanned PDFs."""
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+        images = convert_from_path(filepath)
+        text_parts = []
+        for img in images:
+            page_text = pytesseract.image_to_string(img)
+            if page_text.strip():
+                text_parts.append(page_text.strip())
+        return "\n\n".join(text_parts) if text_parts else None
+    except ImportError:
+        logger.debug("OCR libraries not available (pdf2image, pytesseract).")
+        return None
+    except Exception as e:
+        logger.warning(f"OCR failed for {filepath}: {e}")
         return None
 
 
 def _parse_pdf(filepath: str) -> Optional[str]:
-    """
-    Orchestre le parsing PDF avec une chaîne de fallback :
-    1. LlamaParse (API cloud, meilleur qualité)
-    2. PyMuPDF (local, rapide, fiable)
-    3. Unstructured (local, bon pour les PDF complexes)
-
-    Args:
-        filepath (str): Chemin vers le fichier PDF.
-
-    Returns:
-        Optional[str]: Texte complet extrait du PDF.
-    """
-    # 1. LlamaParse (API cloud — nécessite LLAMA_CLOUD_API_KEY)
+    # Priority: LlamaParse (best quality) → Unstructured (preserves tables)
+    #         → pypdf (text-only fallback) → OCR (scanned documents)
     result = _parse_pdf_llamaparse(filepath)
     if result:
         return result
-
-    # 2. PyMuPDF — fallback local rapide et très fiable
-    result = _parse_pdf_pymupdf(filepath)
+    result = _parse_pdf_unstructured(filepath)
     if result:
         return result
+    result = _parse_pdf_pypdf(filepath)
+    if result:
+        return result
+    return _parse_pdf_ocr(filepath)
 
-    # 3. Unstructured — dernier recours
-    return _parse_pdf_unstructured(filepath)
+
+def _parse_docx(filepath: str) -> Optional[str]:
+    try:
+        import docx as _docx
+        doc = _docx.Document(filepath)
+        parts: list[str] = []
+
+        # Extract headers and footers from all sections
+        for section in doc.sections:
+            for hf in (section.header, section.footer):
+                if hf is not None:
+                    for p in hf.paragraphs:
+                        if p.text.strip():
+                            parts.append(p.text.strip())
+
+        if parts:
+            parts.append("---")
+
+        # Extract paragraphs with heading hierarchy
+        _HEADING_MAP = {
+            "Heading 1": "# ", "Heading 2": "## ", "Heading 3": "### ",
+            "Heading 4": "#### ", "Heading 5": "##### ", "Heading 6": "###### ",
+        }
+        for p in doc.paragraphs:
+            if not p.text.strip():
+                continue
+            prefix = _HEADING_MAP.get(p.style.name, "")
+            parts.append(f"{prefix}{p.text.strip()}")
+
+        # Extract tables
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+
+        return "\n\n".join(parts) if parts else None
+    except Exception as e:
+        logger.warning(f"python-docx failed for {filepath}, falling back to unstructured: {e}")
+        try:
+            from unstructured.partition.docx import partition_docx
+            elements = partition_docx(filename=filepath)
+            return "\n".join(str(el) for el in elements if str(el).strip()) or None
+        except Exception as e2:
+            logger.error(f"DOCX extraction failed for {filepath}: {e2}")
+            return None
+
+
+def _parse_doc(filepath: str) -> Optional[str]:
+    """Parse legacy .doc binary format (not .docx)."""
+    # Try antiword (command-line tool)
+    try:
+        result = subprocess.run(
+            ["antiword", filepath], capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.debug(f"antiword failed for {filepath}: {e}")
+    # Try Unstructured
+    try:
+        from unstructured.partition.doc import partition_doc
+        elements = partition_doc(filename=filepath)
+        text = "\n".join(str(el) for el in elements if str(el).strip())
+        if text:
+            return text
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"Unstructured partition_doc failed for {filepath}: {e}")
+    logger.warning(
+        f"Cannot parse legacy .doc file '{filepath}'. "
+        "Install 'antiword' or 'unstructured' with doc support, "
+        "or convert the file to .docx."
+    )
+    return None
+
+
+def _parse_pptx(filepath: str) -> Optional[str]:
+    """Extract text and tables from PowerPoint .pptx files."""
+    try:
+        from pptx import Presentation
+        prs = Presentation(filepath)
+        slides = []
+        for i, slide in enumerate(prs.slides, 1):
+            parts = [f"--- Slide {i} ---"]
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            parts.append(text)
+                if shape.has_table:
+                    table = shape.table
+                    for row in table.rows:
+                        cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                        if cells:
+                            parts.append(" | ".join(cells))
+            if len(parts) > 1:
+                slides.append("\n".join(parts))
+        return "\n\n".join(slides) if slides else None
+    except ImportError:
+        logger.warning("Library 'python-pptx' not installed. Run 'pip install python-pptx'.")
+        return None
+    except Exception as e:
+        logger.warning(f"python-pptx failed for {filepath}, trying Unstructured: {e}")
+        try:
+            from unstructured.partition.pptx import partition_pptx
+            elements = partition_pptx(filename=filepath)
+            return "\n".join(str(el) for el in elements if str(el).strip()) or None
+        except Exception as e2:
+            logger.error(f"PPTX extraction failed for {filepath}: {e2}")
+            return None
+
+
+def _parse_eml(filepath: str) -> Optional[str]:
+    """Extract headers and body from .eml email files."""
+    with open(filepath, "rb") as f:
+        msg = _email_mod.message_from_bytes(f.read(), policy=_email_policy.default)
+    parts: list[str] = []
+    for hdr in ("From", "To", "Cc", "Subject", "Date"):
+        val = msg.get(hdr)
+        if val:
+            parts.append(f"{hdr}: {val}")
+    parts.append("---")
+    body = msg.get_body(preferencelist=("plain", "html"))
+    if body:
+        content = body.get_content()
+        if body.get_content_type() == "text/html":
+            content = re.sub(r'<[^>]+>', '', content)
+        if content.strip():
+            parts.append(content.strip())
+    attachments = [att.get_filename() for att in msg.iter_attachments() if att.get_filename()]
+    if attachments:
+        parts.append(f"Attachments: {', '.join(attachments)}")
+    return "\n\n".join(parts) if len(parts) > 1 else None
+
+
+def _parse_msg(filepath: str) -> Optional[str]:
+    """Extract headers and body from Outlook .msg files."""
+    try:
+        import extract_msg
+        msg = extract_msg.Message(filepath)
+        parts: list[str] = []
+        for hdr, val in [("From", msg.sender), ("To", msg.to), ("Cc", msg.cc),
+                         ("Subject", msg.subject), ("Date", msg.date)]:
+            if val:
+                parts.append(f"{hdr}: {val}")
+        parts.append("---")
+        if msg.body:
+            parts.append(msg.body.strip())
+        msg.close()
+        return "\n\n".join(parts) if len(parts) > 1 else None
+    except ImportError:
+        logger.warning("Library 'extract-msg' not installed. Run 'pip install extract-msg'.")
+        return None
+    except Exception as e:
+        logger.error(f"MSG extraction failed for {filepath}: {e}")
+        return None
 
 
 def extract_text_from_file(filepath: str) -> Optional[str]:
-    """
-    Fonction principale pour extraire le texte d'un fichier en fonction de son extension.
-
-    Args:
-        filepath (str): Chemin vers le fichier à traiter.
-
-    Returns:
-        Optional[str]: Le texte brut extrait du fichier, ou None si le format n'est pas supporté ou si le fichier est introuvable.
-    """
     if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable au chemin spécifié : {filepath}")
+        logger.error(f"File not found at specified path: {filepath}")
         return None
 
     ext = os.path.splitext(filepath)[1].lower()
     loaders = {
-        '.txt': _read_text_file,
-        '.md':  _read_text_file,
+        '.txt':  _read_text_file,
+        '.md':   _read_text_file,
         '.json': _read_json_file,
-        '.csv': _read_csv,
+        '.csv':  _read_csv,
         '.xlsx': _xlsx_to_text,
-        '.xml': _xml_to_text,
-        '.pdf': _parse_pdf,
+        '.xls':  _parse_xls,
+        '.xml':  _xml_to_text,
+        '.pdf':  _parse_pdf,
+        '.docx': _parse_docx,
+        '.doc':  _parse_doc,
+        '.pptx': _parse_pptx,
+        '.eml':  _parse_eml,
+        '.msg':  _parse_msg,
     }
-    
+
     loader = loaders.get(ext)
     if not loader:
-        logger.warning(f"Format de fichier non supporté : {ext}")
+        logger.warning(f"Unsupported file format: {ext}")
         return None
-        
+
     try:
         return loader(filepath)
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture du fichier {filepath} : {e}")
+        logger.error(f"Error reading file {filepath}: {e}")
         return None
 
 
 def _read_text_file(filepath: str) -> str:
-    """Lit un fichier texte simple ou Markdown."""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return f.read()
+    return _detect_and_read(filepath)
 
 
 def _read_json_file(filepath: str) -> str:
-    """Lit et convertit un fichier JSON en texte structuré."""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    text = _detect_and_read(filepath)
+    data = json.loads(text)
     return _json_to_text(data)
 
 
 def _read_csv(filepath: str) -> str:
-    """Extrait les données d'un fichier CSV en tentant de détecter son dialecte.
-    Retourne le texte brut complet pour le chunking tabulaire."""
-    with open(filepath, 'r', encoding='utf-8-sig') as f:
-        return f.read()
-
-
-def read_csv_raw(filepath: str) -> Tuple[List[str], List[List[str]]]:
-    """Parse un CSV et retourne (headers, data_rows) pour le chunking tabulaire.
-
-    Args:
-        filepath: Chemin vers le fichier CSV.
-
-    Returns:
-        Tuple de (headers, data_rows) où headers est la liste des noms de colonnes
-        et data_rows est la liste des lignes de données (chaque ligne = liste de str).
-    """
-    with open(filepath, 'r', encoding='utf-8-sig') as f:
-        sample = f.read(8192)
-        f.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample)
-        except csv.Error:
-            # Fallback : détection par séparateur commun
-            if '\t' in sample[:1000]:
-                dialect = csv.excel_tab
-            elif ';' in sample[:1000]:
-                class SemiColonDialect(csv.excel):
-                    delimiter = ';'
-                dialect = SemiColonDialect()
-            else:
-                dialect = csv.excel
-        reader = csv.reader(f, dialect)
-        rows = list(reader)
-
-    if not rows:
-        return [], []
-    headers = [h.strip() for h in rows[0]]
-    data_rows = [[cell.strip() for cell in row] for row in rows[1:]]
-    return headers, data_rows
+    text = _detect_and_read(filepath)
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample)
+    except csv.Error:
+        logger.warning(f"CSV dialect detection failed for {filepath}, using default comma delimiter.")
+        dialect = csv.excel
+    reader = csv.reader(io.StringIO(text), dialect)
+    lines = [" | ".join(cell for cell in row if cell.strip()) for row in reader]
+    return "\n".join(line for line in lines if line)
 
 
 def _xlsx_to_text(filepath: str) -> str:
-    """Convertit un fichier Excel en texte plat (fallback pour les anciens appels).
-    Préférer read_xlsx_sheets() pour le chunking tabulaire."""
-    sheets = read_xlsx_sheets(filepath)
-    if not sheets:
-        return ""
-    all_lines = []
-    for sheet_name, headers, data_rows in sheets:
-        for row in data_rows:
-            parties = [
-                f"{headers[i] if i < len(headers) else f'Col{i}'}: {cell}"
-                for i, cell in enumerate(row) if cell is not None and str(cell).strip()
-            ]
-            if parties:
-                all_lines.append(" | ".join(parties))
-    return "\n".join(all_lines)
-
-
-def read_xlsx_sheets(filepath: str) -> List[Tuple[str, List[str], List[List[Optional[str]]]]]:
-    """Parse un fichier XLSX et retourne les données structurées par feuille.
-
-    Returns:
-        Liste de tuples (sheet_name, headers, data_rows) pour chaque feuille.
-        headers: liste des noms de colonnes.
-        data_rows: liste de lignes (chaque ligne = liste de valeurs str ou None).
+    """
+    Convert an Excel file (.xlsx) to structured text with semantic context.
+    Handles merged cells, configurable row limit, and formula error filtering.
     """
     try:
         import openpyxl
-        classeur = openpyxl.load_workbook(filepath, read_only=True)
-        sheets = []
+        # read_only=False is required to access merged_cells information
+        workbook = openpyxl.load_workbook(filepath, data_only=True)
+        lines: list[str] = []
+        filename = os.path.basename(filepath)
 
-        for nom_feuille in classeur.sheetnames:
-            sheet = classeur[nom_feuille]
-            rows = list(sheet.rows)
+        # Semantic header — makes the file findable by search
+        sheet_info = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = min(sheet.max_row or 0, _MAX_XLSX_ROWS)
+            if sheet.max_row and sheet.max_row > _MAX_XLSX_ROWS:
+                logger.warning(
+                    f"Sheet '{sheet_name}' in '{filename}' truncated: "
+                    f"{sheet.max_row} rows, limit {_MAX_XLSX_ROWS}"
+                )
+            rows = list(sheet.iter_rows(max_row=max_row))
+            if rows:
+                headers = [str(cell.value or "") for cell in rows[0]]
+                n_rows = max(0, len(rows) - 1)
+                sheet_info.append(
+                    f"Sheet '{sheet_name}' ({n_rows} rows)"
+                    f" — Columns: {', '.join(h for h in headers if h)}"
+                )
+
+        lines.append(f"[FILE: {filename}]")
+        lines.append(
+            f"This file contains {len(workbook.sheetnames)} sheet(s): "
+            f"{', '.join(workbook.sheetnames)}."
+        )
+        for info in sheet_info:
+            lines.append(info)
+        lines.append("---")
+
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = min(sheet.max_row or 0, _MAX_XLSX_ROWS)
+
+            # Build merged cell value map: propagate top-left value to all cells in range
+            merged_values: dict[tuple[int, int], Any] = {}
+            for merge_range in sheet.merged_cells.ranges:
+                top_left_value = sheet.cell(merge_range.min_row, merge_range.min_col).value
+                for row_idx in range(merge_range.min_row, merge_range.max_row + 1):
+                    for col_idx in range(merge_range.min_col, merge_range.max_col + 1):
+                        merged_values[(row_idx, col_idx)] = top_left_value
+
+            rows = list(sheet.iter_rows(max_row=max_row))
             if not rows:
                 continue
-            headers = [str(cell.value or "").strip() for cell in rows[0]]
-            data_rows = []
+            headers = [str(cell.value or "") for cell in rows[0]]
+
+            if len(workbook.sheetnames) > 1:
+                lines.append(f"\n=== Sheet: {sheet_name} ===")
+
             for row in rows[1:]:
-                data_rows.append([cell.value for cell in row])
-            sheets.append((nom_feuille, headers, data_rows))
+                parts = []
+                for i, cell in enumerate(row):
+                    value = merged_values.get((cell.row, cell.column), cell.value)
+                    if value is None:
+                        continue
+                    str_val = str(value)
+                    if str_val in _FORMULA_ERRORS:
+                        continue
+                    header = headers[i] if i < len(headers) else f"Col{i}"
+                    parts.append(f"{header}: {str_val}")
+                if parts:
+                    lines.append(" | ".join(parts))
 
-        classeur.close()
-        return sheets
+        workbook.close()
+        return "\n".join(lines)
     except ImportError:
-        logger.warning("Bibliothèque 'openpyxl' non installée.")
-        return []
+        logger.warning("Library 'openpyxl' not installed.")
+        return ""
+
+
+def _parse_xls(filepath: str) -> Optional[str]:
+    """Parse legacy .xls Excel files via xlrd."""
+    try:
+        import xlrd
+        workbook = xlrd.open_workbook(filepath)
+        lines: list[str] = []
+        filename = os.path.basename(filepath)
+
+        lines.append(f"[FILE: {filename}]")
+        lines.append(
+            f"This file contains {workbook.nsheets} sheet(s): "
+            f"{', '.join(workbook.sheet_names())}."
+        )
+        lines.append("---")
+
+        for sheet in workbook.sheets():
+            if sheet.nrows == 0:
+                continue
+            headers = [str(sheet.cell_value(0, c) or "") for c in range(sheet.ncols)]
+            if workbook.nsheets > 1:
+                lines.append(f"\n=== Sheet: {sheet.name} ===")
+
+            max_row = min(sheet.nrows, _MAX_XLSX_ROWS)
+            if sheet.nrows > _MAX_XLSX_ROWS:
+                logger.warning(
+                    f"Sheet '{sheet.name}' in '{filename}' truncated: "
+                    f"{sheet.nrows} rows, limit {_MAX_XLSX_ROWS}"
+                )
+            for r in range(1, max_row):
+                parts = []
+                for c in range(sheet.ncols):
+                    value = sheet.cell_value(r, c)
+                    if value in (None, ""):
+                        continue
+                    str_val = str(value)
+                    if str_val in _FORMULA_ERRORS:
+                        continue
+                    header = headers[c] if c < len(headers) else f"Col{c}"
+                    parts.append(f"{header}: {str_val}")
+                if parts:
+                    lines.append(" | ".join(parts))
+
+        return "\n".join(lines) if lines else None
+    except ImportError:
+        logger.warning("Library 'xlrd' not installed. Run 'pip install xlrd'.")
+        return None
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture XLSX {filepath} : {e}")
-        return []
+        logger.error(f"XLS extraction failed for {filepath}: {e}")
+        return None
 
 
-def _json_to_text(data: Any, niveau: int = 0) -> str:
-    """
-    Convertit récursivement un objet Python (issu d'un JSON) en texte lisible avec indentation.
-
-    Args:
-        data (Any): L'objet à convertir (dict, list, str, etc.).
-        niveau (int): Niveau d'indentation actuel.
-
-    Returns:
-        str: Représentation textuelle de l'objet.
-    """
-    lignes = []
-    indent = "  " * niveau
+def _json_to_text(data: Any, level: int = 0) -> str:
+    lines = []
+    indent = "  " * level
 
     if isinstance(data, dict):
-        for cle, valeur in data.items():
-            if isinstance(valeur, (dict, list)):
-                lignes.append(f"{indent}{cle}:")
-                lignes.append(_json_to_text(valeur, niveau + 1))
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                lines.append(f"{indent}{key}:")
+                lines.append(_json_to_text(value, level + 1))
             else:
-                lignes.append(f"{indent}{cle}: {valeur}")
+                lines.append(f"{indent}{key}: {value}")
 
     elif isinstance(data, list):
         for element in data:
-            lignes.append(_json_to_text(element, niveau))
-            lignes.append(f"{indent}---")
+            lines.append(_json_to_text(element, level))
+            lines.append(f"{indent}---")
 
     else:
-        lignes.append(f"{indent}{data}")
+        lines.append(f"{indent}{data}")
 
-    return "\n".join(line for line in lignes if line)
+    return "\n".join(line for line in lines if line)
 
 
 def _xml_to_text(filepath: str) -> str:
-    """
-    Extrait le texte d'un fichier XML en utilisant Unstructured pour gérer la hiérarchie.
-
-    Args:
-        filepath (str): Chemin vers le fichier XML.
-
-    Returns:
-        str: Texte extrait ou chaîne vide en cas d'erreur.
-    """
     try:
         from unstructured.partition.auto import partition
         elements = partition(filename=filepath)
         return "\n".join(str(el) for el in elements if str(el).strip())
     except ImportError:
-        logger.warning("Bibliothèque 'unstructured' non installée.")
-        return ""
+        pass
     except Exception as e:
-        logger.error(f"Erreur lors du traitement XML de {filepath} : {e}")
+        logger.warning(f"Unstructured failed for XML {filepath}: {e}")
+    # Fallback: stdlib xml.etree.ElementTree
+    try:
+        text = _detect_and_read(filepath)
+        root = ET.fromstring(text)
+        parts = []
+        for elem in root.iter():
+            tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+            if elem.text and elem.text.strip():
+                parts.append(f"{tag}: {elem.text.strip()}")
+        return "\n".join(parts) if parts else ""
+    except Exception as e:
+        logger.error(f"XML extraction failed for {filepath}: {e}")
         return ""

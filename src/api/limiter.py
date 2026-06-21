@@ -33,7 +33,7 @@ def _get_key(request: Request) -> str:
     except Exception:
         pass
 
-    # Le header invité est facilement spoofable; on ne l'utilise qu'en mode guest local.
+    # The guest header is easily spoofable; we only use it in local guest mode.
     guest_allowed = ALLOW_GUEST_MODE and ALLOW_LOCAL_GUEST_HEADER and APP_ENV != "production"
     if guest_allowed:
         guest_id = (request.headers.get("x-local-guest-id") or "").strip()
@@ -66,5 +66,5 @@ def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
         pass
     return JSONResponse(
         status_code=429,
-        content={"error": "Trop de requêtes. Merci de patienter.", "blocked": True, "block_type": "rate_limit"},
+        content={"error": "Too many requests. Please wait.", "blocked": True, "block_type": "rate_limit"},
     )

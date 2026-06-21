@@ -3,10 +3,21 @@ import concurrent.futures
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
+
+_LOG_REDACT = re.compile(
+    r'(Bearer\s+)[A-Za-z0-9\-._~+/]+=*'
+    r'|((?:api.?key|token|password|secret)\s*[:=]\s*)\S+',
+    re.IGNORECASE,
+)
+
+def _sanitize_log(entry: dict) -> dict:
+    msg = _LOG_REDACT.sub(lambda m: (m.group(1) or m.group(2)) + '[REDACTED]', entry.get("msg", ""))
+    return {**entry, "msg": msg[:1000]}
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -17,7 +28,8 @@ from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
 from src.api.blueprints.monitoring_bp import monitoring_router
-from src.generation.generator import generer_resume_utilisateur, reformuler_question, stream_reponse, send_langfuse_score
+from src.api.blueprints.user_mgmt import user_mgmt_router, ADMIN_EMAILS, _get_supabase_admin
+from src.generation.generator import generate_user_summary, reformulate_question, stream_response, send_langfuse_score
 from src.ingestion.run import index_data
 from src.memory.vector_memory import add_user_memory, search_user_memories
 from src.monitoring.tracker import (
@@ -26,7 +38,7 @@ from src.monitoring.tracker import (
     get_user_summary, record_feedback_event, register_trace_context, save_exchange,
     save_user_summary, track,
 )
-from src.search.search import rechercher_passages
+from src.search.search import search_passages
 from src.security.validator import valider_entree
 
 # ── Semantic cache ────────────────────────────────────────────────────────
@@ -47,7 +59,7 @@ _executor                 = concurrent.futures.ThreadPoolExecutor(max_workers=BA
 
 
 def _get_user_lock(uid: str) -> threading.Lock:
-    # WHY: Pruning evite une croissance mémoire non bornée en environnement multi-user.
+    # WHY: Pruning prevents unbounded memory growth in a multi-user environment.
     with _locks_mutex:
         if len(_user_locks) >= MAX_LOCK_CACHE_SIZE and uid not in _user_locks:
             removed = 0
@@ -62,17 +74,17 @@ def _get_user_lock(uid: str) -> threading.Lock:
 
 
 async def _run_background_summary(uid: str, history: list) -> None:
-    # WHY: Lock non-bloquant garantit qu'une seule tâche de résumé tourne par user.
+    # WHY: Non-blocking lock ensures only one summary task runs per user.
     lock = _get_user_lock(uid)
     if not lock.acquire(blocking=False):
         return
     try:
         old_summary = await get_user_summary(uid)
-        new_summary = await generer_resume_utilisateur(history, old_summary)
+        new_summary = await generate_user_summary(history, old_summary)
         if new_summary:
             try:
-                from src.security.pii_masker import masquer
-                new_summary = masquer(new_summary)
+                from src.security.pii_masker import mask
+                new_summary = mask(new_summary)
             except Exception:
                 pass
             await save_user_summary(uid, new_summary)
@@ -107,13 +119,13 @@ async def _resolve_feedback_context(session_id: str = "", question: str = "", an
 
 
 def _build_context_chunks(passages: list[str], sources: list[str]) -> list[dict]:
-    """Construit les passages exacts transmis au LLM avec leur source associée."""
+    """Build the exact passages sent to the LLM along with their associated source."""
     chunks = []
     if not passages:
         return chunks
     for i, passage in enumerate(passages):
-        src = sources[i] if i < len(sources) else "source inconnue"
-        chunks.append({"source": src, "passage": passage})
+        src = sources[i] if i < len(sources) else "unknown source"
+        chunks.append({"source": src.split("/")[-1], "passage": passage})
     return chunks
 
 
@@ -159,16 +171,23 @@ async def health_check():
     except Exception:
         checks["qdrant"] = False
     try:
-        supabase = get_supabase()
+        supabase = await get_supabase()
         if supabase:
-            supabase.table("events").select("id").limit(1).execute()
+            await supabase.table("events").select("id").limit(1).execute()
             checks["supabase"] = True
         else:
             checks["supabase"] = False
     except Exception:
         checks["supabase"] = False
+    try:
+        import redis as redis_lib
+        r = redis_lib.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), socket_connect_timeout=1)
+        r.ping()
+        checks["redis"] = True
+    except Exception:
+        checks["redis"] = False
 
-    is_healthy = all(v for k, v in checks.items() if k != "vector_memory")
+    is_healthy = all(v for k, v in checks.items() if k not in ("vector_memory", "redis"))
     return JSONResponse(
         {"status": "ok" if is_healthy else "degraded", "checks": checks},
         status_code=200 if is_healthy else 207,
@@ -176,7 +195,8 @@ async def health_check():
 
 
 @router.get("/api/auth/config")
-async def get_auth_config():
+@limiter.limit("20/minute")
+async def get_auth_config(request: Request):
     return {
         "supabase_url":      os.getenv("SUPABASE_URL", ""),
         "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
@@ -185,7 +205,14 @@ async def get_auth_config():
 
 @router.get("/api/auth/me")
 async def get_user_identity(user_id: str = Depends(get_current_user)):
-    return {"user_id": user_id}
+    email = ""
+    try:
+        supa = _get_supabase_admin()
+        res = supa.auth.admin.get_user_by_id(user_id)
+        email = res.user.email.lower() if res.user else ""
+    except Exception:
+        pass
+    return {"user_id": user_id, "email": email, "is_admin": email in ADMIN_EMAILS}
 
 
 @router.post("/api/ask")
@@ -200,35 +227,35 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         return JSONResponse({"error": "Question vide"}, status_code=400)
 
     if not user_id:
-        return JSONResponse({"error": "Authentification requise."}, status_code=401)
+        return JSONResponse({"error": "Authentication required."}, status_code=401)
 
     if body.session_id:
         owner = await get_conversation_owner(body.session_id)
         from src.monitoring.tracker import _normalize_user_id as _norm_uid
         if owner and owner != _norm_uid(user_id):
-            return JSONResponse({"error": "Accès refusé"}, status_code=403)
+            return JSONResponse({"error": "Access denied"}, status_code=403)
 
-    # Masquage PII avant validation sécurité
+    # PII masking before security validation
     try:
-        from src.security.pii_masker import masquer
-        question = masquer(question)
+        from src.security.pii_masker import mask
+        question = mask(question)
     except Exception as e:
-        logger.debug(f"PII masker ignoré : {e}")
+        logger.debug(f"PII masker skipped: {e}")
 
     validation = await valider_entree(question)
     if not validation["valid"]:
         bt = validation.get("type", "")
         reason = (validation.get("reason", "") or "").lower()
-        # Lakera retourne souvent type=prompt_injection; on le distingue via la raison.
+        # Lakera often returns type=prompt_injection; we distinguish via the reason.
         is_lakera = (
             bt in ("jailbreak", "lakera", "lakera_prompt_attack")
             or "lakera" in reason
             or "prompt_attack" in reason
         )
         await track("injection_lakera" if is_lakera else "injection_regex", detail=question[:200])
-        msg = ("⚠️ Le système a détecté une tentative de manipulation."
+        msg = ("Prompt injection attempt detected and blocked."
                if bt in ("prompt_injection", "jailbreak") else
-               "🔮 Ce système répond uniquement aux questions basées sur les documents indexés.")
+               "This question is outside the scope of the indexed documents.")
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'context_chunks': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n",
@@ -238,13 +265,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         )
 
     # ── Semantic cache check ──────────────────────────────────────────────
-    cached_data = await cache_check(question)
-    if cached_data is not None:
-        if isinstance(cached_data, tuple):
-            cached_data, _cached_score = cached_data
-        if not isinstance(cached_data, dict):
-            cached_data = None
-    if cached_data is not None:
+    cached_result = await cache_check(question)
+    if cached_result is not None:
+        cached_data, _ = cached_result if isinstance(cached_result, tuple) else (cached_result, None)
         cached_text = cached_data.get("answer", "")
         cached_sources = cached_data.get("sources", [])
         cached_chunks = cached_data.get("context_chunks", [])
@@ -252,7 +275,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         await register_trace_context(trace_id, question, cached_text, body.session_id, user_id)
         logger.info(f"[{req_id}] Cached response returned")
         if body.session_id:
-            # On lance en arrière-plan sans attendre (ou on attend si on veut être sûr)
+            # Fire and forget in the background (or await if we want to be sure)
             asyncio.create_task(save_exchange(body.session_id, question, cached_text, user_id))
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': cached_sources, 'passages': [], 'context_chunks': cached_chunks, 'confidence': 100})}\n\n",
@@ -262,12 +285,12 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # Les 3 appels sont indépendants; exécution parallèle.
+    # The 3 calls are independent; run them in parallel.
     history_task = get_history(body.session_id)
     summary_task = get_user_summary(user_id)
     memories_task = search_user_memories(user_id, question) # search_user_memories est synchrone (vector_memory.py)
     
-    # On mixe les tâches async et sync (via to_thread pour le sync)
+    # Mix async and sync tasks (using to_thread for the sync one)
     history, summary, memories = await asyncio.gather(
         history_task, 
         summary_task, 
@@ -286,16 +309,18 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         memories = []
 
     t_ref = time.time()
-    query = await reformuler_question(question, history)
+    query = await reformulate_question(question, history)
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, raw_sources, conf_scores, tie_subjects = await rechercher_passages(query)
+    passages, raw_sources, conf_scores, tie_subjects = await search_passages(query)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
         no_data_msg = "Les archives ne contiennent aucune information sur ce sujet."
         await register_trace_context(trace_id, question, no_data_msg, body.session_id, user_id)
+        if body.session_id:
+            await save_exchange(body.session_id, question, no_data_msg, user_id)
         return StreamingResponse(
             iter([f"data: {json.dumps({'type': 'meta', 'sources': [], 'passages': [], 'context_chunks': [], 'confidence': 0})}\n\n",
                   f"data: {json.dumps({'type': 'text', 'text': no_data_msg})}\n\n",
@@ -306,7 +331,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
     # Score de confiance moyen (0–100 %)
     confidence_pct = round(sum(conf_scores) / len(conf_scores) * 100) if conf_scores else 0
-    unique_sources = list(dict.fromkeys(raw_sources))
+    unique_sources = list(dict.fromkeys(s.split("/")[-1] for s in raw_sources))
 
     async def event_stream():
         accumulated, model_used = [], []
@@ -318,8 +343,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             langfuse_ids = []
             try:
-                # stream_reponse est maintenant asynchrone (générateur asynchrone)
-                async for chunk in stream_reponse(question, passages, unique_sources, history,
+                # stream_response is now async (async generator)
+                async for chunk in stream_response(question, passages, unique_sources, history,
                                             model_used=model_used, user_summary=summary,
                                             vector_memories=memories,
                                             langfuse_trace_ids=langfuse_ids,
@@ -352,7 +377,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'trace_id': trace_id, 'question_for_feedback': question})}\n\n"
 
             if body.session_id:
-                await save_exchange(body.session_id, question, answer, user_id)
+                await save_exchange(body.session_id, question, answer, user_id,
+                                    sources=unique_sources, context_chunks=context_chunks)
                 await cache_store(question, answer, source_files=unique_sources, context_chunks=context_chunks)
                 
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
@@ -366,6 +392,12 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
             latency = int((time.time() - start) * 1000)
             await track("question", detail=f"{question[:150]} | model:{model_name}", latency_ms=latency)
+            # ── B2B Usage tracking ──
+            try:
+                from src.api.blueprints.admin import _increment_usage
+                await _increment_usage(user_id, tokens_in=len(question) // 4, tokens_out=len(answer) // 4)
+            except Exception:
+                pass
             logger.info(f"[{req_id}] {model_name} ({latency}ms)")
 
         except Exception as e:
@@ -382,9 +414,9 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
 
 @router.post("/api/feedback")
 async def submit_feedback(body: FeedbackBody, user_id: str = Depends(get_current_user)):
-    """Cycle Human-in-the-Loop : stocke le feedback, déclenche le judge si rating ≤ 2."""
+    """Human-in-the-Loop cycle: store the feedback, trigger the judge if rating <= 2."""
     if not (1 <= body.rating <= 5):
-        return JSONResponse({"error": "rating doit être entre 1 et 5"}, status_code=400)
+        return JSONResponse({"error": "rating must be between 1 and 5"}, status_code=400)
 
     async def _persist_and_judge():
         from src.monitoring.tracker import _get_client
@@ -487,37 +519,37 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
 async def trigger_reindex(request: Request, body: ReindexBody):
     require_monitoring(request)
     try:
-        # index_data est lourd et synchrone, on le lance dans un thread
+        # index_data is heavy and synchronous; run it in a thread
         result = await asyncio.to_thread(index_data, force_reindex=body.force)
         await track("reindex", detail=f"force={body.force} | {'changed' if result else 'none'}")
-        return {"message": "Indexation terminée." if result else "Déjà à jour."}
+        return {"message": "Indexing complete." if result else "Already up to date."}
     except Exception as e:
         logger.error(f"Reindex error: {e}")
-        return JSONResponse({"error": "Erreur interne"}, status_code=500)
+        return JSONResponse({"error": "Internal error"}, status_code=500)
 
 
 @router.get("/api/conversations")
 async def get_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     return {"exchanges": await get_conversation(session_id)}
 
 
 @router.get("/api/conversations/list")
 async def list_user_conversations(user_id: str = Depends(get_current_user)):
     if not user_id:
-        return JSONResponse({"error": "Authentification requise"}, status_code=401)
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
     return {"conversations": await get_user_conversations(user_id)}
 
 
 @router.get("/api/conversations/messages")
 async def get_messages_for_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     client = None
     try:
         from src.monitoring.tracker import _get_client, _get_conv_id
@@ -527,7 +559,7 @@ async def get_messages_for_session(session_id: str = "", user_id: str = Depends(
         cid = await _get_conv_id(client, session_id)
         if not cid:
             return {"messages": []}
-        r = await (client.table("messages").select("id, role, content, created_at")
+        r = await (client.table("messages").select("id, role, content, payload, created_at")
              .eq("conversation_id", cid)
              .order("id").execute())
         return {"messages": r.data or []}
@@ -539,9 +571,9 @@ async def get_messages_for_session(session_id: str = "", user_id: str = Depends(
 @router.delete("/api/conversations")
 async def delete_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
-        return JSONResponse({"error": "session_id requis"}, status_code=400)
+        return JSONResponse({"error": "session_id required"}, status_code=400)
     if not await conversation_belongs_to_user(session_id, user_id):
-        return JSONResponse({"error": "Accès refusé"}, status_code=403)
+        return JSONResponse({"error": "Access denied"}, status_code=403)
     await delete_conversation(session_id)
     return {"ok": True}
 
@@ -550,7 +582,7 @@ async def delete_history_by_session(session_id: str = "", user_id: str = Depends
 async def get_system_logs(request: Request):
     require_monitoring(request)
     logs = getattr(request.app.state, "log_buffer", None)
-    return {"logs": list(logs or [])}
+    return {"logs": [_sanitize_log(e) for e in (logs or [])]}
 
 
 
@@ -563,10 +595,11 @@ async def get_cache_stats(request: Request):
 
 
 def register_routes(app: FastAPI, log_buffer: deque = None) -> None:
-    # WHY: Attacher le buffer à l'app state évite les imports circulaires dans le monitoring.
+    # WHY: Attaching the buffer to app state avoids circular imports in monitoring.
     if log_buffer is not None:
         app.state.log_buffer = log_buffer
     app.include_router(router)
     app.include_router(admin_router)
     app.include_router(media_router)
     app.include_router(monitoring_router)
+    app.include_router(user_mgmt_router)

@@ -1,7 +1,6 @@
 """
-Charge un fichier et extrait son texte via Unstructured.
-Si Unstructured échoue ou retourne du texte vide, bascule sur le parser maison
-(qui inclut PyMuPDF comme fallback PDF).
+Loads a file and extracts its text via Unstructured.
+If Unstructured fails, falls back to the custom parser.
 """
 import os
 import logging
@@ -14,27 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 def _try_partition(filepath: str) -> list:
-    """Import paresseux d'Unstructured pour éviter les crashes au démarrage."""
+    """Lazy import of Unstructured to avoid crashes on startup."""
     from unstructured.partition.auto import partition
     return partition(filepath)
 
 
 def load_document(filepath: str) -> List[Document]:
-    """Lit un fichier et retourne des Documents LangChain nettoyés.
-    Essaye Unstructured d'abord, puis le parser custom en fallback.
-
-    Le parser custom (extract_text_from_file) inclut PyMuPDF comme fallback PDF,
-    garantissant l'extraction même si Unstructured n'a pas les dépendances système
-    (poppler, tesseract, etc.).
+    """Reads a file and returns cleaned LangChain Documents.
+    Tries Unstructured first, then custom parser as fallback.
     """
     if not os.path.exists(filepath):
-        logger.error(f"Fichier introuvable : {filepath}")
+        logger.error(f"File not found: {filepath}")
         return []
 
     try:
         elements = _try_partition(filepath)
         if not elements:
-            logger.info(f"Unstructured n'a retourné aucun élément pour {filepath}, fallback activé.")
             return _fallback_custom(filepath)
 
         docs = []
@@ -42,23 +36,15 @@ def load_document(filepath: str) -> List[Document]:
             texte = clean_text(elem.text)
             if texte:
                 docs.append(Document(page_content=texte, metadata={"source": filepath}))
-
-        # FIX: Si Unstructured retourne des éléments mais tout le texte est vide
-        # après nettoyage, on déclenche quand même le fallback custom (PyMuPDF).
-        if not docs:
-            logger.info(f"Unstructured a retourné uniquement du texte vide pour {filepath}, fallback activé.")
-            return _fallback_custom(filepath)
-
         return docs
 
     except Exception as e:
-        logger.warning(f"Unstructured a échoué pour {filepath} : {e}. Fallback activé.")
+        logger.warning(f"Unstructured failed for {filepath}: {e}. Fallback enabled.")
         return _fallback_custom(filepath)
 
 
 def _fallback_custom(filepath: str) -> List[Document]:
-    """Parser maison en cas d'échec d'Unstructured.
-    Utilise extract_text_from_file qui inclut PyMuPDF comme fallback PDF."""
+    """Custom parser in case Unstructured fails."""
     texte = extract_text_from_file(filepath)
     if texte:
         texte = clean_text(texte)
@@ -68,7 +54,7 @@ def _fallback_custom(filepath: str) -> List[Document]:
 
 
 def extract_text_with_unstructured(filepath: str) -> Optional[str]:
-    """Extrait tout le texte d'un fichier en une seule chaîne."""
+    """Extracts all text from a file into a single string."""
     docs = load_document(filepath)
     if not docs:
         return None

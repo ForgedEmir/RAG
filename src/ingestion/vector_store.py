@@ -1,5 +1,5 @@
-"""Interface Qdrant : connexion, indexation, recherche.
-Cloud (QDRANT_URL + QDRANT_API_KEY) ou local (qdrant_db/).
+"""Qdrant interface: connection, indexing, search.
+Cloud (QDRANT_URL + QDRANT_API_KEY) or local (qdrant_db/).
 """
 import os
 import logging
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 _BASE_DIR        = os.path.dirname(__file__)
 _DB_PATH         = os.path.join(_BASE_DIR, "qdrant_db")
-_COLLECTION_NAME = "lore"
+_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "documents_chunks")
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
@@ -36,7 +36,7 @@ _QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH = os.getenv(
 _QDRANT_VECTOR_SIZE_OVERRIDE = os.getenv("QDRANT_VECTOR_SIZE")
 _FASTEMBED_CACHE_PATH = os.getenv("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache")
 
-# Singletons — créés une seule fois
+# Singletons — created once
 _embeddings: Optional[FastEmbedEmbeddings] = None
 _client: Optional[QdrantClient] = None
 _collection_ready: bool = False
@@ -61,7 +61,7 @@ def _extract_missing_path(exc: Exception) -> Optional[str]:
 
 
 def _purge_corrupted_fastembed_cache(exc: Exception, model_name: str) -> None:
-    """Supprime les dossiers cache FastEmbed incomplets pour permettre un retry propre."""
+    """Deletes incomplete FastEmbed cache folders to allow a clean retry."""
     model_leaf = model_name.split("/")[-1]
     targets = {
         os.path.join(_FASTEMBED_CACHE_PATH, f"models--qdrant--{model_leaf}-onnx"),
@@ -84,7 +84,7 @@ def _purge_corrupted_fastembed_cache(exc: Exception, model_name: str) -> None:
                 logger.warning("Purge cache FastEmbed impossible (%s): %s", target, e)
 
     if removed:
-        logger.warning("Cache FastEmbed corrompu détecté: %s dossier(s) purgé(s).", removed)
+        logger.warning("Corrupted FastEmbed cache detected: %s folder(s) purged.", removed)
 
 
 def _get_embeddings() -> FastEmbedEmbeddings:
@@ -105,16 +105,16 @@ def _get_embeddings() -> FastEmbedEmbeddings:
 
         try:
             _embeddings = _build()
-            logger.info(f"FastEmbed embeddings chargé : {model}")
+            logger.info(f"FastEmbed embeddings loaded: {model}")
             return _embeddings
         except Exception as e:
             if not _is_fastembed_cache_missing_error(e):
                 raise
 
-            logger.warning("FastEmbed init échoué (cache incomplet), purge + retry en cours.")
+            logger.warning("FastEmbed init failed (incomplete cache), purging + retrying.")
             _purge_corrupted_fastembed_cache(e, model)
             _embeddings = _build()
-            logger.info(f"FastEmbed embeddings chargé après purge cache : {model}")
+            logger.info(f"FastEmbed embeddings loaded after cache purge: {model}")
             return _embeddings
 
 
@@ -147,7 +147,7 @@ def _collection_vector_size(client: QdrantClient) -> int:
         first = next(iter(vectors.values()), None)
         if first is not None and hasattr(first, "size"):
             return int(first.size)
-    raise ValueError("Impossible de lire la dimension de la collection Qdrant.")
+    raise ValueError("Unable to read the dimension of the Qdrant collection.")
 
 
 def _get_client() -> QdrantClient:
@@ -155,15 +155,15 @@ def _get_client() -> QdrantClient:
     if _client is None:
         if _QDRANT_URL:
             _client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY or None)
-            logger.info(f"Qdrant connecté : {_QDRANT_URL}")
+            logger.info(f"Qdrant connected: {_QDRANT_URL}")
         else:
             _client = QdrantClient(path=_DB_PATH)
-            logger.info("Qdrant local (mode développement)")
+            logger.info("Qdrant local (development mode)")
     return _client
 
 
 def _ensure_collection(client: QdrantClient) -> None:
-    """Crée la collection 'lore' si elle n'existe pas encore."""
+    """Creates the 'lore' collection if it does not yet exist."""
     global _collection_ready
     if _collection_ready:
         return
@@ -178,7 +178,7 @@ def _ensure_collection(client: QdrantClient) -> None:
                     f"Qdrant dimension mismatch: collection={current_size}, expected={expected_size}."
                 )
                 if _QDRANT_AUTO_RECREATE_ON_DIM_MISMATCH:
-                    logger.warning("%s Recréation automatique activée.", message)
+                    logger.warning("%s Auto-recreation enabled.", message)
                     client.delete_collection(_COLLECTION_NAME)
                     existing.remove(_COLLECTION_NAME)
                 else:
@@ -186,31 +186,31 @@ def _ensure_collection(client: QdrantClient) -> None:
         except Exception as e:
             if isinstance(e, RuntimeError):
                 raise
-            logger.warning("Vérification dimension Qdrant impossible: %s", e)
+            logger.warning("Qdrant dimension check failed: %s", e)
 
     if _COLLECTION_NAME not in existing:
         client.create_collection(
             collection_name=_COLLECTION_NAME,
             vectors_config=VectorParams(size=expected_size, distance=Distance.COSINE),
         )
-        logger.info(f"Collection '{_COLLECTION_NAME}' créée ({expected_size} dims).")
+        logger.info(f"Collection '{_COLLECTION_NAME}' created ({expected_size} dims).")
 
-    # Requis pour les filtres de suppression sur metadata.fichier.
+    # Required for deletion filters on metadata.filename.
     try:
         client.create_payload_index(
             collection_name=_COLLECTION_NAME,
-            field_name="metadata.fichier",
+            field_name="metadata.filename",
             field_schema=PayloadSchemaType.KEYWORD,
         )
     except Exception as e:
-        logger.debug(f"Index payload metadata.fichier déjà présent ou non créé: {e}")
+        logger.debug(f"Payload index metadata.filename already present or not created: {e}")
 
     _collection_ready = True
 
 
 def get_store(force_reindex: bool = False) -> QdrantVectorStore:
-    """Retourne le vector store Qdrant.
-    Si force_reindex=True, supprime et recrée la collection.
+    """Return the Qdrant vector store.
+    If force_reindex=True, deletes and recreates the collection.
     """
     global _client, _collection_ready
 
@@ -221,11 +221,11 @@ def get_store(force_reindex: bool = False) -> QdrantVectorStore:
             temp = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY or None)
             try:
                 temp.delete_collection(_COLLECTION_NAME)
-                logger.info("Collection réinitialisée (cloud).")
+                logger.info("Collection reset (cloud).")
             except Exception as e:
-                logger.warning(f"Impossible de supprimer la collection cloud : {e}")
+                logger.warning(f"Unable to delete cloud collection: {e}")
         elif os.path.exists(_DB_PATH):
-            # Sauvegarde le fichier mémoire avant de tout supprimer
+            # Back up the memory file before wiping everything
             memory_file = os.path.join(_DB_PATH, "files_metadata.json")
             backup = None
             if os.path.exists(memory_file):
@@ -236,7 +236,7 @@ def get_store(force_reindex: bool = False) -> QdrantVectorStore:
             if backup:
                 with open(memory_file, "w", encoding="utf-8") as f:
                     f.write(backup)
-            logger.info("Base locale supprimée et recréée.")
+            logger.info("Local database deleted and recreated.")
 
     client = _get_client()
     _ensure_collection(client)
@@ -245,7 +245,7 @@ def get_store(force_reindex: bool = False) -> QdrantVectorStore:
     except Exception as e:
         if "dimensions" not in str(e).lower() and "vector" not in str(e).lower():
             raise
-        logger.warning(f"Dimension mismatch détectée, réinitialisation de la collection : {e}")
+        logger.warning(f"Dimension mismatch detected, resetting collection: {e}")
         client.delete_collection(_COLLECTION_NAME)
         _collection_ready = False
         _ensure_collection(client)
@@ -253,32 +253,38 @@ def get_store(force_reindex: bool = False) -> QdrantVectorStore:
 
 
 def add_documents(store: QdrantVectorStore, documents: List[Document]) -> None:
-    """Ajoute des documents dans Qdrant."""
+    """Adds documents to Qdrant."""
     if not documents:
         return
     store.add_documents(documents)
-    logger.info(f"{len(documents)} documents indexés.")
+    logger.info(f"{len(documents)} documents indexed.")
 
 
-def remove_files(store: QdrantVectorStore, fichiers: Set[str]) -> None:
-    """Supprime tous les chunks associés à une liste de fichiers."""
-    if not fichiers:
+def remove_files(store: QdrantVectorStore, files: Set[str], tenant_id: str = "") -> None:
+    """Remove all chunks associated with a list of files."""
+    if not files:
         return
     try:
+        file_filter = Filter(should=[
+            FieldCondition(key="metadata.filename", match=MatchValue(value=nom))
+            for nom in files
+        ])
+        combined = Filter(must=[
+            file_filter,
+            FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id)),
+        ]) if tenant_id else file_filter
         store.client.delete(
             collection_name=_COLLECTION_NAME,
-            points_selector=FilterSelector(
-                filter=Filter(should=[
-                    FieldCondition(key="metadata.fichier", match=MatchValue(value=nom))
-                    for nom in fichiers
-                ])
-            ),
+            points_selector=FilterSelector(filter=combined),
         )
-        logger.info(f"{len(fichiers)} fichier(s) retiré(s) de Qdrant.")
+        logger.info(f"{len(files)} file(s) removed from Qdrant.")
     except Exception as e:
-        logger.warning(f"Impossible de supprimer les fichiers : {e}")
+        logger.warning(f"Failed to delete files from Qdrant: {e}")
 
 
-def search(store: QdrantVectorStore, question: str, k: int = 3) -> List[Document]:
-    """Recherche les k documents les plus proches de la question."""
+def search(store: QdrantVectorStore, question: str, k: int = 3, tenant_id: str = "") -> List[Document]:
+    """Searches for the k documents closest to the question."""
+    if tenant_id:
+        f = Filter(must=[FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))])
+        return store.similarity_search(question, k=k, filter=f)
     return store.similarity_search(question, k=k)

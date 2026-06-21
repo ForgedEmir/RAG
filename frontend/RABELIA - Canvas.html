@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>RABELIA — Portail client</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #e9edf2; }
+    body { font-family: "Inter", sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="primitives.jsx"></script>
+  <script type="text/babel" src="screen-chat.jsx"></script>
+  <script type="text/babel" src="screens-login-upload.jsx"></script>
+  <script type="text/babel" src="screen-settings.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { DesignCanvas, DCSection, DCArtboard } = window;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accent": "#1f3a68",
+      "accentSoft": "#e8edf6",
+      "bgApp": "#f4f6f9",
+      "fgPrimary": "#0f1a2b",
+      "fontSans": "Inter",
+      "density": "comfortable",
+      "radius": "medium"
+    }/*EDITMODE-END*/;
+
+    function applyTweaks(t) {
+      const r = document.documentElement.style;
+      r.setProperty("--accent", t.accent);
+      r.setProperty("--accent-soft", t.accentSoft);
+      r.setProperty("--accent-fg", t.accent);
+      r.setProperty("--bg-app", t.bgApp);
+      r.setProperty("--fg-primary", t.fgPrimary);
+      r.setProperty("--font-sans", `"${t.fontSans}", -apple-system, sans-serif`);
+      // density
+      const d = t.density;
+      r.setProperty("--row-h", d === "compact" ? "28px" : d === "spacious" ? "36px" : "32px");
+      r.setProperty("--row-h-lg", d === "compact" ? "36px" : d === "spacious" ? "44px" : "40px");
+      r.setProperty("--fs-base", d === "compact" ? "12px" : d === "spacious" ? "14px" : "13px");
+      // radius
+      const rad = t.radius;
+      r.setProperty("--r-sm", rad === "sharp" ? "2px" : rad === "round" ? "6px" : "4px");
+      r.setProperty("--r-md", rad === "sharp" ? "3px" : rad === "round" ? "10px" : "6px");
+      r.setProperty("--r-lg", rad === "sharp" ? "4px" : rad === "round" ? "14px" : "8px");
+    }
+
+    function App() {
+      const [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+      useEffect(() => { applyTweaks(tweaks); }, [tweaks]);
+
+      const W = 1280, H = 820;
+
+      return (
+        <>
+          <DesignCanvas title="RABELIA — Portail client B2B" subtitle="4 écrans + 3 états · prototype navigable disponible">
+            <DCSection id="flow" title="Flow principal" subtitle="Login → Chat → Upload → Paramètres">
+              <DCArtboard id="login" label="01 — Login" width={W} height={H}>
+                <window.LoginScreen width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="chat" label="02 — Chat (priorité)" width={W} height={H}>
+                <window.ChatScreen width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="upload" label="03 — Upload" width={W} height={H}>
+                <window.UploadScreen state="drop" width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="settings" label="04 — Paramètres · Mon espace" width={W} height={H}>
+                <window.SettingsScreen tab="workspace" width={W} height={H} />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="settings-tabs" title="Paramètres — autres onglets" subtitle="Sous-navigation Documents et Membres">
+              <DCArtboard id="settings-docs" label="Paramètres · Documents" width={W} height={H}>
+                <window.SettingsScreen tab="documents" width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="settings-members" label="Paramètres · Membres" width={W} height={H}>
+                <window.SettingsScreen tab="members" width={W} height={H} />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="states" title="États supplémentaires" subtitle="Premier login, modal d'invitation, erreur upload">
+              <DCArtboard id="chat-empty" label="Chat — état vide premier login" width={W} height={H}>
+                <window.ChatScreen empty width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="invite" label="Modal — inviter un membre" width={W} height={H}>
+                <window.SettingsScreen tab="members" showInviteModal width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="upload-error" label="Upload — fichier non supporté" width={W} height={H}>
+                <window.UploadScreen state="error" width={W} height={H} />
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="upload-states" title="Upload — étapes d'ingestion" subtitle="De la zone vide à la confirmation">
+              <DCArtboard id="upload-progress" label="Upload — indexation en cours" width={W} height={H}>
+                <window.UploadScreen state="progress" width={W} height={H} />
+              </DCArtboard>
+              <DCArtboard id="upload-done" label="Upload — documents prêts" width={W} height={H}>
+                <window.UploadScreen state="done" width={W} height={H} />
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          {window.TweaksPanel && (
+            <window.TweaksPanel title="Tweaks">
+              <window.TweakSection title="Couleurs">
+                <window.TweakColor label="Accent (navy)" value={tweaks.accent}
+                  onChange={(v) => setTweak({ accent: v, accentSoft: lighten(v, 0.92) })} />
+                <window.TweakColor label="Fond app" value={tweaks.bgApp}
+                  onChange={(v) => setTweak("bgApp", v)} />
+                <window.TweakColor label="Texte" value={tweaks.fgPrimary}
+                  onChange={(v) => setTweak("fgPrimary", v)} />
+              </window.TweakSection>
+
+              <window.TweakSection title="Typographie">
+                <window.TweakSelect label="Police" value={tweaks.fontSans}
+                  options={["Inter", "Helvetica", "IBM Plex Sans", "Source Sans 3", "Manrope"]}
+                  onChange={(v) => setTweak("fontSans", v)} />
+              </window.TweakSection>
+
+              <window.TweakSection title="Densité">
+                <window.TweakRadio label="Hauteur des lignes" value={tweaks.density}
+                  options={[
+                    { label: "Compact", value: "compact" },
+                    { label: "Confort.", value: "comfortable" },
+                    { label: "Aéré", value: "spacious" },
+                  ]}
+                  onChange={(v) => setTweak("density", v)} />
+                <window.TweakRadio label="Rayons" value={tweaks.radius}
+                  options={[
+                    { label: "Vif", value: "sharp" },
+                    { label: "Médium", value: "medium" },
+                    { label: "Doux", value: "round" },
+                  ]}
+                  onChange={(v) => setTweak("radius", v)} />
+              </window.TweakSection>
+            </window.TweaksPanel>
+          )}
+        </>
+      );
+    }
+
+    // Lighten a hex color toward white by t in [0,1]
+    function lighten(hex, t) {
+      const c = hex.replace("#", "");
+      const n = c.length === 3 ? c.split("").map(x => x + x).join("") : c;
+      const r = parseInt(n.slice(0,2), 16), g = parseInt(n.slice(2,4), 16), b = parseInt(n.slice(4,6), 16);
+      const lr = Math.round(r + (255 - r) * t);
+      const lg = Math.round(g + (255 - g) * t);
+      const lb = Math.round(b + (255 - b) * t);
+      return "#" + [lr, lg, lb].map(x => x.toString(16).padStart(2, "0")).join("");
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

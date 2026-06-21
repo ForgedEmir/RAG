@@ -1,4 +1,4 @@
-"""Feature flags and runtime profiles for Oracle LoreKeeper (RAG généraliste).
+"""Feature flags and runtime profiles for Oracle LoreKeeper.
 
 `RAG_FAST_MODE=true` applies conservative defaults focused on lower latency
 without overriding explicitly configured environment variables.

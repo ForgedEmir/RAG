@@ -232,10 +232,10 @@ async def store(query: str, response: str, source_files: Optional[Iterable[str]]
     Uses a pipeline (1 round-trip) + INCR counter.
 
     Args:
-        query:          Question posée.
-        response:       Réponse LLM générée.
-        source_files:   Noms de fichiers sources ayant servi à générer la réponse.
-        context_chunks: Passages de contexte exacts avec leurs sources.
+        query:          Question asked.
+        response:       Generated LLM response.
+        source_files:   Source file names used to generate the response.
+        context_chunks: Exact context chunks with their sources.
     """
     await _ensure_cache_version()
     try:
@@ -263,7 +263,7 @@ async def store(query: str, response: str, source_files: Optional[Iterable[str]]
         
         resp_json = json.dumps({
             "answer":         response,
-            "sources":        sorted(set(source_files)) if source_files else [],
+            "sources":        sorted(set(s.split("/")[-1] for s in source_files)) if source_files else [],
             "context_chunks": context_chunks or [],
         })
 
@@ -309,17 +309,17 @@ async def clear_all() -> None:
 
 
 async def invalidate_for_files(filenames: Iterable[str]) -> int:
-    """Invalide les entrées dont les source_files croisent ``filenames``.
+    """Invalidates entries whose source_files intersect with ``filenames``.
 
-    WHY: Après un re-index (fichier modifié/ajouté/supprimé), les réponses LLM
-    cachées qui s'appuyaient sur ce fichier sont potentiellement périmées.
-    On ne purge que ces entrées pour conserver le cache chaud sur les autres.
+    WHY: After a re-index (file modified/added/deleted), the cached LLM responses
+    that relied on this file are potentially outdated.
+    We only purge these entries to keep the cache warm for the others.
 
-    Les entrées antérieures à cette version (pas de clé ``source_files`` stockée)
-    sont purgées par sécurité dès qu'un fichier change — on ne peut pas savoir
-    d'où elles venaient.
+    Entries prior to this version (no ``source_files`` key stored)
+    are safely purged as soon as a file changes — we cannot know
+    where they came from.
 
-    Returns: nombre d'entrées (paires emb/resp) supprimées.
+    Returns: number of entries (emb/resp pairs) deleted.
     """
     targets = {f for f in filenames if f}
     if not targets:
@@ -349,7 +349,7 @@ async def invalidate_for_files(filenames: Iterable[str]) -> int:
                     continue
 
                 if "source_files" not in parsed:
-                    # Legacy entry (pre-tracking). Fail-safe : invalider.
+                    # Legacy entry (pre-tracking). Fail-safe: invalidate.
                     should_delete = True
                 else:
                     sources = set(parsed.get("source_files") or [])
@@ -380,7 +380,7 @@ async def invalidate_for_files(filenames: Iterable[str]) -> int:
                 pass
             await _invalidate_matrix()
             logger.info(
-                f"Semantic cache : {removed_pairs} entrée(s) invalidée(s) pour {sorted(targets)}."
+                f"Semantic cache: {removed_pairs} entry/entries invalidated for {sorted(targets)}."
             )
         return removed_pairs
     except Exception as e:
