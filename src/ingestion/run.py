@@ -424,7 +424,11 @@ def prepare_files_for_ai(
 
 
 def _save_bm25_corpus(documents: List[Document]) -> None:
-    """Save the chunks as JSON for the BM25 hybrid search."""
+    """Save the chunks as JSON for the BM25 hybrid search.
+
+    Each entry carries a tenant_id field so the search layer can filter
+    cross-tenant before scoring (multi-tenant isolation).
+    """
     os.makedirs(os.path.dirname(BM25_CORPUS_FILE), exist_ok=True)
     corpus = []
     for i, doc in enumerate(documents):
@@ -435,6 +439,7 @@ def _save_bm25_corpus(documents: List[Document]) -> None:
             "text": bm25_text,
             "fichier": doc.metadata.get("fichier", "unknown"),
             "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
+            "tenant_id": doc.metadata.get("tenant_id", ""),
         })
     dirpath = os.path.dirname(BM25_CORPUS_FILE)
     fd, tmp_path = tempfile.mkstemp(prefix="bm25_corpus_", suffix=".json", dir=dirpath)
@@ -459,6 +464,9 @@ def bootstrap_bm25_from_qdrant(output_path: str) -> bool:
 
     Called when the corpus file is missing but Qdrant has data.
     Returns True if the corpus could be written, False otherwise.
+
+    Each entry is tagged with tenant_id from Qdrant metadata so the search
+    layer can filter cross-tenant before scoring (multi-tenant isolation).
     """
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
@@ -484,6 +492,7 @@ def bootstrap_bm25_from_qdrant(output_path: str) -> bool:
                     "text":       text,
                     "fichier":    metadata.get("fichier", "unknown"),
                     "indexed_at": float(metadata.get("indexed_at", 0.0) or 0.0),
+                    "tenant_id":  metadata.get("tenant_id", ""),
                 })
             if offset is None:
                 break
@@ -655,7 +664,8 @@ def _index_data_locked(force_reindex: bool = False, tenant_id: str = "") -> bool
         try:
             from src.caching.semantic_cache import invalidate_for_files as _invalidate_semantic_cache
             # _invalidate_semantic_cache is async
-            _run_async(_invalidate_semantic_cache(impacted_files))
+            # WHY: pass tenant_id so the per-tenant cache is invalidated, not just the default one
+            _run_async(_invalidate_semantic_cache(impacted_files, tenant_id=tenant_id))
         except Exception as e:
             logger.warning(f"Could not invalidate semantic cache: {e}")
 

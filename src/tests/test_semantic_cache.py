@@ -105,11 +105,12 @@ def fake_redis(monkeypatch):
 
     # Singleton Redis
     sc._redis = fake
-    # Local state of the matrix / version check
-    sc._matrix = None
-    sc._matrix_keys = []
-    sc._matrix_ts = 0.0
-    sc._matrix_valid = False
+    # Local state of the matrices (per-tenant dicts after multi-tenant refactor)
+    sc._matrices = {}
+    sc._matrix_keys = {}
+    sc._matrix_ts = {}
+    sc._matrix_valid = {}
+    sc._matrix_locks = {}
     sc._cache_initialized = True  # Court-circuite _ensure_cache_version
 
     # _embed calls FastEmbed -> stub to stay hermetic
@@ -118,9 +119,11 @@ def fake_redis(monkeypatch):
     yield fake
 
     sc._redis = None
-    sc._matrix = None
-    sc._matrix_keys = []
-    sc._matrix_valid = False
+    sc._matrices = {}
+    sc._matrix_keys = {}
+    sc._matrix_ts = {}
+    sc._matrix_valid = {}
+    sc._matrix_locks = {}
     sc._cache_initialized = False
 
 

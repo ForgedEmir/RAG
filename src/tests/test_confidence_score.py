@@ -36,9 +36,7 @@ async def test_confidence_score_vide():
     """Without vector or BM25 results, search_passages returns empty lists."""
     with patch("src.search.search.get_store"), \
          patch("src.search.search.search", return_value=[]), \
-         patch("src.search.search._bm25_index", None), \
-         patch("src.search.search._bm25_corpus", []), \
-         patch("src.search.search._bm25_loaded", True):
+         patch("src.search.search._get_bm25_for_tenant", return_value=(None, [])):
         from src.search.search import search_passages
         passages, sources, scores, *_ = await search_passages("question with no result xyz123")
         assert passages == []

@@ -11,8 +11,10 @@ import src.search.search as search_module
 def reset_search_state():
     """Resets BM25, rate limiter, semantic cache, and constants before each test."""
     search_module._bm25_loaded = False
-    search_module._bm25_index = None
     search_module._bm25_corpus = []
+    # Per-tenant BM25 caches
+    search_module._bm25_indexes = {}
+    search_module._bm25_corpus_per_tid = {}
     
     # Semantic cache reset (Redis or Mock)
     try:

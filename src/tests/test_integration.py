@@ -166,7 +166,7 @@ def test_pipeline_reformulation_avec_historique(
         "session_id": "sess_historique",
     })
 
-    mock_rechercher.assert_called_once_with("How tall is Elarion?")
+    mock_rechercher.assert_called_once_with("How tall is Elarion?", tenant_id="user_test_1")
 
 
 # ── Conversational memory saved ────────────────────────────────────

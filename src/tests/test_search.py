@@ -82,7 +82,7 @@ def test_router_reranker_activable_si_flag():
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)  # disables HyDE fallback
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_resultats_multiples(mock_search, mock_get_store):
@@ -108,7 +108,7 @@ async def test_resultats_multiples(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_sans_resultats(mock_search, mock_get_store):
@@ -127,7 +127,7 @@ async def test_sans_resultats(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_un_resultat(mock_search, mock_get_store):
@@ -150,7 +150,7 @@ async def test_un_resultat(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_dedoublonne_par_fichier(mock_search, mock_get_store):
@@ -175,7 +175,7 @@ async def test_dedoublonne_par_fichier(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_ordre_sources_preserve(mock_search, mock_get_store):
@@ -199,7 +199,7 @@ async def test_ordre_sources_preserve(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_metadonnees_manquantes(mock_search, mock_get_store):
@@ -221,7 +221,7 @@ async def test_metadonnees_manquantes(mock_search, mock_get_store):
 @patch('src.search.search.search')
 @patch('src.search.search._RERANKER_ENABLED', False)
 @patch('src.search.search._HYDE_THRESHOLD', -1.0)
-@patch('src.search.search._bm25_index', None)
+@patch('src.search.search._get_bm25_for_tenant', new=lambda *a, **kw: (None, []))
 @patch('src.search.search._bm25_corpus', [])
 @patch('src.search.search._bm25_loaded', True)
 async def test_parametres_search(mock_search, mock_get_store):

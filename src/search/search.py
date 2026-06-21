@@ -110,13 +110,21 @@ def get_runtime_switches() -> Dict[str, Any]:
 
 
 # Global state (Singleton / Cache)
-_bm25_index: Optional[BM25Okapi] = None
-_bm25_corpus: List[Dict[str, Any]] = []
-_bm25_loaded: bool = False
-_bm25_lock = threading.Lock()
+# WHY: BM25 corpus is loaded once globally, but the BM25Okapi index is built
+# PER TENANT so that scoring only considers the tenant's chunks. IDF weights
+# would be skewed if computed across all tenants (a big tenant would dominate
+# the term frequencies of a small one). Each tenant gets its own lazily-built
+# BM25Okapi, cached until the corpus is invalidated.
+_bm25_corpus: List[Dict[str, Any]] = []          # all chunks, all tenants
+_bm25_loaded: bool = False                       # corpus loaded from disk?
+_bm25_lock = threading.Lock()                    # protects corpus load + per-tenant index build
 _bm25_bootstrap_lock = threading.Lock()
 _bm25_last_bootstrap_try: float = 0.0
 _bm25_missing_warned: bool = False
+
+# Per-tenant BM25Okapi caches (keyed by tenant_id; "" = default/global tenant)
+_bm25_indexes:        Dict[str, BM25Okapi]              = {}  # tenant_id -> BM25Okapi
+_bm25_corpus_per_tid: Dict[str, List[Dict[str, Any]]]  = {}  # tenant_id -> corpus subset
 
 _reranker = None
 _reranker_lock = threading.Lock()
@@ -186,10 +194,11 @@ def get_pipeline_stats() -> Dict[str, Any]:
     """Returns the performance statistics of the search pipeline."""
     return {
         **_pipeline_stats,
-        "bm25_chunks":      len(_bm25_corpus),
-        "bm25_loaded":      _bm25_loaded and _bm25_index is not None,
-        "reranker_enabled": _RERANKER_ENABLED,
-        "cache_hit_rate":   round(_pipeline_stats["cache_hits"] / max(_pipeline_stats["total_queries"], 1) * 100),
+        "bm25_chunks":          len(_bm25_corpus),
+        "bm25_loaded":          _bm25_loaded,
+        "bm25_tenants_loaded":  len(_bm25_indexes),
+        "reranker_enabled":     _RERANKER_ENABLED,
+        "cache_hit_rate":       round(_pipeline_stats["cache_hits"] / max(_pipeline_stats["total_queries"], 1) * 100),
     }
 
 
@@ -320,8 +329,13 @@ async def _expand_query(question: str) -> List[str]:
 
 
 def _load_bm25() -> None:
-    """Loads or rebuilds the BM25 lexical index from the Qdrant corpus."""
-    global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
+    """Loads the BM25 corpus from disk into memory.
+
+    The corpus is shared across all tenants (it contains all chunks with a
+    per-entry tenant_id field). Per-tenant BM25Okapi indexes are built lazily
+    by `_get_bm25_for_tenant()` and cached.
+    """
+    global _bm25_corpus, _bm25_loaded, _bm25_missing_warned
 
     path = os.path.normpath(_BM25_CORPUS_FILE)
     if not os.path.exists(path):
@@ -341,23 +355,76 @@ def _load_bm25() -> None:
             with open(path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
             _bm25_corpus = data if isinstance(data, list) else []
-            if _bm25_corpus:
-                tokenized_corpus = [_tokenize_bm25(d.get("text", "")) or ["_empty_"] for d in _bm25_corpus]
-                _bm25_index = BM25Okapi(tokenized_corpus)
-                logger.info(f"BM25 index loaded ({len(_bm25_corpus)} fragments).")
             _bm25_loaded = True
+            # Reset per-tenant caches — they will be rebuilt lazily
+            _bm25_indexes.clear()
+            _bm25_corpus_per_tid.clear()
+            # Group corpus entries by tenant_id once at load time
+            for entry in _bm25_corpus:
+                tid = entry.get("tenant_id", "") if isinstance(entry, dict) else ""
+                _bm25_corpus_per_tid.setdefault(tid, []).append(entry)
+            logger.info(
+                f"BM25 corpus loaded ({len(_bm25_corpus)} fragments across "
+                f"{len(_bm25_corpus_per_tid)} tenant(s))."
+            )
         except Exception as e:
-            logger.warning(f"Error loading BM25 index: {e}")
+            logger.warning(f"Error loading BM25 corpus: {e}")
+
+
+def _get_bm25_for_tenant(tenant_id: str) -> Tuple[Optional[BM25Okapi], List[Dict[str, Any]]]:
+    """Return (BM25Okapi, corpus_subset) for ONE tenant.
+
+    The BM25Okapi is built lazily on first access and cached until the corpus
+    is invalidated. This way IDF weights are computed only on the tenant's
+    chunks, preventing a big tenant from skewing the term frequencies of a
+    small one.
+
+    Args:
+        tenant_id: Tenant scope. Empty string = default/global tenant.
+
+    Returns:
+        (BM25Okapi, corpus_subset) or (None, []) if the tenant has no chunks.
+    """
+    if not _bm25_loaded:
+        _load_bm25()
+    if not _bm25_corpus_per_tid:
+        return None, []
+
+    if tenant_id in _bm25_indexes:
+        return _bm25_indexes[tenant_id], _bm25_corpus_per_tid.get(tenant_id, [])
+
+    with _bm25_lock:
+        # Double-check after acquiring the lock
+        if tenant_id in _bm25_indexes:
+            return _bm25_indexes[tenant_id], _bm25_corpus_per_tid.get(tenant_id, [])
+
+        subset = _bm25_corpus_per_tid.get(tenant_id, [])
+        if not subset:
+            return None, []
+
+        try:
+            tokenized = [_tokenize_bm25(d.get("text", "")) or ["_empty_"] for d in subset]
+            index = BM25Okapi(tokenized)
+            _bm25_indexes[tenant_id] = index
+            logger.debug(
+                f"BM25 index built for tenant={tenant_id or 'default'} "
+                f"({len(subset)} fragments)."
+            )
+            return index, subset
+        except Exception as e:
+            logger.warning(f"Failed to build BM25 index for tenant={tenant_id or 'default'}: {e}")
+            return None, subset
 
 
 def invalidate_bm25_cache() -> None:
-    """Resets the BM25 index to force a reload on next call."""
-    global _bm25_index, _bm25_corpus, _bm25_loaded, _bm25_missing_warned
+    """Resets the BM25 corpus and all per-tenant indexes to force a reload on next call."""
+    global _bm25_corpus, _bm25_loaded, _bm25_missing_warned
     with _bm25_lock:
-        _bm25_index = None
         _bm25_corpus = []
         _bm25_loaded = False
         _bm25_missing_warned = False
+        _bm25_indexes.clear()
+        _bm25_corpus_per_tid.clear()
 
 
 def _rrf(vector: List[Dict], bm25: List[Dict], k: int = RRF_K) -> Tuple[List[Dict], Dict[str, float]]:
@@ -443,22 +510,22 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
                     "indexed_at": float(doc.metadata.get("indexed_at", 0.0) or 0.0),
                 })
 
-    # Step 2: BM25 lexical search (if needed)
-    if not _bm25_loaded:
-        _load_bm25()
-
+    # Step 2: BM25 lexical search (per-tenant isolation)
+    # WHY: Use the tenant-scoped BM25Okapi index, never the global corpus.
+    # _get_bm25_for_tenant() builds and caches the index lazily per tenant.
+    bm25_index_t, bm25_corpus_t = _get_bm25_for_tenant(tenant_id)
     bm25_results = []
-    if _bm25_index and _bm25_corpus:
+    if bm25_index_t and bm25_corpus_t:
         query_tokens = _tokenize_bm25(question)
         if query_tokens:
-            bm25_scores = _bm25_index.get_scores(query_tokens)
+            bm25_scores = bm25_index_t.get_scores(query_tokens)
             top_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:plan.k_candidates]
             # Normalize each corpus entry so downstream code can read `filename`
             # regardless of whether the corpus was written with "fichier" (FR) or "filename" (EN).
             bm25_results = []
             for i in top_indices:
                 if bm25_scores[i] > 0:
-                    entry = dict(_bm25_corpus[i])
+                    entry = dict(bm25_corpus_t[i])
                     entry["filename"] = entry.get("filename") or entry.get("fichier", "unknown")
                     bm25_results.append(entry)
 

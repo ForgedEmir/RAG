@@ -77,7 +77,7 @@ def test_ask_question_valide(mock_valider, mock_cache, mock_reg, mock_track, moc
     assert len(done_evt["trace_id"]) >= 8
     assert done_evt.get("question_for_feedback") == "Who is the hero?"
 
-    mock_rechercher.assert_called_once_with("Who is the hero?")
+    mock_rechercher.assert_called_once_with("Who is the hero?", tenant_id="user_test")
 
 
 @patch("src.api.routes.index_data")
@@ -168,7 +168,7 @@ def test_ask_uses_reformulated_question(mock_store, mock_save, mock_track, mock_
                                "session_id": "abc", "user_id": "user_test"})
 
     mock_reformuler.assert_called_once_with("il fait quelle taille ?", mock_history.return_value)
-    mock_rechercher.assert_called_once_with("Quelle est la taille de Lucas le Tranchant ?")
+    mock_rechercher.assert_called_once_with("Quelle est la taille de Lucas le Tranchant ?", tenant_id="user_test")
 
 
 @patch("src.api.routes.index_data")
@@ -196,7 +196,7 @@ def test_ask_without_history_no_reformulation(mock_cache, mock_valider, mock_str
                          json={"question": "Qui est le roi ?", "user_id": "user_test"})
 
     mock_reformuler.assert_called_once_with("Qui est le roi ?", [])
-    mock_rechercher.assert_called_once_with("Qui est le roi ?")
+    mock_rechercher.assert_called_once_with("Qui est le roi ?", tenant_id="user_test")
 
 
 # ===== TESTS POUR /api/reindex =====

@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from src.api.auth import get_current_user, require_monitoring
+from src.api.auth import get_current_user, get_tenant_id, require_monitoring
 from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
@@ -235,6 +235,11 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         if owner and owner != _norm_uid(user_id):
             return JSONResponse({"error": "Access denied"}, status_code=403)
 
+    # WHY: Resolve the tenant_id once for the whole request — it scopes
+    # vector search, BM25, and semantic cache to the caller's tenant.
+    # An invited member (user_roles.tenant_id != user_id) gets the inviter's tenant.
+    tenant_id = await get_tenant_id(user_id)
+
     # PII masking before security validation
     try:
         from src.security.pii_masker import mask
@@ -265,7 +270,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         )
 
     # ── Semantic cache check ──────────────────────────────────────────────
-    cached_result = await cache_check(question)
+    cached_result = await cache_check(question, tenant_id=tenant_id)
     if cached_result is not None:
         cached_data, _ = cached_result if isinstance(cached_result, tuple) else (cached_result, None)
         cached_text = cached_data.get("answer", "")
@@ -313,7 +318,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     logger.info(f"[{req_id}] reformulation={int((time.time()-t_ref)*1000)}ms")
 
     t_search = time.time()
-    passages, raw_sources, conf_scores, tie_subjects = await search_passages(query)
+    passages, raw_sources, conf_scores, tie_subjects = await search_passages(query, tenant_id=tenant_id)
     logger.info(f"[{req_id}] search={int((time.time()-t_search)*1000)}ms passages={len(passages)}")
 
     if not passages:
@@ -379,7 +384,7 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
             if body.session_id:
                 await save_exchange(body.session_id, question, answer, user_id,
                                     sources=unique_sources, context_chunks=context_chunks)
-                await cache_store(question, answer, source_files=unique_sources, context_chunks=context_chunks)
+                await cache_store(question, answer, tenant_id=tenant_id, source_files=unique_sources, context_chunks=context_chunks)
                 
                 if len(question) + len(answer) > IMPORTANCE_THRESHOLD:
                     async def _summary_logic():

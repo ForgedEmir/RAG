@@ -63,6 +63,13 @@ _MCP_FILE_ROOT  = Path(os.getenv("MCP_FILE_ROOT", os.path.join(os.path.dirname(o
 _ALLOWED_LOG_EXTENSIONS = {".log", ".txt", ".out"}
 _ALLOWED_SAVE_EXTENSIONS = {".json", ".xml", ".txt", ".log", ".sav", ".dat", ".cfg", ".ini", ".yaml", ".yml", ".nbt"}
 
+# WHY: When the MCP server is deployed as a per-tenant instance (one process per
+# client), the tenant_id is set in the environment and tools don't need to
+# expose it. When deployed as a shared instance, the agent must pass tenant_id
+# explicitly. The tool signature accepts tenant_id as an optional argument with
+# env-var fallback, so both modes work.
+_DEFAULT_TENANT_ID = os.getenv("MCP_TENANT_ID", "")
+
 
 # ── Lifespan: Qdrant connection managed cleanly at startup/shutdown ──────────
 
@@ -140,7 +147,7 @@ def _resolve_sandbox_path(user_path: str, *, expect_dir: bool = False) -> tuple[
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def ask_lore(question: str, ctx: Context) -> str:
+async def ask_lore(question: str, ctx: Context, tenant_id: str = "") -> str:
     """
     Ask a question about the lore of the Aethelgard Online game.
     The Oracle consults the archives and answers only with verified facts.
@@ -148,15 +155,21 @@ async def ask_lore(question: str, ctx: Context) -> str:
 
     Args:
         question: The lore question (characters, locations, factions, artifacts, timeline...)
+        tenant_id: Optional tenant scope for multi-tenant deployments.
+                   If omitted, falls back to the MCP_TENANT_ID env var.
+                   Use empty string for the default/global tenant.
     """
-    await ctx.info(f"Searching the archives for: {question!r}")
+    # WHY: Resolve the effective tenant_id once — env var fallback enables
+    # per-tenant MCP deployments where the agent never has to know the tenant.
+    effective_tenant = tenant_id or _DEFAULT_TENANT_ID
+    await ctx.info(f"Searching the archives (tenant={effective_tenant or 'default'}) for: {question!r}")
     try:
         from src.search.search import search_passages
         from src.generation.generator import stream_response
 
         await ctx.report_progress(progress=0.3, total=1.0, message="Vector search...")
         # search_passages est maintenant asynchrone
-        passages, sources, *_ = await search_passages(question)
+        passages, sources, *_ = await search_passages(question, tenant_id=effective_tenant)
 
         if not passages:
             return "No relevant passages found in the archives for this question."
@@ -176,7 +189,7 @@ async def ask_lore(question: str, ctx: Context) -> str:
 
 
 @mcp.tool()
-async def search_lore(query: str, ctx: Context) -> SearchResult:
+async def search_lore(query: str, ctx: Context, tenant_id: str = "") -> SearchResult:
     """
     Search raw passages in the archives without generating an LLM response.
     Returns documents exactly as stored in Qdrant.
@@ -184,12 +197,16 @@ async def search_lore(query: str, ctx: Context) -> SearchResult:
 
     Args:
         query: The subject to search for (character name, location, faction, artifact...)
+        tenant_id: Optional tenant scope for multi-tenant deployments.
+                   If omitted, falls back to the MCP_TENANT_ID env var.
+                   Use empty string for the default/global tenant.
     """
-    await ctx.info(f"Raw search: {query!r}")
+    effective_tenant = tenant_id or _DEFAULT_TENANT_ID
+    await ctx.info(f"Raw search (tenant={effective_tenant or 'default'}): {query!r}")
     try:
         from src.search.search import search_passages
         # search_passages est maintenant asynchrone
-        passages, sources, conf_scores, _ = await search_passages(query)
+        passages, sources, conf_scores, _ = await search_passages(query, tenant_id=effective_tenant)
         annotated = []
         for passage, score in zip(passages, conf_scores):
             if score >= 0.7:
