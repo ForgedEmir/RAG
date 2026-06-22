@@ -569,7 +569,7 @@ async def search_passages(question: str, tenant_id: str = "") -> Tuple[List[str]
         logger.info(f"HyDE fallback activated (max score {max_rrf:.4f})")
         try:
             from src.retrieval.hyde import hyde_search
-            hyde_docs = await hyde_search(question, None, store._embeddings, store, top_k=FINAL_TOP_N)
+            hyde_docs = await hyde_search(question, None, store._embeddings, store, top_k=FINAL_TOP_N, tenant_id=tenant_id)
             combined = [{
                 "id": d.metadata.get("chunk_id", d.page_content[:80]),
                 "text": d.metadata.get("original_text", d.page_content),

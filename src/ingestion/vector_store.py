@@ -261,14 +261,24 @@ def add_documents(store: QdrantVectorStore, documents: List[Document]) -> None:
 
 
 def remove_files(store: QdrantVectorStore, files: Set[str], tenant_id: str = "") -> None:
-    """Remove all chunks associated with a list of files."""
+    """Remove all chunks associated with a list of files.
+
+    WHY: ingestion stores the source file under BOTH 'fichier' (FR, original key)
+    and 'filename' (EN, alias added by features/misc). Both keys must be matched
+    to ensure no chunks survive deletion. Previously only 'filename' was filtered,
+    which never matched the actual 'fichier' key → deleted files were never removed
+    from Qdrant and stale content kept showing up in search results.
+    """
     if not files:
         return
     try:
-        file_filter = Filter(should=[
-            FieldCondition(key="metadata.filename", match=MatchValue(value=nom))
-            for nom in files
-        ])
+        # Build a `should` clause that matches EITHER the FR or EN metadata key
+        # for each filename. This is robust against mixed-key payloads.
+        file_conditions = []
+        for nom in files:
+            file_conditions.append(FieldCondition(key="metadata.filename", match=MatchValue(value=nom)))
+            file_conditions.append(FieldCondition(key="metadata.fichier",  match=MatchValue(value=nom)))
+        file_filter = Filter(should=file_conditions)
         combined = Filter(must=[
             file_filter,
             FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id)),

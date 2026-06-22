@@ -517,14 +517,27 @@ from fastapi.responses import FileResponse as _FileResponse
 async def spa_fallback(full_path: str):
     if full_path.startswith("api/"):
         return JSONResponse({"error": "Not found"}, status_code=404)
-        
+
     # Servir les fichiers statiques (assets/..., favicon.svg, icons.svg…)
+    # WHY: realpath containment check prevents path traversal attacks.
+    # Without this, a request to /../../etc/passwd would resolve via os.path.join
+    # and serve arbitrary files from outside the frontend directory.
     static_file = os.path.join(_frontend, full_path)
-    if full_path and os.path.isfile(static_file):
-        return _FileResponse(static_file)
-        
+    try:
+        resolved_file = os.path.realpath(static_file)
+        resolved_root = os.path.realpath(_frontend)
+    except (OSError, ValueError):
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+
+    if not resolved_file.startswith(resolved_root + os.sep) and resolved_file != resolved_root:
+        logger.warning(f"[SECURITY] Path traversal attempt blocked: {full_path!r}")
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    if full_path and os.path.isfile(resolved_file):
+        return _FileResponse(resolved_file)
+
     if full_path.startswith("assets/"):
-        return JSONResponse({"error": "Asset introuvable", "path": static_file}, status_code=404)
+        return JSONResponse({"error": "Asset introuvable", "path": full_path}, status_code=404)
     # Toutes les autres routes → index.html (React Router gère côté client)
     if os.path.isfile(_index_file):
         return _FileResponse(_index_file)

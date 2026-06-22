@@ -517,10 +517,21 @@ def _xml_to_text(filepath: str) -> str:
         pass
     except Exception as e:
         logger.warning(f"Unstructured failed for XML {filepath}: {e}")
-    # Fallback: stdlib xml.etree.ElementTree
+    # Fallback: defusedxml (XXE-safe) instead of stdlib xml.etree.ElementTree
+    # WHY: stdlib xml.etree is vulnerable to XML External Entity (XXE) attacks
+    # and billion-laughs DoS. User-uploaded XML files must be parsed with
+    # defusedxml which blocks external entity resolution and entity expansion.
     try:
         text = _detect_and_read(filepath)
-        root = ET.fromstring(text)
+        try:
+            from defusedxml import ElementTree as DefusedET
+            root = DefusedET.fromstring(text)
+        except ImportError:
+            # defusedxml not installed — fall back to stdlib but log a warning.
+            # This should not happen in production (defusedxml is in requirements).
+            logger.warning("defusedxml not installed, falling back to stdlib xml.etree (XXE-vulnerable). "
+                           "Install with: pip install defusedxml")
+            root = ET.fromstring(text)
         parts = []
         for elem in root.iter():
             tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag

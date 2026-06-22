@@ -42,9 +42,20 @@ async def _hypothetical_answer(query: str) -> str:
         return ""
 
 
-async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List[Document]:
+async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3,
+                      tenant_id: str = "") -> List[Document]:
     """HyDE fallback: generates a hypothetical answer → embeds it → searches Qdrant.
     Triggered when RRF scores are too low to improve recall.
+
+    Args:
+        query:     The user's question.
+        llm:       (unused, kept for backward compat) HyDE uses its own LLM import.
+        embedder:  Embeddings object (FastEmbed) used to embed the hypothetical answer.
+        qdrant:    The QdrantVectorStore used for similarity search.
+        top_k:     Maximum number of documents to return.
+        tenant_id: Tenant scope for B2B multi-tenant isolation. CRITICAL: if omitted,
+                   the search is performed WITHOUT a tenant filter, which can leak
+                   documents across tenants. Always pass the caller's tenant_id.
     """
     if not embedder or not qdrant:
         logger.warning("HyDE skipped: embedder or qdrant unavailable")
@@ -54,7 +65,7 @@ async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List
     if not hypothetical:
         return []
 
-    logger.info(f"HyDE rewriting query. Hypothetical: {hypothetical[:100]}...")
+    logger.info(f"HyDE rewriting query (tenant={tenant_id or 'default'}). Hypothetical: {hypothetical[:100]}...")
     try:
         # Note: embedder.embed_query is usually synchronous (local FastEmbed),
         # but qdrant.similarity_search_by_vector can be async if the store is.
@@ -62,6 +73,15 @@ async def hyde_search(query: str, llm, embedder, qdrant, top_k: int = 3) -> List
         emb = (list(embedder.embed([hypothetical]))[0]
                if hasattr(embedder, "embed")
                else embedder.embed_query(hypothetical))
+
+        # WHY: apply tenant_id filter to maintain multi-tenant isolation.
+        # Without this, HyDE fallback could return documents from any tenant.
+        if tenant_id:
+            from qdrant_client.http import Filter, FieldCondition, MatchValue
+            tenant_filter = Filter(must=[
+                FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))
+            ])
+            return qdrant.similarity_search_by_vector(emb, k=top_k, filter=tenant_filter)
         return qdrant.similarity_search_by_vector(emb, k=top_k)
     except Exception as e:
         logger.warning(f"HyDE vector search failed: {e}")

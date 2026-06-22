@@ -291,14 +291,14 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
         )
 
     # The 3 calls are independent; run them in parallel.
-    history_task = get_history(body.session_id)
-    summary_task = get_user_summary(user_id)
-    memories_task = search_user_memories(user_id, question) # search_user_memories est synchrone (vector_memory.py)
-    
-    # Mix async and sync tasks (using to_thread for the sync one)
+    # search_user_memories is synchronous (vector_memory.py) → wrap in asyncio.to_thread.
+    # WHY: previously, search_user_memories was called twice — once synchronously
+    # (blocking the event loop) on the line above, and once via asyncio.to_thread.
+    # The synchronous call's result was never used; only the to_thread result was kept.
+    # This both wasted a Qdrant query and blocked the event loop for ~20-50ms.
     history, summary, memories = await asyncio.gather(
-        history_task, 
-        summary_task, 
+        get_history(body.session_id),
+        get_user_summary(user_id),
         asyncio.to_thread(search_user_memories, user_id, question),
         return_exceptions=True
     )

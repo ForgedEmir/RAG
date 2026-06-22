@@ -150,11 +150,11 @@ def _track_false_positive(texte: str) -> None:
 
 
 # ── System prompt extraction ───────────────────────────────────────────────
-# The word "prompt" is never present in a legitimate lore question about Aethelgard.
-# This check is therefore without false positives, and applies regardless of Lakera.
+# NOTE: "prompt" can legitimately appear in B2B questions (prompt engineering,
+# system prompts documentation, etc.). This check is intentionally narrow:
+# it only blocks explicit attempts to extract the assistant's own prompt.
 
 _PROMPT_EXTRACTION_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
-    r"system\s+prompt",
     r"system\s+prompt",
     r"(give|show|reveal|expose|tell|share|repeat)\s+(me\s+)?(your|the)\s+(system\s+)?prompt",
     r"(reveal|print|show|give|tell|display|output|repeat)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?prompt",

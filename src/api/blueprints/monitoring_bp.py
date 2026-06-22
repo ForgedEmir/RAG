@@ -193,7 +193,10 @@ async def monitoring_features(request: Request):
     # Feedback
     try:
         from src.monitoring.tracker import _get_client as get_supa
-        client = get_supa()
+        # WHY: tracker._get_client is async (returns a coroutine). Without await,
+        # `client` was the coroutine object (always truthy), so the "feedback" feature
+        # always showed as OK even when Supabase was unreachable.
+        client = await get_supa()
         features["feedback"] = {"ok": client is not None, "detail": "Supabase connected" if client else "Supabase not configured"}
     except Exception as e:
         features["feedback"] = {"ok": False, "detail": str(e)[:60]}

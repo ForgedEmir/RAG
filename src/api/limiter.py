@@ -58,10 +58,13 @@ def _resolve_storage_uri() -> str:
 
 limiter = Limiter(key_func=_get_key, storage_uri=_resolve_storage_uri())
 
-def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+    # WHY: this handler is now async so we can `await` the async track() call.
+    # Previously, track() (async) was called without await → coroutine was
+    # garbage-collected → rate-limit events were silently lost from tracking.
     from src.monitoring.tracker import track
     try:
-        track("rate_limit", detail=request.client.host if request.client else "unknown")
+        await track("rate_limit", detail=request.client.host if request.client else "unknown")
     except Exception:
         pass
     return JSONResponse(

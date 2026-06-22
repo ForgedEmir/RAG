@@ -35,6 +35,8 @@ charset-normalizer>=3.0.0
 msoffcrypto-tool>=5.0.0
 python-magic-bin; sys_platform == "win32"
 llama-parse>=0.5.0
+# XML parsing — XXE-safe alternative to stdlib xml.etree
+defusedxml>=0.7.0
 
 # === OCR (optionnel — requiert Tesseract + Poppler système) ===
 # pdf2image>=1.16.0
