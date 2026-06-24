@@ -232,4 +232,4 @@ def test_reindex_declenche_invalidation_bm25(mock_track, mock_index):
     resp = create_client().post("/api/reindex", json={"force": True}, headers={"X-Monitoring-Key": "test_key"})
     assert resp.status_code == 200
     assert "complete" in resp.json()["message"]
-    mock_index.assert_called_once_with(force_reindex=True)
+    mock_index.assert_called_once_with(force_reindex=True, tenant_id="")

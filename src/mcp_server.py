@@ -58,7 +58,9 @@ logging.basicConfig(level=logging.WARNING)
 
 _QDRANT_URL     = os.getenv("QDRANT_URL")
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-_COLLECTION     = "lore"
+# WHY: removed hardcoded _COLLECTION="lore" — the actual collection name is
+# env-configurable (QDRANT_COLLECTION, default "documents_chunks") and is
+# imported from src.ingestion.vector_store._COLLECTION_NAME where needed.
 _MCP_FILE_ROOT  = Path(os.getenv("MCP_FILE_ROOT", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sample"))).resolve()
 _ALLOWED_LOG_EXTENSIONS = {".log", ".txt", ".out"}
 _ALLOWED_SAVE_EXTENSIONS = {".json", ".xml", ".txt", ".log", ".sav", ".dat", ".cfg", ".ini", ".yaml", ".yml", ".nbt"}
@@ -115,22 +117,41 @@ class FileListResult(BaseModel):
     total: int = Field(description="Number of files detected")
 
 
-def _resolve_sandbox_path(user_path: str, *, expect_dir: bool = False) -> tuple[Optional[Path], Optional[str]]:
-    """Resout user_path dans MCP_FILE_ROOT et bloque les acces hors sandbox."""
+def _resolve_sandbox_path(user_path: str, *, expect_dir: bool = False, tenant_id: str = "") -> tuple[Optional[Path], Optional[str]]:
+    """Resolve user_path within the tenant-scoped sandbox.
+
+    WHY (T1 leak): previously the sandbox was the global _MCP_FILE_ROOT, so
+    any tenant sharing one MCP server could list and read every other tenant's
+    files. Now the sandbox is _MCP_FILE_ROOT / <tenant_id> when tenant_id is
+    set, falling back to _MCP_FILE_ROOT (global) when empty (single-tenant
+    mode or admin).
+
+    Path traversal is blocked by checking that the resolved path stays within
+    the tenant sandbox.
+    """
+    # Determine the sandbox root: tenant subdirectory if tenant_id is set, else global root.
+    if tenant_id:
+        # WHY: prevent tenant_id path traversal (e.g. tenant_id="../other_tenant")
+        if any(s in tenant_id for s in ("/", "\\", "..")):
+            return None, "Invalid tenant_id"
+        sandbox_root = (_MCP_FILE_ROOT / tenant_id).resolve()
+    else:
+        sandbox_root = _MCP_FILE_ROOT
+
     raw = (user_path or "").strip()
     if not raw:
-        candidate = _MCP_FILE_ROOT
+        candidate = sandbox_root
     else:
         p = Path(raw)
-        candidate = p if p.is_absolute() else (_MCP_FILE_ROOT / p)
+        candidate = p if p.is_absolute() else (sandbox_root / p)
 
     try:
         resolved = candidate.resolve()
     except Exception as e:
-        return None, f"Chemin invalide: {e}"
+        return None, f"Invalid path: {e}"
 
-    if not resolved.is_relative_to(_MCP_FILE_ROOT):
-        return None, f"Access denied: path must stay within {_MCP_FILE_ROOT}"
+    if not resolved.is_relative_to(sandbox_root):
+        return None, f"Access denied: path must stay within {sandbox_root}"
 
     if not resolved.exists():
         return None, f"Path not found: {resolved}"
@@ -222,19 +243,31 @@ async def search_lore(query: str, ctx: Context, tenant_id: str = "") -> SearchRe
 
 
 @mcp.tool()
-async def list_save_files(folder_path: str = ".", ctx: Context = None) -> FileListResult:
-    """List save/log files within the MCP_FILE_ROOT sandbox."""
-    if ctx:
-        await ctx.info(f"Secure folder listing: {folder_path!r}")
+async def list_save_files(folder_path: str = ".", ctx: Context = None,
+                          tenant_id: str = "") -> FileListResult:
+    """List save/log files within the tenant-scoped sandbox.
 
-    folder, err = _resolve_sandbox_path(folder_path, expect_dir=True)
+    Args:
+        folder_path: Subfolder to list (relative to the tenant sandbox root).
+        tenant_id: Optional tenant scope. Falls back to MCP_TENANT_ID env var.
+                   CRITICAL: when omitted in a multi-tenant deployment, files
+                   from every tenant may be visible. Always pass the caller's
+                   tenant_id in shared MCP deployments.
+    """
+    effective_tenant = tenant_id or _DEFAULT_TENANT_ID
+    if ctx:
+        await ctx.info(f"Secure folder listing (tenant={effective_tenant or 'default'}): {folder_path!r}")
+
+    folder, err = _resolve_sandbox_path(folder_path, expect_dir=True, tenant_id=effective_tenant)
     if err:
         return FileListResult(root=str(_MCP_FILE_ROOT), files=[err], total=0)
 
+    # Sandbox root for relative path display
+    sandbox_root = (_MCP_FILE_ROOT / effective_tenant) if effective_tenant else _MCP_FILE_ROOT
     files: list[str] = []
     for item in sorted(folder.rglob("*")):
         if item.is_file() and item.suffix.lower() in _ALLOWED_SAVE_EXTENSIONS:
-            rel = item.relative_to(_MCP_FILE_ROOT)
+            rel = item.relative_to(sandbox_root)
             size = item.stat().st_size
             size_str = f"{size}B" if size < 1024 else f"{size // 1024}KB"
             files.append(f"{rel} ({size_str})")
@@ -243,18 +276,29 @@ async def list_save_files(folder_path: str = ".", ctx: Context = None) -> FileLi
 
 
 @mcp.tool()
-async def read_log_file(file_path: str, ctx: Context, last_n_lines: int = 50) -> LogResult:
-    """Read the last lines of a text log file within the MCP_FILE_ROOT sandbox."""
-    await ctx.info(f"Secure log read: {file_path!r}")
+async def read_log_file(file_path: str, ctx: Context, last_n_lines: int = 50,
+                        tenant_id: str = "") -> LogResult:
+    """Read the last lines of a text log file within the tenant-scoped sandbox.
 
-    log_file, err = _resolve_sandbox_path(file_path, expect_dir=False)
+    Args:
+        file_path: Path to the log file (relative to the tenant sandbox root).
+        last_n_lines: Number of last lines to return (capped at 500).
+        tenant_id: Optional tenant scope. Falls back to MCP_TENANT_ID env var.
+                   CRITICAL: when omitted in a multi-tenant deployment, any
+                   tenant's log file may be readable. Always pass the caller's
+                   tenant_id in shared MCP deployments.
+    """
+    effective_tenant = tenant_id or _DEFAULT_TENANT_ID
+    await ctx.info(f"Secure log read (tenant={effective_tenant or 'default'}): {file_path!r}")
+
+    log_file, err = _resolve_sandbox_path(file_path, expect_dir=False, tenant_id=effective_tenant)
     if err:
         return LogResult(path=file_path, lines=[err], total_lines=0)
 
     if log_file.suffix.lower() not in _ALLOWED_LOG_EXTENSIONS:
         return LogResult(
             path=str(log_file),
-            lines=[f"Extension non autorisee ({log_file.suffix}). Autorisees: {', '.join(sorted(_ALLOWED_LOG_EXTENSIONS))}"],
+            lines=[f"Extension not allowed ({log_file.suffix}). Allowed: {', '.join(sorted(_ALLOWED_LOG_EXTENSIONS))}"],
             total_lines=0,
         )
 
@@ -274,21 +318,36 @@ async def read_log_file(file_path: str, ctx: Context, last_n_lines: int = 50) ->
 
 @mcp.resource("lore://sources")
 def list_sources() -> str:
-    """List all lore files currently indexed in the archives."""
+    """List lore files indexed for the MCP_TENANT_ID tenant.
+
+    WHY (T2 leak): previously called list_current_files() without tenant_id,
+    leaking every tenant's filenames. Now scoped to _DEFAULT_TENANT_ID (set
+    via MCP_TENANT_ID env var). MCP resources cannot accept parameters, so
+    the tenant MUST be configured at deployment time.
+
+    In single-tenant mode (MCP_TENANT_ID empty), lists all files.
+    """
     try:
         from src.ingestion.run import list_current_files
-        files = list_current_files()
+        # WHY: scope the file scan to the configured tenant's subdirectory.
+        files = list_current_files(tenant_id=_DEFAULT_TENANT_ID)
         if not files:
-            return "No files indexed yet."
+            return f"No files indexed for tenant='{_DEFAULT_TENANT_ID or 'default'}'."
         lines = "\n".join(f"- {f}" for f in sorted(files.keys()))
-        return f"{len(files)} file(s) indexed:\n\n{lines}"
+        return f"{len(files)} file(s) indexed for tenant='{_DEFAULT_TENANT_ID or 'default'}':\n\n{lines}"
     except Exception as e:
         return f"Error: {e}"
 
 
 @mcp.resource("lore://stats")
 def collection_stats() -> str:
-    """Qdrant vector collection statistics (vector count, status)."""
+    """Qdrant vector collection statistics, scoped to MCP_TENANT_ID.
+
+    WHY (T2 leak): previously returned the total point count for the entire
+    collection, leaking the total document volume of every tenant. Now counts
+    only points tagged with _DEFAULT_TENANT_ID. In single-tenant mode, returns
+    the total count.
+    """
     try:
         if _QDRANT_URL and _QDRANT_API_KEY:
             client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
@@ -296,11 +355,28 @@ def collection_stats() -> str:
             db_path = os.path.join(os.path.dirname(__file__), "ingestion", "qdrant_db")
             client = QdrantClient(path=db_path)
 
-        info = client.get_collection(_COLLECTION)
-        count = info.points_count or 0
-        status = info.status.value if hasattr(info.status, "value") else str(info.status)
+        # WHY: count only points matching the configured tenant_id when set.
+        if _DEFAULT_TENANT_ID:
+            from qdrant_client.http import Filter, FieldCondition, MatchValue
+            from src.ingestion.vector_store import _COLLECTION_NAME
+            count_result = client.count(
+                collection_name=_COLLECTION_NAME,
+                count_filter=Filter(must=[
+                    FieldCondition(key="metadata.tenant_id", match=MatchValue(value=_DEFAULT_TENANT_ID))
+                ]),
+                exact=True,
+            )
+            count = count_result.count
+            label = f"tenant='{_DEFAULT_TENANT_ID}'"
+        else:
+            from src.ingestion.vector_store import _COLLECTION_NAME
+            info = client.get_collection(_COLLECTION_NAME)
+            count = info.points_count or 0
+            label = "all tenants"
+
+        status = "ok"
         client.close()
-        return f"Collection: {_COLLECTION}\nIndexed vectors: {count}\nStatus: {status}"
+        return f"Collection: {_COLLECTION_NAME}\nTenant: {label}\nIndexed vectors: {count}\nStatus: {status}"
     except Exception as e:
         return f"Unable to retrieve stats: {e}"
 

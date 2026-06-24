@@ -266,15 +266,24 @@ async def get_conversation(session_id: str) -> list:
         logger.warning(f"[MEMORY] get_conversation: {e}")
         return []
 
-async def conversation_belongs_to_user(session_id: str, user_id: str) -> bool:
+async def conversation_belongs_to_user(session_id: str, user_id: str, joined_after: str = "") -> bool:
+    """Check that a conversation belongs to the user, optionally scoped by tenant join date.
+
+    WHY: T8 leak fix. Without the joined_after filter, a user invited to
+    tenant Y could reopen conversations they had in tenant X (before they
+    joined Y). The joined_after timestamp comes from user_roles.created_at.
+    """
     client = await _get_client()
     if not client or not session_id or not user_id:
         return False
     try:
         normalized_uid = _normalize_user_id(user_id)
-        r = await (client.table("conversations").select("id")
+        q = (client.table("conversations").select("id, created_at")
              .eq("session_id", session_id).eq("user_id", normalized_uid)
-             .limit(1).execute())
+             .limit(1))
+        if joined_after:
+            q = q.gte("created_at", joined_after)
+        r = await q.execute()
         return bool(r.data)
     except Exception as e:
         logger.warning(f"[MEMORY] conversation_belongs_to_user: {e}")
@@ -328,32 +337,54 @@ async def save_exchange(session_id: str, question: str, answer: str, user_id: st
     except Exception as e:
         logger.warning(f"[MEMORY] save_exchange: {e}")
 
-async def get_user_summary(user_id: str) -> str:
+async def get_user_summary(user_id: str, tenant_id: str = "") -> str:
+    """Retrieve the long-term summary for a user, scoped by tenant.
+
+    WHY: without tenant_id, a user invited to multiple tenants would retrieve
+    the summary accumulated under another tenant, leaking that tenant's facts
+    into the LLM prompt (T7 leak).
+
+    Implementation: the summary is stored under a composite key
+    "{tenant_id}:{user_id}" in the user_id column. When tenant_id is empty
+    (single-tenant / legacy mode), the key is just user_id (backward compat).
+    No DB migration required: the column already exists and accepts text.
+    """
     client = await _get_client()
     if not client or not user_id:
         return ""
     try:
         normalized_uid = _normalize_user_id(user_id)
-        r = await client.table("user_memory").select("summary").eq("user_id", normalized_uid).limit(1).execute()
+        composite_key = f"{tenant_id}:{normalized_uid}" if tenant_id else normalized_uid
+        r = await client.table("user_memory").select("summary").eq("user_id", composite_key).limit(1).execute()
         return r.data[0]["summary"] if r.data else ""
     except Exception as e:
         logger.warning(f"[MEMORY] get_user_summary: {e}")
         return ""
 
-async def save_user_summary(user_id: str, summary: str) -> None:
+async def save_user_summary(user_id: str, summary: str, tenant_id: str = "") -> None:
+    """Persist the long-term summary for a user, scoped by tenant.
+
+    See get_user_summary for the composite-key approach (no DB migration).
+    """
     client = await _get_client()
     if not client or not user_id:
         return
     try:
         normalized_uid = _normalize_user_id(user_id)
-        await client.table("user_memory").upsert({"user_id": normalized_uid, "summary": summary}).execute()
-        logger.info(f"[MEMORY] Summary updated for user '{normalized_uid[:8]}…'")
+        composite_key = f"{tenant_id}:{normalized_uid}" if tenant_id else normalized_uid
+        await client.table("user_memory").upsert({"user_id": composite_key, "summary": summary}).execute()
+        logger.info(f"[MEMORY] Summary updated for user '{normalized_uid[:8]}...' (tenant={tenant_id or 'default'})")
     except Exception as e:
         logger.warning(f"[MEMORY] save_user_summary: {e}")
 
-async def get_user_conversations(user_id: str) -> list:
+async def get_user_conversations(user_id: str, joined_after: str = "") -> list:
     """Returns [{id, title, created_at}] for a user, newest first.
-    Uses a single join query: conversations → first user message per conversation.
+    Uses a single join query: conversations -> first user message per conversation.
+
+    WHY: T8 leak fix. When joined_after is set (ISO timestamp from user_roles.created_at),
+    only conversations created after the user joined the current tenant are returned.
+    Prevents a user invited to tenant Y from seeing conversations they had in
+    tenant X before joining Y.
     """
     client = await _get_client()
     if not client or not user_id:
@@ -361,12 +392,13 @@ async def get_user_conversations(user_id: str) -> list:
     try:
         normalized_uid = _normalize_user_id(user_id)
         # One query: conversations with their first user message via FK join
-        r = await (client.table("conversations")
+        q = (client.table("conversations")
              .select("id, session_id, created_at, messages(content, role, created_at)")
              .eq("user_id", normalized_uid)
-             .eq("messages.role", "user")
-             .order("created_at", desc=True)
-             .limit(50).execute())
+             .eq("messages.role", "user"))
+        if joined_after:
+            q = q.gte("created_at", joined_after)
+        r = await q.order("created_at", desc=True).limit(50).execute()
         result = []
         for row in (r.data or []):
             msgs = row.get("messages") or []

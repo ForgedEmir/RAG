@@ -109,6 +109,34 @@ async def get_tenant_id(user_id: str) -> str:
     return user_id
 
 
+async def get_tenant_join_date(user_id: str, tenant_id: str = "") -> str | None:
+    """Return the ISO timestamp when the user joined the given tenant.
+
+    WHY: T8 leak fix. Conversations are not tenant-tagged in the DB, but we
+    can scope them by the user's join date in user_roles. A user invited to
+    tenant Y at time T should not see conversations they had in tenant X
+    before T (when they were still operating under tenant X).
+
+    Returns None if tenant_id is empty (single-tenant mode, no filtering)
+    or if the lookup fails.
+    """
+    if not tenant_id:
+        return None
+    try:
+        from src.monitoring.tracker import _get_client
+        supa = await _get_client()
+        if not supa:
+            return None
+        res = await (supa.table("user_roles").select("created_at")
+                     .eq("user_id", user_id).eq("tenant_id", tenant_id)
+                     .limit(1).execute())
+        if res.data:
+            return res.data[0].get("created_at")
+    except Exception as e:
+        logger.debug(f"get_tenant_join_date fallback: {e}")
+    return None
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),

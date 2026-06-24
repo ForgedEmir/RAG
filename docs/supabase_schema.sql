@@ -1,6 +1,12 @@
 -- ============================================================
--- Oracle LoreKeeper — Schéma Supabase v1.2
--- Ajouts: tenants, api_keys, usage_metrics
+-- RABELIA - Schema Supabase complet (v2.0)
+--
+-- Fusionne les tables B2B multi-tenant (tenants, user_roles, invitations,
+-- api_keys, usage_metrics) avec les tables legacy (conversations, messages,
+-- user_memory, events, feedback) utilisees par le code applicatif.
+--
+-- Ce fichier est destine aux NOUVEAUX deploiements. Si les tables existent
+-- deja, NE PAS re-executer ce script (utilisez ALTER TABLE manuellement).
 -- ============================================================
 
 -- =========================
@@ -65,8 +71,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     id          BIGSERIAL PRIMARY KEY,
     tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name        VARCHAR(255) DEFAULT 'Default',
-    key_hash    VARCHAR(64) NOT NULL UNIQUE,          -- SHA256 du préfixe (on stocke pas la clé entière)
-    key_prefix  VARCHAR(12) NOT NULL,                  -- 8 premiers caractères pour affichage
+    key_hash    VARCHAR(64) NOT NULL UNIQUE,
+    key_prefix  VARCHAR(12) NOT NULL,
     is_active   BOOLEAN DEFAULT TRUE,
     last_used   TIMESTAMPTZ,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
@@ -94,16 +100,99 @@ CREATE INDEX idx_usage_tenant_date ON usage_metrics(tenant_id, date);
 
 
 -- =========================
--- RLS
+-- CONVERSATIONS (sessions utilisateur)
+-- =========================
+-- NOTE: pas de colonne tenant_id ici (evite une migration DB).
+-- L'isolation tenant se fait en filtrant par user_roles.created_at (date de
+-- join tenant) au niveau applicatif (voir get_user_conversations / conversation_belongs_to_user).
+CREATE TABLE IF NOT EXISTS conversations (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID NOT NULL,
+    session_id UUID NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversations_user_id    ON conversations(user_id);
+CREATE INDEX idx_conversations_session_id ON conversations(session_id);
+
+
+-- =========================
+-- MESSAGES (contenu des conversations)
+-- =========================
+CREATE TABLE IF NOT EXISTS messages (
+    id              BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id         UUID NOT NULL,
+    role            VARCHAR NOT NULL CHECK (role IN ('user', 'assistant')),
+    content         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_conversation_created ON messages(conversation_id, created_at DESC);
+CREATE INDEX idx_messages_user_id              ON messages(user_id);
+
+
+-- =========================
+-- USER MEMORY (summary long-terme)
+-- =========================
+-- NOTE: user_id est TEXT (pas UUID) car le code stocke une cle composite
+-- "{tenant_id}:{user_id}" pour isoler les summaries par tenant sans migration
+-- de schema (voir tracker.get_user_summary / save_user_summary).
+-- En mode single-tenant (tenant_id vide), la cle est juste user_id (UUID).
+CREATE TABLE IF NOT EXISTS user_memory (
+    user_id    TEXT PRIMARY KEY,
+    summary    TEXT DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =========================
+-- EVENTS (monitoring)
+-- =========================
+CREATE TABLE IF NOT EXISTS events (
+    id         BIGSERIAL PRIMARY KEY,
+    type       VARCHAR NOT NULL,
+    detail     TEXT,
+    latency_ms INT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_events_type_created ON events(type, created_at DESC);
+
+
+-- =========================
+-- FEEDBACK (Human-in-the-Loop)
+-- =========================
+CREATE TABLE IF NOT EXISTS feedback (
+    id          BIGSERIAL PRIMARY KEY,
+    session_id  UUID NOT NULL,
+    user_id     UUID NOT NULL,
+    rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment     TEXT DEFAULT '',
+    judge_score FLOAT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_feedback_session_id ON feedback(session_id);
+CREATE INDEX idx_feedback_user_id    ON feedback(user_id);
+
+
+-- =========================
+-- RLS (Row Level Security)
+-- Le backend utilise la service_role key -> bypass RLS automatiquement.
+-- Les policies ci-dessous s'appliquent aux appels client-side (frontend Supabase JS).
 -- =========================
 ALTER TABLE tenants       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usage_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_memory   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feedback      ENABLE ROW LEVEL SECURITY;
 
--- Le backend utilise la service_role key → bypass RLS automatiquement
--- Pour les appels client-side, ces policies s'appliquent:
+-- B2B tables
 CREATE POLICY "tenants_owner" ON tenants FOR ALL
     USING (auth.uid() = owner_id);
 
@@ -115,3 +204,17 @@ CREATE POLICY "invitations_self" ON invitations FOR SELECT
         SELECT 1 FROM user_roles WHERE user_id = auth.uid()
         AND tenant_id = invitations.tenant_id AND role IN ('owner', 'admin')
     ));
+
+-- Legacy tables (user-scoped)
+CREATE POLICY "conversations_policy" ON conversations FOR ALL
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "messages_policy" ON messages FOR ALL
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- NOTE: user_memory.user_id est TEXT (cle composite tenant:user), la policy
+-- RLS sur auth.uid() (UUID) ne peut pas matcher directement. Le backend
+-- gere l'isolation via la service_role key (bypass RLS). Pour les appels
+-- client-side, ajouter une policy basee sur un prefixe si necessaire.
+CREATE POLICY "feedback_policy" ON feedback FOR ALL
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);

@@ -132,16 +132,29 @@ def _extract_archive(content: bytes, filename: str, target_dir: str) -> list[str
     return extracted
 
 
-def _count_points_for_filename(filename: str) -> int | None:
+def _count_points_for_filename(filename: str, tenant_id: str = "") -> int | None:
     try:
         from qdrant_client.models import Filter, FieldCondition, MatchValue
-        from src.ingestion.vector_store import get_store
+        from src.ingestion.vector_store import get_store, _COLLECTION_NAME
         store = get_store(force_reindex=False)
+        # WHY: collection name was hardcoded to "knowledge" (doesn't exist).
+        # Use the actual collection name from vector_store (env-configurable).
+        # Also match BOTH 'fichier' (FR) and 'filename' (EN) keys — ingestion
+        # uses 'fichier' but features/misc adds 'filename' as alias.
+        # Also scope by tenant_id when provided.
+        should_clauses = [
+            FieldCondition(key="metadata.fichier", match=MatchValue(value=filename)),
+            FieldCondition(key="metadata.filename", match=MatchValue(value=filename)),
+        ]
+        must_clauses = []
+        if tenant_id:
+            must_clauses.append(
+                FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))
+            )
+        count_filter = Filter(should=should_clauses, must=must_clauses)
         result = store.client.count(
-            collection_name="knowledge",
-            count_filter=Filter(
-                should=[FieldCondition(key="metadata.fichier", match=MatchValue(value=filename))]
-            ),
+            collection_name=_COLLECTION_NAME,
+            count_filter=count_filter,
             exact=True,
         )
         return int(getattr(result, "count", 0))
@@ -321,13 +334,18 @@ async def user_sources(user_id: str = Depends(get_current_user)):
     tenant_id = await get_tenant_id(user_id)
     try:
         from src.ingestion.vector_store import _get_client, _COLLECTION_NAME
+        from qdrant_client.http import Filter, FieldCondition, MatchValue
         client = _get_client()
         info = client.get_collection(_COLLECTION_NAME)
         total_pts = info.points_count or 0
         logger.info("[SOURCES] collection=%s total_points=%d tenant=%s", _COLLECTION_NAME, total_pts, tenant_id)
         filenames: set[str] = set()
         offset = None
-        filt = None
+        # WHY: filter by tenant_id so a user only sees files from their own tenant.
+        # Previously filt=None → every tenant's filenames were leaked to every user.
+        filt = Filter(must=[
+            FieldCondition(key="metadata.tenant_id", match=MatchValue(value=tenant_id))
+        ])
         while True:
             results, next_offset = client.scroll(
                 collection_name=_COLLECTION_NAME,
@@ -340,13 +358,13 @@ async def user_sources(user_id: str = Depends(get_current_user)):
             for point in results:
                 payload = point.payload or {}
                 meta = payload.get("metadata") or {}
-                fichier = meta.get("fichier") or payload.get("fichier")
+                fichier = meta.get("fichier") or meta.get("filename") or payload.get("fichier")
                 if fichier:
                     filenames.add(os.path.basename(fichier))
             if next_offset is None:
                 break
             offset = next_offset
-        logger.info("[SOURCES] found %d unique files", len(filenames))
+        logger.info("[SOURCES] found %d unique files for tenant=%s", len(filenames), tenant_id or "default")
         files = sorted(filenames)
         return {"files": files, "total": len(files)}
     except Exception as e:
@@ -395,7 +413,8 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
         changed = None
         reindex_warning = None
         try:
-            changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
+            # Admin endpoint: global reindex (tenant_id=""). Per-tenant uploads go through /api/upload.
+            changed = bool(await asyncio.to_thread(index_data, force_reindex=False, tenant_id=""))
         except Exception as e:
             reindex_warning = str(e)
             logger.warning("Admin archive reindex failed: %s", e)
@@ -444,13 +463,13 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
     reindex_warning = None
     changed = None
     try:
-        # index_data is synchronous
-        changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
+        # index_data is synchronous. Admin endpoint: global reindex (tenant_id="").
+        changed = bool(await asyncio.to_thread(index_data, force_reindex=False, tenant_id=""))
     except Exception as e:
         reindex_warning = str(e)
         logger.warning(f"Upload automatic reindex failed: {e}")
 
-    qdrant_points = _count_points_for_filename(safe_name)
+    qdrant_points = _count_points_for_filename(safe_name)  # admin upload = global, tenant_id=""
 
     if existed_before:
         await track("replace", detail=f"{safe_name} | {len(content)//1024} KB (upsert)")
@@ -786,16 +805,18 @@ async def team_cancel_invitation(email: str, user_id: str = Depends(get_current_
 async def _resolve_file(tenant_id: str, safe_name: str) -> str | None:
     """
     Return the local file path, downloading from Supabase Storage if missing
-    from disk (stateless VPS — Supabase is the source of truth).
+    from disk (stateless VPS - Supabase is the source of truth).
+
+    SECURITY: no legacy fallback to data/sample/<filename> root anymore.
+    Previously, if the file was missing from data/sample/<tenant_id>/, the
+    function fell through to data/sample/<filename> at the root, allowing
+    any tenant to read admin-uploaded files. Now: only the tenant subdirectory
+    and Supabase Storage are checked.
     """
     local_path = os.path.join(DATA_DIR, tenant_id, safe_name)
     if os.path.isfile(local_path):
         return local_path
-    # Legacy fallback (admin upload without tenant)
-    legacy = os.path.join(DATA_DIR, safe_name)
-    if os.path.isfile(legacy):
-        return legacy
-    # Supabase Storage — primary source on VPS
+    # Supabase Storage - primary source on VPS
     try:
         from src.monitoring.tracker import _get_client
         supa = await _get_client()
@@ -924,12 +945,24 @@ async def admin_delete(request: Request):
     require_monitoring(request)
     body = await request.json()
     filename = (body or {}).get("filename", "").strip()
+    # Optional tenant_id: when provided, scope the delete to data/sample/<tenant_id>/<filename>
+    # and only remove Qdrant chunks for that tenant. When empty (admin global delete),
+    # looks for the file at data/sample/<filename> root and removes chunks with tenant_id="".
+    tenant_id = (body or {}).get("tenant_id", "").strip()
 
     # Path traversal protection
     if not filename or any(s in filename for s in ("/", "\\", "..")):
         return JSONResponse({"error": "Invalid filename"}, status_code=400)
+    if tenant_id and any(s in tenant_id for s in ("/", "\\", "..")):
+        return JSONResponse({"error": "Invalid tenant_id"}, status_code=400)
 
-    path = os.path.join(DATA_DIR, filename)
+    # WHY: scope the file lookup to the tenant subdirectory when tenant_id is provided.
+    # Previously the file was always looked up at data/sample/<filename> root, so
+    # admin delete could not remove tenant-specific files (T9 leak).
+    if tenant_id:
+        path = os.path.join(DATA_DIR, tenant_id, filename)
+    else:
+        path = os.path.join(DATA_DIR, filename)
     if not os.path.exists(path):
         return JSONResponse({"error": "File not found"}, status_code=404)
 
@@ -940,19 +973,24 @@ async def admin_delete(request: Request):
         from src.ingestion.vector_store import get_store, remove_files
         # get_store and remove_files are synchronous
         store = get_store(force_reindex=False)
-        await asyncio.to_thread(remove_files, store, {filename})
+        # WHY: pass tenant_id so remove_files only deletes chunks for this tenant.
+        # Without it, the Filter would default to tenant_id="" and either miss
+        # tenant-tagged chunks or (worse) delete chunks from every tenant sharing the filename.
+        await asyncio.to_thread(remove_files, store, {filename}, tenant_id)
     except Exception as e:
         logger.warning(f"Immediate Qdrant delete failed: {e}")
 
     reindex_warning = None
     changed = None
     try:
-        changed = bool(await asyncio.to_thread(index_data, force_reindex=False))
+        # WHY: scope the reindex to the affected tenant so other tenants' BM25
+        # corpora are not disturbed.
+        changed = bool(await asyncio.to_thread(index_data, force_reindex=False, tenant_id=tenant_id))
     except Exception as e:
         reindex_warning = str(e)
         logger.warning(f"Delete automatic reindex failed: {e}")
 
-    qdrant_points = _count_points_for_filename(filename)
+    qdrant_points = _count_points_for_filename(filename, tenant_id=tenant_id)
 
     await track("reindex", detail=f"delete: {filename}")
     logger.info(f"File deleted: {filename}")

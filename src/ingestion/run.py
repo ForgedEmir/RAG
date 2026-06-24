@@ -198,18 +198,42 @@ def save_memory(files: dict) -> None:
         json.dump(files, f, indent=2)
 
 
-def list_current_files() -> dict:
+def list_current_files(tenant_id: str = "") -> dict:
+    """List indexed-able files on disk, optionally scoped to one tenant.
+
+    WHY: previously this function scanned every subdirectory of DATA_FOLDER
+    and returned files from ALL tenants mixed together. When index_data()
+    was called without a tenant_id, the BM25 corpus rebuild re-tagged every
+    chunk with tenant_id="", breaking per-tenant search and leaking content
+    to the default MCP tenant.
+
+    Args:
+        tenant_id: If non-empty, only scan data/sample/<tenant_id>/. If empty,
+                   scan every subdirectory (admin/global mode, used for boot
+                   and dim-mismatch recovery).
+
+    Returns:
+        Dict of {relative_path: mtime} for matching files.
+    """
     if not os.path.exists(DATA_FOLDER):
         return {}
     files = {}
-    for entry in os.scandir(DATA_FOLDER):
-        if not entry.is_dir():
-            continue
-        for root, _, filenames in os.walk(entry.path):
+    if tenant_id:
+        # Single tenant: scan only data/sample/<tenant_id>/
+        tenant_dir = os.path.join(DATA_FOLDER, tenant_id)
+        if not os.path.isdir(tenant_dir):
+            return {}
+        scan_dirs = [tenant_dir]
+    else:
+        # Global scan (admin or boot): scan every subdirectory
+        scan_dirs = [entry.path for entry in os.scandir(DATA_FOLDER) if entry.is_dir()]
+    for scan_dir in scan_dirs:
+        for root, _, filenames in os.walk(scan_dir):
             for name in filenames:
                 if name.lower().endswith(SUPPORTED_EXTENSIONS):
-                    rel_path = os.path.relpath(os.path.join(root, name), DATA_FOLDER)
-                    files[rel_path] = os.path.getmtime(os.path.join(root, name))
+                    full = os.path.join(root, name)
+                    rel_path = os.path.relpath(full, DATA_FOLDER)
+                    files[rel_path] = os.path.getmtime(full)
     return files
 
 
@@ -598,7 +622,11 @@ def index_data(force_reindex: bool = False, tenant_id: str = "") -> bool:
 
 def _index_data_locked(force_reindex: bool = False, tenant_id: str = "") -> bool:
     logger.info("Checking files to index (tenant=%s)...", tenant_id or "global")
-    current_files = list_current_files()
+    # WHY: scope the file scan to the tenant's subdirectory when tenant_id is set.
+    # Without this, list_current_files() returned files from ALL tenants, and the
+    # BM25 corpus rebuild re-tagged every chunk with the caller's tenant_id,
+    # breaking per-tenant search isolation (T5 leak).
+    current_files = list_current_files(tenant_id=tenant_id)
 
     if force_reindex:
         # WHY: force_reindex starts from scratch — existing indexed_at values no

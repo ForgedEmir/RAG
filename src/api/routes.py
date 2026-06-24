@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from src.api.auth import get_current_user, get_tenant_id, require_monitoring
+from src.api.auth import get_current_user, get_tenant_id, get_tenant_join_date, require_monitoring
 from src.api.limiter import limiter
 from src.api.blueprints.admin import admin_router
 from src.api.blueprints.media import media_router
@@ -73,13 +73,15 @@ def _get_user_lock(uid: str) -> threading.Lock:
         return _user_locks[uid]
 
 
-async def _run_background_summary(uid: str, history: list) -> None:
+async def _run_background_summary(uid: str, history: list, tenant_id: str = "") -> None:
     # WHY: Non-blocking lock ensures only one summary task runs per user.
+    # tenant_id is passed through to get_user_summary/save_user_summary so the
+    # summary is scoped to the tenant (T7 leak fix, no DB migration).
     lock = _get_user_lock(uid)
     if not lock.acquire(blocking=False):
         return
     try:
-        old_summary = await get_user_summary(uid)
+        old_summary = await get_user_summary(uid, tenant_id=tenant_id)
         new_summary = await generate_user_summary(history, old_summary)
         if new_summary:
             try:
@@ -87,7 +89,7 @@ async def _run_background_summary(uid: str, history: list) -> None:
                 new_summary = mask(new_summary)
             except Exception:
                 pass
-            await save_user_summary(uid, new_summary)
+            await save_user_summary(uid, new_summary, tenant_id=tenant_id)
     except Exception as e:
         logger.warning(f"Background summary failed: {e}")
     finally:
@@ -298,8 +300,8 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
     # This both wasted a Qdrant query and blocked the event loop for ~20-50ms.
     history, summary, memories = await asyncio.gather(
         get_history(body.session_id),
-        get_user_summary(user_id),
-        asyncio.to_thread(search_user_memories, user_id, question),
+        get_user_summary(user_id, tenant_id=tenant_id),
+        asyncio.to_thread(search_user_memories, user_id, question, 3, tenant_id),
         return_exceptions=True
     )
     
@@ -390,10 +392,10 @@ async def ask_oracle(request: Request, body: AskBody, user_id: str = Depends(get
                     async def _summary_logic():
                         count = await count_user_exchanges(user_id)
                         if count > 0 and count % SUMMARY_UPDATE_INTERVAL == 0:
-                            await _run_background_summary(user_id, history)
+                            await _run_background_summary(user_id, history, tenant_id=tenant_id)
                     
                     asyncio.create_task(_summary_logic())
-                    asyncio.create_task(asyncio.to_thread(add_user_memory, user_id, question, answer))
+                    asyncio.create_task(asyncio.to_thread(add_user_memory, user_id, question, answer, tenant_id))
 
             latency = int((time.time() - start) * 1000)
             await track("question", detail=f"{question[:150]} | model:{model_name}", latency_ms=latency)
@@ -524,8 +526,10 @@ async def submit_feedback_vote(body: FeedbackVoteBody, user_id: str = Depends(ge
 async def trigger_reindex(request: Request, body: ReindexBody):
     require_monitoring(request)
     try:
-        # index_data is heavy and synchronous; run it in a thread
-        result = await asyncio.to_thread(index_data, force_reindex=body.force)
+        # index_data is heavy and synchronous; run it in a thread.
+        # Admin endpoint: no tenant_id (global reindex of all tenant subdirs).
+        # Per-tenant reindex should go through /api/upload (which scopes by user's tenant_id).
+        result = await asyncio.to_thread(index_data, force_reindex=body.force, tenant_id="")
         await track("reindex", detail=f"force={body.force} | {'changed' if result else 'none'}")
         return {"message": "Indexing complete." if result else "Already up to date."}
     except Exception as e:
@@ -537,7 +541,10 @@ async def trigger_reindex(request: Request, body: ReindexBody):
 async def get_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
         return JSONResponse({"error": "session_id required"}, status_code=400)
-    if not await conversation_belongs_to_user(session_id, user_id):
+    # WHY: scope conversation access by tenant join date (T8 leak fix).
+    tenant_id = await get_tenant_id(user_id)
+    joined_after = await get_tenant_join_date(user_id, tenant_id) if tenant_id else ""
+    if not await conversation_belongs_to_user(session_id, user_id, joined_after=joined_after or ""):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     return {"exchanges": await get_conversation(session_id)}
 
@@ -546,14 +553,21 @@ async def get_history_by_session(session_id: str = "", user_id: str = Depends(ge
 async def list_user_conversations(user_id: str = Depends(get_current_user)):
     if not user_id:
         return JSONResponse({"error": "Authentication required"}, status_code=401)
-    return {"conversations": await get_user_conversations(user_id)}
+    # WHY: scope conversation list by tenant join date (T8 leak fix).
+    # A user invited to tenant Y at time T should not see conversations they
+    # had in tenant X before T.
+    tenant_id = await get_tenant_id(user_id)
+    joined_after = await get_tenant_join_date(user_id, tenant_id) if tenant_id else ""
+    return {"conversations": await get_user_conversations(user_id, joined_after=joined_after or "")}
 
 
 @router.get("/api/conversations/messages")
 async def get_messages_for_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
         return JSONResponse({"error": "session_id required"}, status_code=400)
-    if not await conversation_belongs_to_user(session_id, user_id):
+    tenant_id = await get_tenant_id(user_id)
+    joined_after = await get_tenant_join_date(user_id, tenant_id) if tenant_id else ""
+    if not await conversation_belongs_to_user(session_id, user_id, joined_after=joined_after or ""):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     client = None
     try:
@@ -577,7 +591,9 @@ async def get_messages_for_session(session_id: str = "", user_id: str = Depends(
 async def delete_history_by_session(session_id: str = "", user_id: str = Depends(get_current_user)):
     if not session_id:
         return JSONResponse({"error": "session_id required"}, status_code=400)
-    if not await conversation_belongs_to_user(session_id, user_id):
+    tenant_id = await get_tenant_id(user_id)
+    joined_after = await get_tenant_join_date(user_id, tenant_id) if tenant_id else ""
+    if not await conversation_belongs_to_user(session_id, user_id, joined_after=joined_after or ""):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     await delete_conversation(session_id)
     return {"ok": True}

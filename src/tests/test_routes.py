@@ -209,7 +209,7 @@ def test_reindex_sans_force(mock_track, mock_index):
     response = create_client().post("/api/reindex", json={}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
     assert "complete" in response.json()["message"]
-    mock_index.assert_called_once_with(force_reindex=False)
+    mock_index.assert_called_once_with(force_reindex=False, tenant_id="")
 
 
 @patch("src.api.routes.index_data")
@@ -219,7 +219,7 @@ def test_reindex_avec_force(mock_track, mock_index):
     mock_index.return_value = True
     response = create_client().post("/api/reindex", json={"force": True}, headers={"X-Monitoring-Key": "test_key"})
     assert response.status_code == 200
-    mock_index.assert_called_once_with(force_reindex=True)
+    mock_index.assert_called_once_with(force_reindex=True, tenant_id="")
 
 
 @patch("src.api.routes.index_data")
