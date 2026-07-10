@@ -16,7 +16,7 @@
 
 `#rag` `#accounting` `#tax` `#fastapi` `#qdrant` `#cerebras` `#mcp` `#ai`
 
-*Zéro PyTorch · Pas de GPU requis · Config-driven · Pipeline traçable*
+*No PyTorch · No GPU needed · Config-driven · Traceable pipeline*
 
 </div>
 
@@ -24,17 +24,17 @@
 
 ## Overview
 
-Un moteur de **Retrieval-Augmented Generation (RAG)** pensée pour les professionnels du chiffre. Posez une question sur la législation fiscale, les normes comptables ou les obligations Peppol — le système cherche dans vos documents indexés et stream une réponse sourcée en temps réel.
+A production-grade **Retrieval-Augmented Generation (RAG)** engine built for accounting professionals. Ask a question about tax legislation, accounting standards, or Peppol compliance — the system searches your indexed documents and streams a sourced answer in real time.
 
-**Pourquoi pour les comptables ?**
+**Why accounting?**
 
-| Problème | Solution |
+| Problem | Solution |
 |---|---|
-| Les LLM hallucinent des réponses sur du droit fiscal | Hybrid retrieval (vector + BM25) + reranking + citations des sources |
-| Les temps de réponse cassent le rythme de travail | Cerebras inference (~500ms) + Redis semantic cache + SSE streaming |
-| Les réglementations changent chaque année (Peppol, TVA, etc.) | Ré-indexation à la demande, pas de fine-tuning |
-| Plusieurs clients, plusieurs dossiers | User memory summaries + historique par session + auth Supabase |
-| Production fiable | Rate limiting, PII masking, monitoring dashboard |
+| LLMs hallucinate answers on fiscal law | Hybrid retrieval (vector + BM25) + reranking + source citations |
+| Slow responses break workflow | Cerebras inference (~500ms) + Redis semantic cache + SSE streaming |
+| Regulations change yearly (Peppol, VAT, etc.) | Re-index on demand, no fine-tuning |
+| Multiple clients, multiple files | User memory summaries + session history + Supabase auth |
+| Production reliability | Rate limiting, PII masking, monitoring dashboard |
 
 ---
 
@@ -42,7 +42,7 @@ Un moteur de **Retrieval-Augmented Generation (RAG)** pensée pour les professio
 
 ```
 ┌─────────────┐     ┌──────────────────────────────────────────────┐
-│   Client     │     │              RAG Engine                      │
+│   Client     │     │                  RAG Engine                   │
 │  (React /   │────▶│                                              │
 │   API)       │     │  POST /api/ask → Auth → PII → Security      │
 └─────────────┘     │                   ↓                          │
@@ -80,18 +80,18 @@ Un moteur de **Retrieval-Augmented Generation (RAG)** pensée pour les professio
 | Layer | Technology | Why |
 |---|---|---|
 | **API** | FastAPI + Gunicorn/Uvicorn | Async, SSE streaming, auto-docs |
-| **Vector DB** | Qdrant | Cloud-native, rapide, filtrage performant |
-| **Embeddings** | FastEmbed ONNX (MiniLM 384d) | Pas de GPU, pas de PyTorch, 5ms |
-| **Reranker** | FastEmbed ONNX (cross-encoder) | Activation conditionnelle |
-| **Lexical** | BM25 (rank-bm25) | Stopwords FR, rattrape les échecs vectoriels |
+| **Vector DB** | Qdrant | Cloud-native, fast, great filtering |
+| **Embeddings** | FastEmbed ONNX (MiniLM 384d) | No GPU, no PyTorch, 5ms inference |
+| **Reranker** | FastEmbed ONNX (cross-encoder) | Conditional activation — smart rerank |
+| **Lexical** | BM25 (rank-bm25) | French stopwords, recovers vector misses |
 | **LLM** | Cerebras (llama3.1-8b) / Groq fallback | ~500ms inference, auto-failover |
-| **Auth** | Supabase (PostgreSQL + JWT) | Row-level security |
-| **Cache** | Redis + SlowAPI | Cache sémantique + rate limiting |
-| **Security** | Lakera Guard + regex PII mask | Détection d'injection, conformité RGPD |
-| **Frontend** | React + Vite + Tailwind | Statique, servi par FastAPI |
-| **Monitoring** | Langfuse | LLM-as-Judge, trace complète |
-| **Integration** | MCP Server (stdio/SSE) | Claude Desktop, Cursor, tout client MCP |
-| **Deploy** | Docker + Coolify | 2 commandes, zero-downtime |
+| **Auth** | Supabase (PostgreSQL + JWT) | Serverless, row-level security |
+| **Cache** | Redis + SlowAPI | Semantic cache + rate limiting |
+| **Security** | Lakera Guard + regex PII mask | Injection detection, GDPR compliance |
+| **Frontend** | React + Vite + Tailwind | Static, served by FastAPI |
+| **Monitoring** | Langfuse | LLM-as-Judge, full trace → eval score |
+| **Integration** | MCP Server (stdio/SSE) | Claude Desktop, Cursor, any MCP client |
+| **Deploy** | Docker + Coolify | 2-command startup, zero-downtime |
 
 ---
 
@@ -99,7 +99,7 @@ Un moteur de **Retrieval-Augmented Generation (RAG)** pensée pour les professio
 
 ### Requirements
 
-- Python 3.11+, Node.js 18+, Docker (optionnel)
+- Python 3.11+, Node.js 18+, Docker (optional)
 
 ```bash
 git clone https://github.com/ForgedEmir/RAG.git
@@ -112,7 +112,7 @@ pip install -r requirements.txt
 # Frontend
 cd src/frontend-react && npm install && npm run build && cd ../..
 
-# Configuration
+# Configure
 cp .env.example .env
 # → Set LLM_API_KEY, QDRANT_URL, QDRANT_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
@@ -144,74 +144,74 @@ make index      # Force reindex
 
 | Endpoint | Method | Auth | Purpose |
 |---|---|---|---|
-| `/api/ask` | POST | JWT/guest | **Endpoint RAG principal** — SSE stream |
+| `/api/ask` | POST | JWT/guest | **Main RAG endpoint** — SSE stream |
 | `/api/feedback/vote` | POST | JWT/guest | Thumbs up/down by trace_id |
-| `/api/conversations` | GET/DELETE | JWT/guest | Historique des conversations |
-| `/api/monitoring/stats` | GET | monitoring key | Usage global & santé pipeline |
-| `/api/cache/stats` | GET | monitoring key | Taux de hit du cache sémantique |
-| `/api/admin/sources` | GET | monitoring key | Fichiers sources indexés |
-| `/health` | GET | — | Health check des composants |
-| *+ 9 more* | | | Voir documentation complète |
+| `/api/conversations` | GET/DELETE | JWT/guest | Session conversation history |
+| `/api/monitoring/stats` | GET | monitoring key | Global usage & pipeline health |
+| `/api/cache/stats` | GET | monitoring key | Semantic cache hit rates |
+| `/api/admin/sources` | GET | monitoring key | Indexed source files |
+| `/health` | GET | — | Component health check |
+| *+ 9 more* | | | See full docs |
 
 **Request:**
 ```json
 POST /api/ask
 {
-  "question": "Quel est le taux de TVA pour les travaux de rénovation en Belgique ?",
+  "question": "What is the VAT rate for renovation work in Belgium?",
   "session_id": "uuid-v4",
-  "user_id": "comptable_uuid"
+  "user_id": "accountant_uuid"
 }
 ```
 
 **Response:** Server-Sent Events
 ```
-data: {"type": "text", "text": "Le taux de TVA pour les travaux de rénovation..."}
+data: {"type": "text", "text": "The reduced VAT rate of 6% applies to renovation..."}
 data: {"type": "done", "trace_id": "...", "model": "llama3.1-8b"}
 ```
 
 ---
 
-## Cas d'usage comptables
+## Accounting use cases
 
-| Domaine | Exemple de question |
+| Domain | Example question |
 |---|---|
-| **TVA** | "Quel est le taux applicable pour la restauration en Belgique ?" |
-| **Peppol** | "Quelles entreprises sont concernées par l'obligation Peppol en 2026 ?" |
-| **Social** | "Quel est le plafond de rémunération pour un indépendant en 2026 ?" |
-| **Fiscal** | "Comment déclarer une plus-value sur cession d'actions ?" |
-| **Comptable** | "Quelles sont les règles d'amortissement des immobilisations ?" |
-| **RGPD** | "Quelles mentions obligatoires sur une facture B2B ?" |
+| **VAT** | "What rate applies to catering in Belgium?" |
+| **Peppol** | "Which businesses are affected by the Peppol mandate in 2026?" |
+| **Social** | "What is the 2026 self-employed income cap?" |
+| **Tax** | "How do I declare capital gains on share sales?" |
+| **Accounting** | "What are the depreciation rules for fixed assets?" |
+| **GDPR** | "What mandatory information must appear on a B2B invoice?" |
 
 ---
 
-## Key Design Decisions
+## Key design decisions
 
-- **Pas de PyTorch runtime** → Embeddings/reranking via ONNX (FastEmbed). Image Docker légère, pas de GPU nécessaire.
-- **Config-driven** → Chaque provider, modèle, feature flag est une variable d'env. Pas de secrets en dur.
-- **HyDE + BM25 fallbacks** → Si le score vectoriel est faible, le système tente les embeddings de document hypothétique et la recherche lexicale.
-- **Smart rerank** → Cross-encoder activé seulement quand le top-1 vector score est sous le seuil.
-- **Single answer pipeline** → Un endpoint (`/api/ask`) fait tout. Simple à intégrer, simple à monitorer.
+- **No PyTorch runtime** → All embeddings/reranking via ONNX (FastEmbed). Small Docker image, no GPU.
+- **Config-driven** → Every provider, model and feature flag is an env var. No hardcoded secrets.
+- **HyDE + BM25 fallbacks** → If vector retrieval score is weak, it tries hypothetical document embeddings and lexical search before giving up.
+- **Smart rerank** → Cross-encoder only activates when the top-1 vector score is below threshold. Saves latency when the primary result is already good.
+- **Single answer pipeline** → One endpoint (`/api/ask`) does everything. Simple to integrate, simple to monitor.
 
 ---
 
 ## Testing
 
 ```bash
-# Tous les tests unitaires (45+)
+# All unit tests (45+)
 python -m pytest src/test-unitaires -q
 
-# Tests spécifiques à la recherche
+# Search-specific (after retrieval changes)
 python -m pytest src/test-unitaires/test_search.py -q
 
-# Load testing avec Locust
+# Load testing with Locust
 locust -f src/test-unitaires/locustfile.py --host http://localhost:8000
 ```
 
 ---
 
-## MCP Integration
+## MCP integration
 
-Claude Desktop, Cursor, ou tout client MCP peut interroger le système directement.
+Claude Desktop, Cursor, or any MCP client can query the system directly.
 
 ```json
 {
@@ -231,7 +231,7 @@ Claude Desktop, Cursor, ou tout client MCP peut interroger le système directeme
 
 ---
 
-## Production Profile
+## Production profile
 
 ```env
 RAG_PROFILE=balanced
@@ -243,7 +243,7 @@ HYDE_ENABLED=true
 SMART_RERANK_ENABLED=true
 ```
 
-Référence complète → [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)
+Full reference → [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)
 
 ---
 
