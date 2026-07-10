@@ -1,6 +1,6 @@
 <div align="center">
 
-![RAG](assets/hero.png)
+![RAG](assets/banner.png)
 
 # RAG — Accounting Intelligence 📊
 
