@@ -1,7 +1,5 @@
 <div align="center">
 
-![RAG](assets/banner.png)
-
 # RAG — Accounting Intelligence 📊
 
 ### Production-grade RAG for accounting professionals
