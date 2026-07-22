@@ -10,6 +10,7 @@ import csv
 import json
 import logging
 from typing import Optional
+from xml.etree import ElementTree
 
 logger = logging.getLogger(__name__)
 
@@ -172,14 +173,11 @@ def _json_to_text(data, niveau: int = 0) -> str:
 
 
 def _xml_to_text(filepath: str) -> str:
-    """Extrait le texte d'un XML via unstructured (gère namespaces, attributs, hiérarchie)."""
+    """Extrait uniquement les nœuds texte d'un document XML bien formé."""
     try:
-        from unstructured.partition.auto import partition
-        elements = partition(filename=filepath)
-        return "\n".join(str(el) for el in elements if str(el).strip())
-    except ImportError:
-        logger.warning("unstructured non installé — pip install unstructured")
-        return ""
-    except Exception as e:
+        root = ElementTree.parse(filepath).getroot()
+        # ElementTree valide le XML et n'inclut ni balises ni attributs dans itertext().
+        return "\n".join(text.strip() for text in root.itertext() if text.strip())
+    except (ElementTree.ParseError, OSError) as e:
         logger.error(f"Erreur XML {filepath} : {e}")
         return ""
